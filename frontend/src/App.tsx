@@ -42,14 +42,17 @@ import { AssistantWidget } from './presentation/shared/assistant/AssistantWidget
 import { GuestOnly, PublicOnly, RequireAuth } from './presentation/shared/auth/RouteGuards'
 import { APP_PREFIX, appPaths, publicPaths } from './presentation/shared/routes/appPaths'
 
-/** 비로그인 검색 흐름은 헤더·검색 탭이 고정된 자체 레이아웃을 쓰고, 나머지 공개 화면은 공용 헤더를 사용합니다. */
+/**
+ * 비로그인 검색 흐름은 헤더·검색 탭이 위에 붙는 자체 레이아웃을 쓰고, 나머지 공개 화면은 공용 헤더를 사용합니다.
+ * 두 경우 모두 스크롤은 문서가 맡습니다. 검색 흐름도 화면 안쪽에 따로 스크롤 영역을 두지 않습니다.
+ */
 function PublicLayout() {
   const { pathname } = useLocation()
   const path = pathname.replace(/\/+$/, '') || publicPaths.landing
-  // 비로그인 검색 흐름(검색·공고 상세·원문 질문)은 헤더·검색 탭이 고정된 자체 레이아웃을 씁니다.
+  // 비로그인 검색 흐름(검색·공고 상세·원문 질문)은 헤더·검색 탭이 위에 붙는 자체 레이아웃을 씁니다.
   const inSearchFlow = path === publicPaths.landing || path === publicPaths.supportProgramDetail || path === publicPaths.supportProgramQuestion
   return (
-    <div className={inSearchFlow ? 'flex h-dvh flex-col overflow-hidden bg-white' : undefined}>
+    <div className={inSearchFlow ? 'flex min-h-dvh flex-col bg-white' : undefined}>
       {inSearchFlow ? null : <AppHeader />}
       <Outlet />
     </div>

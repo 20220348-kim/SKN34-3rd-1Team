@@ -32,18 +32,20 @@ export function SupportProgramSearchPage({ layout = 'landing' }: { layout?: Chat
     contentRef.current?.querySelector<HTMLTextAreaElement>('textarea[aria-label="지원사업 검색어"]')?.focus()
   }
   const searchTabs = <SearchModeTabs isFilter={isFilter} onSelect={select} />
-  const panels = <div ref={contentRef} className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-    <div role="tabpanel" id="search-panel-0" aria-labelledby="search-tab-0" hidden={isFilter} className={isFilter ? 'hidden' : 'flex min-h-0 flex-1 flex-col'}>
+  // 스크롤은 껍데기(로그인은 작업 칸, 비로그인은 문서)가 맡으므로 패널 안에는 스크롤 영역을 두지 않습니다.
+  const panels = <div ref={contentRef} className="flex min-w-0 flex-1 flex-col">
+    <div role="tabpanel" id="search-panel-0" aria-labelledby="search-tab-0" hidden={isFilter} className={isFilter ? 'hidden' : 'flex flex-1 flex-col'}>
       <ChatPage layout={layout} />
     </div>
-    <div role="tabpanel" id="search-panel-1" aria-labelledby="search-tab-1" hidden={!isFilter} className={!isFilter ? 'hidden' : 'flex min-h-0 flex-1 flex-col'}>
+    <div role="tabpanel" id="search-panel-1" aria-labelledby="search-tab-1" hidden={!isFilter} className={!isFilter ? 'hidden' : 'flex flex-1 flex-col'}>
       {isFilter ? <SupportProgramCatalogPanel /> : null}
     </div>
   </div>
 
   return isGuest ? <GuestSearchLayout showConversationPanel={hasConversation && !isFilter} searchTabs={searchTabs} onNewChat={startNewChat}>{panels}</GuestSearchLayout>
-    : <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-      <div className="flex shrink-0 justify-center bg-white px-4 pt-3 pb-2">{searchTabs}</div>
+    : <div className="flex min-w-0 flex-1 flex-col">
+      {/* 다른 작업 화면의 머리글처럼 탭 줄만 위에 붙이고 본문은 작업 칸과 함께 스크롤됩니다. */}
+      <div className="sticky top-0 z-[3] flex shrink-0 justify-center bg-white px-4 pt-3 pb-2">{searchTabs}</div>
       {panels}
     </div>
 }

@@ -5,13 +5,15 @@ function classes(...groups: string[]) {
 // 색상이나 CSS 속성이 아니라 ChatPage에서 맡는 UI 역할을 이름으로 사용합니다.
 // open/closed, user/assistant처럼 화면 상태가 달라지는 경우에는 base 스타일과 variant를 분리합니다.
 export const chatPageStyles = {
-  guestTimeline: 'relative mx-auto min-h-0 w-[min(860px,calc(100%_-_4rem))] flex-1 overflow-y-auto overscroll-contain pt-8 pb-8 max-chat:w-[calc(100%_-_2rem)] max-chat:pt-4 [&>section]:ml-0 [&>section]:w-full',
+  // 대화 내역은 껍데기와 함께 스크롤됩니다. 대화가 짧아도 입력창이 화면 아래에 오도록 남는 높이를 차지합니다.
+  guestTimeline: 'relative mx-auto w-[min(860px,calc(100%_-_4rem))] flex-1 pt-8 pb-8 max-chat:w-[calc(100%_-_2rem)] max-chat:pt-4 [&>section]:ml-0 [&>section]:w-full',
   guestMessageRow: 'mb-10 flex min-w-0 gap-3 max-chat:mb-7',
   guestUserContent: 'min-w-0 max-w-[80%] [overflow-wrap:anywhere] max-chat:max-w-[90%]',
   guestAssistantContent: 'min-w-0 w-full [overflow-wrap:anywhere]',
   guestUserBubble: 'whitespace-pre-wrap rounded-3xl bg-[#f1f3f2] px-5 py-3.5 text-[0.95rem] leading-7 text-app-ink',
   guestAssistantBubble: 'whitespace-pre-wrap rounded-xl py-3 text-[0.95rem] leading-8 text-app-ink',
-  guestComposerDock: 'mx-auto mt-auto max-h-[50%] w-[min(860px,calc(100%_-_4rem))] shrink-0 overflow-y-auto overscroll-contain pt-3 pb-[max(0.8rem,env(safe-area-inset-bottom))] max-chat:w-[calc(100%_-_1.5rem)]',
+  // 입력창은 스크롤 껍데기의 아래에 붙습니다. 대화가 비치지 않도록 흰 배경을 깝니다.
+  guestComposerDock: 'sticky bottom-0 z-[2] mx-auto mt-auto w-[min(860px,calc(100%_-_4rem))] shrink-0 bg-white pt-3 pb-[max(0.8rem,env(safe-area-inset-bottom))] max-chat:w-[calc(100%_-_1.5rem)]',
   guestComposerGroup: 'relative rounded-[1.8rem] border border-[#dce2de] bg-white shadow-[0_2px_12px_rgb(0_0_0_/_4%)] focus-within:border-[#7b9c88] focus-within:ring-2 focus-within:ring-brand-primary/10',
   guestComposerInput: 'block max-h-40 min-h-15 w-full resize-none rounded-[1.8rem] border-0 bg-transparent py-[1.05rem] pr-17 pl-6 text-base leading-7 text-app-ink placeholder:text-sample-muted outline-0 [field-sizing:content] max-chat:pl-4 max-chat:text-base',
   guestSubmitButton: 'absolute right-2.5 bottom-2.5 grid size-10 cursor-pointer place-items-center rounded-full bg-[#202124] text-white hover:bg-black focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-primary disabled:cursor-not-allowed disabled:bg-[#e9edeb] disabled:text-[#959e98]',
@@ -38,24 +40,24 @@ export const chatPageStyles = {
   proposalCancelButton: 'min-h-10 cursor-pointer rounded-full border border-sample-border bg-white px-3.5 py-2 text-xs font-semibold text-sample-muted hover:bg-[#f5f6f7] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-primary',
   conditionsHint: 'my-2 text-xs leading-relaxed text-sample-muted',
   searchSnapshot: 'mt-2 text-xs leading-relaxed text-sample-muted',
-  page: 'flex min-h-0 flex-1 flex-col overflow-hidden bg-white text-app-ink',
+  // 화면 안쪽에 스크롤 영역을 두지 않습니다. 스크롤은 껍데기(비로그인은 문서, 로그인은 작업 칸)가 맡습니다.
+  page: 'flex flex-1 flex-col bg-white text-app-ink',
   workspace:
-    'flex min-h-0 min-w-0 flex-1 flex-col',
-  introWorkspace: 'overflow-y-auto pb-10',
-  conversationWorkspace: 'overflow-hidden',
-  // 로그인 뒤 작업 화면은 사이드바 껍데기가 정한 높이를 그대로 채웁니다.
-  // 대화만 안에서 스크롤되고 입력창은 화면 아래에 붙어 있게 하려면 높이가 늘어나면 안 됩니다.
-  workspacePage: 'relative flex min-h-0 flex-1 flex-col bg-white text-app-ink',
-  workspaceShell: 'flex min-h-0 min-w-0 flex-1 flex-col',
+    'flex min-w-0 flex-1 flex-col',
+  introWorkspace: 'pb-10',
+  conversationWorkspace: '',
+  // 로그인 뒤 작업 화면은 작업 칸의 남는 높이를 채우고, 대화가 길어지면 작업 칸과 함께 스크롤됩니다.
+  workspacePage: 'relative flex flex-1 flex-col bg-white text-app-ink',
+  workspaceShell: 'flex min-w-0 flex-1 flex-col',
   timeline: classes(
     'relative mx-auto min-h-0 w-[min(1040px,calc(100%_-_3rem))] flex-1 overflow-y-auto overscroll-contain px-1 pt-8 pb-6',
     'max-chat:w-[calc(100%_-_1rem)] max-chat:pt-5',
   ),
   emptyTimeline: 'sr-only',
-  // 작업 화면에는 머리말이 없으므로 첫 메시지가 화면 맨 위에 붙지 않도록 위쪽 여백을 넉넉히 둡니다.
+  // 작업 화면에는 머리말이 없으므로 첫 메시지가 탭 줄 바로 아래에 붙지 않도록 위쪽 여백을 넉넉히 둡니다.
   workspaceTimeline: classes(
-    'mx-auto min-h-0 w-[min(860px,calc(100%_-_2rem))] flex-1 overflow-y-auto pt-16 pb-6',
-    'max-chat:w-[calc(100%_-_1.2rem)] max-chat:overflow-visible max-chat:pt-10',
+    'mx-auto w-[min(860px,calc(100%_-_2rem))] flex-1 pt-16 pb-6',
+    'max-chat:w-[calc(100%_-_1.2rem)] max-chat:pt-10',
   ),
   messageRow: 'mb-[1.8rem] flex gap-3',
   userMessageRow: 'justify-end',
@@ -114,8 +116,9 @@ export const chatPageStyles = {
   dockedComposerFooter: '[@media(max-height:500px)]:min-h-13 [@media(max-height:500px)]:pb-3',
   dockedComposerHint: '[@media(max-height:500px)]:sr-only',
   suggestions: 'mx-auto flex w-[min(1040px,calc(100%_-_3rem))] flex-wrap justify-center gap-2.5 max-chat:w-[calc(100%_-_2rem)]',
+  // 입력창은 작업 칸의 아래에 붙습니다. 대화가 비치지 않도록 흰 배경을 깝니다.
   composerWorkspace:
-    'mx-auto mt-auto w-[min(860px,calc(100%_-_2rem))] pt-2 pb-6 max-chat:w-[calc(100%_-_1.2rem)]',
+    'sticky bottom-0 z-[2] mx-auto mt-auto w-[min(860px,calc(100%_-_2rem))] bg-white pt-2 pb-6 max-chat:w-[calc(100%_-_1.2rem)]',
   composerInputGroup: 'relative overflow-hidden rounded-[1.65rem] border border-[#b8dfc9] bg-white shadow-[0_3px_5px_rgb(23_68_45_/_5%),0_16px_48px_rgb(23_68_45_/_3%)] focus-within:border-[#23805a] focus-within:ring-2 focus-within:ring-[#23805a]/10',
   searchContextControls: 'mb-2',
   currentConditions: 'm-0 min-w-0 flex-1 text-xs leading-relaxed text-sample-muted [overflow-wrap:anywhere]',

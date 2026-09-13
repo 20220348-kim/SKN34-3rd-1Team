@@ -26,7 +26,7 @@ export const appHeaderStyles = {
     'inline-flex min-h-8 items-center rounded-lg text-[0.83rem] font-semibold whitespace-nowrap text-sample-muted no-underline hover:text-brand-primary',
     'aria-[current=page]:text-brand-primary aria-[current=page]:underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-brand-primary max-[400px]:text-[0.68rem] max-[400px]:tracking-[-0.02em]',
   ),
-  landingAccountLinks: 'flex shrink-0 items-center justify-end gap-2 max-[900px]:col-start-2 max-[900px]:row-start-1 max-[400px]:gap-1.5',
+  landingAccountLinks: 'relative flex shrink-0 items-center justify-end gap-2 max-[900px]:col-start-2 max-[900px]:row-start-1 max-[400px]:gap-1.5',
   landingAccountButton: classes(
     'inline-flex min-h-9 items-center justify-center rounded-full bg-brand-primary px-4 py-2 text-[0.78rem] font-bold whitespace-nowrap text-white no-underline hover:bg-[#066538]',
     'focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-brand-primary max-[400px]:px-2.5 max-[400px]:text-[0.7rem]',
@@ -49,7 +49,7 @@ export const appHeaderStyles = {
     'border-sample-border bg-white text-sample-muted hover:bg-[#f6f7f8] hover:text-brand-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-primary',
     'max-chat:px-[0.6rem] max-chat:text-[0.66rem]',
   ),
-  /* 로그인 뒤 계정 영역입니다. 개발 로그인 버튼은 로그인 버튼 아래에 겹쳐 놓아 헤더 높이를 바꾸지 않습니다. */
+  /* 계정 영역입니다. 개발 로그인 버튼은 알약 아래에 겹쳐 놓아 헤더 높이를 바꾸지 않되, 오른쪽 끝에서 조금 띄웁니다. */
   account: 'relative flex items-center gap-2',
   accountEmail: 'max-w-[12rem] truncate text-[0.74rem] font-bold text-app-ink max-chat:hidden',
   loginButton: classes(
@@ -61,7 +61,7 @@ export const appHeaderStyles = {
     'border-sample-border bg-white text-sample-muted hover:bg-[#f6f7f8] hover:text-brand-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-primary',
     'max-chat:px-[0.6rem] max-chat:text-[0.66rem]',
   ),
-  devLogin: 'absolute top-[calc(100%+0.15rem)] right-0 flex items-center gap-2 whitespace-nowrap',
+  devLogin: 'absolute top-[calc(100%+0.35rem)] right-4 flex items-center gap-2 whitespace-nowrap',
   devLoginButton: classes(
     'cursor-pointer border-0 bg-transparent p-0 text-[0.62rem] font-bold text-sample-muted underline underline-offset-2',
     'hover:text-brand-primary disabled:cursor-not-allowed disabled:opacity-50',
