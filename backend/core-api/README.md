@@ -131,6 +131,35 @@ UNKNOWN은 같은 검토의 새 실행도 차단합니다. [한도·만료·재�
 | `DELETE /api/v1/application-preparations/{id}` | 본인 준비 건 삭제. 확인 사실·AI 실행 기록은 FK cascade 삭제하고 공용 양식 스냅샷은 유지 |
 | `POST /api/v1/application-preparations/{id}/sections/{sectionKey}/messages` | 현재 입력 revision과 요청 키로 사용자 답변을 AI가 해석해 확인 전 사실·미정 제안 반환 |
 | `PUT /api/v1/application-preparations/{id}/sections/{sectionKey}/inputs` | 사용자가 확인한 문항 사실 전체 스냅샷 저장. revision 충돌은 409 |
+| `POST /api/v1/application-preparations/{id}/sections/{sectionKey}/drafts` | 필수 답변 확인 후 문항 초안 생성. `expectedRevision`, nullable `expectedVersionId`, UUID `requestKey` |
+| `PUT /api/v1/application-preparations/{id}/sections/{sectionKey}/content` | `expectedRevision`, `expectedVersionId`, `content`로 새 사용자 수정본 저장 |
+| `POST /api/v1/application-preparations/{id}/sections/{sectionKey}/confirmations` | `expectedRevision`, `expectedVersionId`에 해당하는 최신 작성본을 사용자 확인 |
+
+현재 화면은 아래 문서 API를 사용합니다. 위 문항별 텍스트 생성·수정·확인 API는 현재 UI에서 호출하지 않는 기존 계약입니다.
+
+| 문서 API | 동작 |
+|---|---|
+| `GET /api/v1/application-preparations/{id}/documents` | 현재 입력 revision의 생성 파일 메타데이터 목록 |
+| `POST /api/v1/application-preparations/{id}/documents` | `expectedRevision`으로 원본 양식 기입 및 같은 형식 파일 저장 |
+| `GET /api/v1/application-preparations/{id}/documents/{fileId}/download` | 소유자 확인 후 binary attachment·no-store 반환 |
+
+V32은 원본 SHA-256·기입 위치 JSON·결과 binary를 준비 건/revision별로 보관합니다. 입력 변경 중 생성된 파일은 409로 저장을 거절하며 준비 건 삭제 시 cascade 삭제됩니다. HWP는 hwplib 1.1.11, HWPX는 ZIP/XML, PDF는 PDFBox의 편집 가능한 AcroForm과 OFL NanumGothic을 사용합니다. 원본 첨부는 기존 공식 제공처 Client로 재수집하고 해시를 대조합니다. 임의 URL을 받지 않습니다.
+
+HWP/HWPX의 파란 글씨는 `exampleText` 후보로 AI에 전달합니다. AI가 기입란의 예시·작성 힌트로 선택한 `clearExampleTargetIds`만 제거하고, 검은 항목명과 선택하지 않은 제목은 유지한 뒤 답변을 검은 글씨로 기입합니다. 색상만으로 모든 파란 글씨를 삭제하지 않습니다. 범위 주석이 있는 HWP 문단의 예시 삭제는 지원하지 않으며 명시적인 오류를 반환합니다. PDF의 기존 예시 제거는 지원하지 않습니다.
+V33은 생성기 버전을 고유키에 추가합니다. 다른 생성기 버전의 결과는 재사용하지 않으며, 기존 파일을 삭제하지 않고 같은 답변 revision으로 새 파일을 생성합니다. 이전 파일 ID의 소유자 다운로드는 유지됩니다.
+
+팀 main의 V29(가입 이메일 인증)·V30(신청 진행 관리)과의 번호 충돌을 해결하기 위해 신청 문서 migration은 V31(텍스트 작성본)·V32(파일)·V33(생성기 버전)으로 이동했습니다. SQL 내용은 변경하지 않았습니다. 이전 skn-140의 V29~V31을 이미 적용한 개발 DB는 번호 변경만으로 재기동할 수 없습니다. 해당 DB는 백업 및 `flyway_schema_history`의 script/checksum과 실제 스키마를 확인한 별도 이력 이관이 필요합니다. 단순 `repair`나 데이터 볼륨 삭제로 처리하지 않으며, 신규 DB 또는 팀 main의 V30까지 적용된 DB가 이 migration 순서의 기준입니다.
+
+현재 생성기 버전은 3입니다. HWP의 실제 체크박스/라디오 컨트롤을 `CHECKBOX` 대상으로 읽고, 값과 유일하게 일치하는 선택지는 Core가 직접 연결합니다. 나머지 위치는 AI가 선택합니다. 같은 선택 그룹의 기존 체크를 해제하고 해당 옵션만 선택하며, 서로 다른 답변을 같은 문단에 합치지 않습니다. HWP/HWPX의 밑줄 빈칸은 제자리 치환하고, 빈 문단·콜론으로 끝나는 항목명 외의 검은 본문에는 답변을 덧붙이지 않습니다.
+HWP는 답변의 기울임·취소선·자간·장평을 정리하고, 글자 폭과 셀 너비로 줄 배치 레코드를 재작성합니다. 셀 높이가 부족하면 같은 행과 이를 걸치는 셀 높이를 함께 늘립니다. 이는 한글의 전체 페이지 조판 엔진을 대체하지 않으므로 복잡한 개체·페이지 배치는 실제 한글에서 확인해야 합니다. `UNKNOWN`과 미입력 값은 임의 칸에 ‘미정’으로 쓰지 않고 결과 화면에서 미기입 항목으로 안내합니다.
+
+V31는 기존 텍스트 초안 실행과 작성본 버전을 저장합니다. 상세 응답 `contents`는 최신 ID부터 모든 작성본의 내용·종류·입력 revision·
+생성 시간·사용자 확인 시간·`stale`을 반환합니다. 같은 요청 키의 성공한 초안 실행은 다시 호출하지 않고 현재 상세를 반환하며,
+같은 키의 다른 요청 또는 미완료·실패 실행은 409입니다. 실패 후 새 요청 키로 명시적으로 재시도합니다.
+초안 실행 중 입력이나 작성본이 변경되면 결과를 현재 작성본에 적용하지 않고 409를 반환합니다. DB transaction에는 AI 호출을 넣지 않습니다.
+사용자 수정은 원본 사실 스냅샷을 유지하므로 이전 입력 기준의 문안을 수정하는 것만으로 현재 입력 확인 상태가 되지 않습니다.
+입력이 변경된 문항은 현재 답변으로 새 초안을 생성한 뒤 필요한 수정과 확인을 진행합니다. 작성본 내용은 최대 15,000자이며
+확인·수정·조회는 AI를 호출하지 않습니다. 준비 건 삭제 시 작성본과 초안 실행도 cascade 삭제됩니다.
 
 `ApplicationFormDiscoveryOutboxScheduler → ApplicationFormDiscoveryQueueClient → RabbitMQ → ApplicationFormDiscoveryJobConsumer`
 가 MySQL 실행권을 선점하고 기존 수집·추출 Service를 실행합니다. V26 작업 행이 Outbox이며 UNKNOWN은 새 분석도 차단합니다.

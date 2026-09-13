@@ -23,10 +23,40 @@ import ai.govbiz.core.applicationpreparation.domain.ExtractedApplicationFormFiel
 import ai.govbiz.core.applicationpreparation.domain.ExtractedApplicationFormSection
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Component
+import ai.govbiz.core.applicationpreparation.domain.ApplicationDraftInput
+import ai.govbiz.core.applicationpreparation.domain.ApplicationDraftOutput
+import ai.govbiz.core.applicationpreparation.client.ai.dto.AiApplicationDraftRequest
+import ai.govbiz.core.applicationpreparation.client.ai.dto.AI_APPLICATION_DRAFT_CONTRACT_VERSION
 
 /** AI 계약 생성·응답 검증·내부 모델 변환을 담당하며 DB나 상위 Service를 호출하지 않습니다. */
 @Component
 class AiApplicationPreparationFacade(private val client: AiApplicationPreparationClient) {
+    fun draft(input: ApplicationDraftInput): ApplicationDraftOutput = try {
+        val configuration = client.draftConfiguration()
+        require(configuration.contractVersion == AI_APPLICATION_DRAFT_CONTRACT_VERSION)
+        require(configuration.model.isNotBlank() && configuration.model.length <= 200)
+        require(Regex("sha256:[0-9a-f]{64}").matches(configuration.promptVersion))
+        val output = client.draft(AiApplicationDraftRequest(
+            preparationId = input.preparationId, inputRevision = input.inputRevision, formVersionId = input.formVersionId,
+            sectionKey = input.section.key, serviceField = input.serviceField,
+            sectionTitle = input.section.title, sectionDescription = input.section.description,
+            currentFacts = input.facts.map { AiApplicationPreparationFactRequest(it.fieldKey, it.status, it.value) },
+            fieldOptions = input.section.fields.map { AiApplicationPreparationFieldRequest(it.key, it.label, it.guidance, it.required) },
+        ))
+        require(output.contractVersion == configuration.contractVersion && output.model == configuration.model && output.promptVersion == configuration.promptVersion)
+        require(output.preparationId == input.preparationId && output.inputRevision == input.inputRevision && output.formVersionId == input.formVersionId && output.sectionKey == input.section.key)
+        require(output.content.isNotBlank() && output.content.length <= 15000)
+        require(output.content.none { Character.isISOControl(it) && it !in "\n\r\t" })
+        val provided = input.facts.filter { it.status == "PROVIDED" }.map { it.fieldKey }.toSet()
+        require(output.usedFieldKeys.toSet() == provided && output.usedFieldKeys.size == provided.size)
+        require(input.facts.filter { it.status == "UNKNOWN" }.all { fact ->
+            output.content.contains("${input.section.fields.first { it.key == fact.fieldKey }.label}: 미정")
+        })
+        ApplicationDraftOutput(output.content, output.model, output.promptVersion, output.usedFieldKeys)
+    } catch (error: IllegalArgumentException) {
+        throw AiServiceCallException.invalidResponse("Application draft response violated its contract", error)
+    }
+
     fun discoveryConfiguration(): ApplicationFormDiscoveryConfiguration = try {
         val payload = client.discoveryConfiguration()
         ApplicationFormDiscoveryConfiguration(payload.contractVersion, payload.model, payload.promptVersion).also {

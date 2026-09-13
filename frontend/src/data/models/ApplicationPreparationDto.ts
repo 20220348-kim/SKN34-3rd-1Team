@@ -112,6 +112,16 @@ export const applicationPreparationPageSchema = z.object({
   ),
   nextBeforeId: id.nullable(),
 })
+const contentVersion = z.object({
+  id,
+  sectionKey: z.string().regex(/^[a-z][a-z0-9-]{0,63}$/),
+  inputRevision: id,
+  kind: z.enum(['AI_DRAFT', 'USER_EDIT']),
+  content: z.string().min(1).max(15000),
+  stale: z.boolean(),
+  createdAt: time,
+  confirmedAt: time.nullable(),
+})
 export const applicationPreparationSchema = z.object({
   id,
   inputRevision: id,
@@ -122,7 +132,12 @@ export const applicationPreparationSchema = z.object({
   createdAt: time,
   updatedAt: time,
   form: applicationFormSchema,
+  contents: z.array(contentVersion),
 }).superRefine((value, context) => {
+  const sections = new Set(value.form.sections.map((section) => section.key))
+  if (new Set(value.contents.map((version) => version.id)).size !== value.contents.length || value.contents.some((version) => !sections.has(version.sectionKey) || version.inputRevision > value.inputRevision)) {
+    context.addIssue({ code: 'custom', message: '작성본과 현재 신청 준비가 일치하지 않습니다.' })
+  }
   if (!value.form.supportedServiceFields.includes(value.serviceField)) {
     context.addIssue({ code: 'custom', message: '지원 분야와 양식 계약이 일치하지 않습니다.' })
   }

@@ -21,7 +21,7 @@ export async function applicationPreparationRequest<T>(
   const timer = setTimeout(() => {
     timedOut = true
     abort()
-  }, path.endsWith('/messages') ? 45_000 : 15_000)
+  }, path.endsWith('/documents') && method === 'POST' ? 120_000 : path.endsWith('/messages') || path.endsWith('/drafts') ? 45_000 : 15_000)
   try {
     const response = await fetch(`${getCoreApiBaseUrl()}/api/v1/application-preparations${path}`, {
       method,
@@ -59,5 +59,26 @@ export async function applicationPreparationRequest<T>(
   } finally {
     clearTimeout(timer)
     signal?.removeEventListener('abort', abort)
+  }
+}
+
+export async function downloadApplicationDocument(id: number, fileId: number, signal?: AbortSignal): Promise<Blob> {
+  const timeout = AbortSignal.timeout(60_000)
+  try {
+    const response = await fetch(`${getCoreApiBaseUrl()}/api/v1/application-preparations/${id}/documents/${fileId}/download`, {
+      credentials: 'include', cache: 'no-store', signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
+    })
+    if (!response.ok) {
+      const problem = applicationPreparationProblemSchema.safeParse(await response.json().catch(() => null))
+      throw new ApplicationPreparationError(response.status, problem.success ? problem.data.code : 'REQUEST_FAILED')
+    }
+    const type = response.headers.get('content-type')?.split(';')[0]
+    if (!type || !['application/pdf', 'application/x-hwp', 'application/hwp+zip'].includes(type)) throw new ApplicationPreparationError(502, 'INVALID_RESPONSE')
+    const blob = await response.blob()
+    if (blob.size === 0 || blob.size > 32 * 1024 * 1024) throw new ApplicationPreparationError(502, 'INVALID_RESPONSE')
+    return blob
+  } catch (error) {
+    if (signal?.aborted || error instanceof ApplicationPreparationError) throw error
+    throw new ApplicationPreparationError(timeout.aborted ? 504 : 0, timeout.aborted ? 'REQUEST_TIMEOUT' : 'REQUEST_FAILED')
   }
 }

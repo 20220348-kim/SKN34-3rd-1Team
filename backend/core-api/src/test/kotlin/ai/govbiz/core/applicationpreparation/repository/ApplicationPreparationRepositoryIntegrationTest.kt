@@ -23,6 +23,14 @@ import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.context.annotation.Import
 import org.springframework.dao.DataAccessException
 import org.springframework.jdbc.core.JdbcTemplate
+import ai.govbiz.core.applicationpreparation.domain.ApplicationContentVersion
+import ai.govbiz.core.applicationpreparation.domain.ApplicationDraftInput
+import ai.govbiz.core.applicationpreparation.domain.ApplicationDraftOutput
+import ai.govbiz.core.applicationpreparation.domain.ApplicationFormSectionDefinition
+import ai.govbiz.core.applicationpreparation.domain.ApplicationFormFieldDefinition
+import ai.govbiz.core.applicationpreparation.domain.exception.ApplicationPreparationRevisionConflictException
+import ai.govbiz.core.applicationpreparation.domain.exception.ApplicationPreparationNotFoundException
+import ai.govbiz.core.applicationpreparation.domain.exception.ApplicationPreparationRunConflictException
 
 @SpringBootTest(properties = [
     "app.account.jwt-secret=test-jwt-secret-0123456789abcdef0123456789",
@@ -34,6 +42,8 @@ import org.springframework.jdbc.core.JdbcTemplate
 class ApplicationPreparationRepositoryIntegrationTest {
     @Autowired private lateinit var repository: ApplicationPreparationRepository
     @Autowired private lateinit var inputs: ApplicationPreparationInputRepository
+    @Autowired private lateinit var contents: ApplicationPreparationContentRepository
+    @Autowired private lateinit var documents: ApplicationDocumentRepository
     @Autowired private lateinit var accounts: AccountRepository
     @Autowired private lateinit var jdbc: JdbcTemplate
     private var ownerId = 0L
@@ -162,6 +172,120 @@ class ApplicationPreparationRepositoryIntegrationTest {
     private fun createAccount(): Long = accounts.createAccount(
         NewAccount("application-${UUID.randomUUID()}@example.test", "test-password-hash", LocalDateTime.of(2026, 9, 11, 0, 0)),
     ).id
+
+    private fun draftInput(): ApplicationDraftInput {
+        val created = repository.create(ownerId, draft())
+        inputs.replaceOwned(ownerId, created.id, "company-overview", 1, listOf(
+            NewConfirmedApplicationFact("company-name", ApplicationFactStatus.PROVIDED, "새봄 & 연구소 😀", "회사명"),
+            NewConfirmedApplicationFact("contact-person", ApplicationFactStatus.UNKNOWN, null, "미정"),
+        ))
+        return ApplicationDraftInput(created.id, 2, created.draft.formVersionId, "TECHNICAL_SUPPORT",
+            ApplicationFormSectionDefinition("company-overview", "기업 개요", "문단 1", "기업 정보", listOf(
+                ApplicationFormFieldDefinition("company-name", "기업명", "공식 명칭", true),
+                ApplicationFormFieldDefinition("contact-person", "담당자", "이름", true),
+            )), ApplicationContentVersion.snapshot(inputs.listOwnedFacts(ownerId, created.id)))
+    }
+
+    @Test
+    fun storesNativeFilesByRevisionWithOwnerIsolationConflictRollbackAndCascadeDeletion() {
+        val preparation = repository.create(ownerId, draft())
+        val file = documents.save(ownerId, preparation.id, 1, "신청서 & 초안.hwpx", "application/hwp+zip", byteArrayOf(80, 75, 3, 4), "a".repeat(64), emptyList())
+        assertEquals(file.id, documents.save(ownerId, preparation.id, 1, "중복.hwpx", "application/hwp+zip", byteArrayOf(1), "a".repeat(64), emptyList()).id)
+        assertNull(documents.findOwned(otherId, preparation.id, file.id))
+        assertEquals("신청서 & 초안.hwpx", documents.findRevision(ownerId, preparation.id, 1)!!.fileName)
+        org.junit.jupiter.api.Assertions.assertArrayEquals(file.bytes, documents.findOwned(ownerId, preparation.id, file.id)!!.bytes)
+        assertThrows(ApplicationPreparationRevisionConflictException::class.java) {
+            documents.save(ownerId, preparation.id, 2, "실패.hwpx", "application/hwp+zip", byteArrayOf(1), "a".repeat(64), emptyList())
+        }
+        assertNull(documents.findRevision(ownerId, preparation.id, 2))
+        repository.deleteOwned(ownerId, preparation.id)
+        assertNull(documents.findOwned(ownerId, preparation.id, file.id))
+        assertEquals(0, jdbc.queryForObject("SELECT COUNT(*) FROM application_document_file WHERE preparation_id = ?", Int::class.java, preparation.id))
+    }
+
+    private fun draftOutput(content: String = "새봄 & 연구소 😀\n담당자: 미정") =
+        ApplicationDraftOutput(content, "test-model", "sha256:" + "a".repeat(64), listOf("company-name"))
+
+    @Test
+    fun regeneratesLegacyFilesWithoutLosingTheirOwnedDownloads() {
+        val preparation = repository.create(ownerId, draft())
+        val legacy = documents.save(ownerId, preparation.id, 1, "이전.hwp", "application/x-hwp", byteArrayOf(1), "a".repeat(64), emptyList())
+        jdbc.update("UPDATE application_document_file SET generator_version = 1 WHERE id = ?", legacy.id)
+        assertNull(documents.findRevision(ownerId, preparation.id, 1))
+        val current = documents.save(ownerId, preparation.id, 1, "수정.hwp", "application/x-hwp", byteArrayOf(2), "a".repeat(64), emptyList(), listOf("s0-p1"))
+        assertTrue(current.id != legacy.id)
+        assertEquals(current.id, documents.findRevision(ownerId, preparation.id, 1)!!.id)
+        assertEquals(legacy.id, documents.findOwned(ownerId, preparation.id, legacy.id)!!.id)
+        assertEquals("s0-p1", jdbc.queryForObject("SELECT JSON_UNQUOTE(JSON_EXTRACT(placements_json, '$.clearExampleTargetIds[0]')) FROM application_document_file WHERE id = ?", String::class.java, current.id))
+    }
+
+    @Test
+    fun preservesVersionsConfirmationAndSectionSpecificInputFreshness() {
+        val input = draftInput()
+        val key = UUID.randomUUID().toString()
+        val run = contents.reserve(ownerId, input, null, key)
+        assertThrows(ApplicationPreparationRunConflictException::class.java) { contents.reserve(ownerId, input, null, key) }
+        assertTrue(contents.complete(ownerId, run.id, input, null, draftOutput()))
+        val first = contents.listOwned(ownerId, input.preparationId).single()
+        assertNull(first.confirmedAt)
+        assertEquals(input.facts, first.facts)
+        assertTrue(contents.reserve(ownerId, input, null, key).completed)
+        contents.save(ownerId, input.preparationId, input.section.key, 2, first.id, "사용자가 고친 문안 😀")
+        val second = contents.listOwned(ownerId, input.preparationId).first()
+        assertEquals("USER_EDIT", second.kind)
+        assertThrows(ApplicationPreparationRevisionConflictException::class.java) {
+            contents.save(ownerId, input.preparationId, input.section.key, 2, first.id, "덮어쓰기")
+        }
+        contents.confirm(ownerId, input.preparationId, input.section.key, 2, second.id)
+        val confirmed = contents.listOwned(ownerId, input.preparationId).first()
+        assertTrue(confirmed.confirmedAt != null)
+        inputs.replaceOwned(ownerId, input.preparationId, "voucher-plan", 2, emptyList())
+        assertTrue(!confirmed.isStale(inputs.listOwnedFacts(ownerId, input.preparationId)))
+        inputs.replaceOwned(ownerId, input.preparationId, input.section.key, 3, emptyList())
+        assertTrue(confirmed.isStale(inputs.listOwnedFacts(ownerId, input.preparationId)))
+        assertThrows(ApplicationPreparationRevisionConflictException::class.java) {
+            contents.confirm(ownerId, input.preparationId, input.section.key, 4, second.id)
+        }
+        assertEquals(first, contents.listOwned(ownerId, input.preparationId).last())
+        assertTrue(contents.listOwned(otherId, input.preparationId).isEmpty())
+        assertThrows(ApplicationPreparationNotFoundException::class.java) { contents.save(otherId, input.preparationId, input.section.key, 4, second.id, "다른 계정") }
+        assertThrows(ApplicationPreparationNotFoundException::class.java) { contents.confirm(otherId, input.preparationId, input.section.key, 4, second.id) }
+        assertThrows(ApplicationPreparationNotFoundException::class.java) { contents.reserve(otherId, input, null, UUID.randomUUID().toString()) }
+        repository.deleteOwned(ownerId, input.preparationId)
+        assertTrue(contents.listOwned(ownerId, input.preparationId).isEmpty())
+        assertEquals(0, jdbc.queryForObject("SELECT COUNT(*) FROM application_preparation_draft_run WHERE preparation_id = ?", Int::class.java, input.preparationId))
+    }
+
+    @Test
+    fun lateDraftCannotOverwriteChangedInputsOrUserContentAndCompletionRollsBackAtomically() {
+        val input = draftInput()
+        val run = contents.reserve(ownerId, input, null, UUID.randomUUID().toString())
+        assertThrows(DataAccessException::class.java) { contents.complete(ownerId, run.id, input, null, draftOutput("가".repeat(15001))) }
+        assertEquals("RUNNING", jdbc.queryForObject("SELECT run_status FROM application_preparation_draft_run WHERE id = ?", String::class.java, run.id))
+        assertTrue(contents.listOwned(ownerId, input.preparationId).isEmpty())
+        assertTrue(contents.complete(ownerId, run.id, input, null, draftOutput()))
+        val first = contents.listOwned(ownerId, input.preparationId).first()
+        val concurrent = contents.reserve(ownerId, input, first.id, UUID.randomUUID().toString())
+        contents.save(ownerId, input.preparationId, input.section.key, 2, first.id, "생성 중 사용자 수정")
+        assertTrue(!contents.complete(ownerId, concurrent.id, input, first.id, draftOutput()))
+        val latest = contents.listOwned(ownerId, input.preparationId).first()
+        assertEquals("생성 중 사용자 수정", latest.content)
+        val changed = contents.reserve(ownerId, input, latest.id, UUID.randomUUID().toString())
+        inputs.replaceOwned(ownerId, input.preparationId, input.section.key, 2, emptyList())
+        assertTrue(!contents.complete(ownerId, changed.id, input, latest.id, draftOutput()))
+        assertEquals(2, contents.listOwned(ownerId, input.preparationId).size)
+    }
+
+    @Test
+    fun failedDraftKeepsCurrentContentAndRequiresANewRequestKey() {
+        val input = draftInput()
+        val key = UUID.randomUUID().toString()
+        val run = contents.reserve(ownerId, input, null, key)
+        contents.fail(run.id)
+        assertThrows(ApplicationPreparationRunConflictException::class.java) { contents.reserve(ownerId, input, null, key) }
+        assertTrue(contents.listOwned(ownerId, input.preparationId).isEmpty())
+        assertTrue(!contents.reserve(ownerId, input, null, UUID.randomUUID().toString()).completed)
+    }
 
     private fun draft(field: ApplicationServiceField = ApplicationServiceField.TECHNICAL_SUPPORT) = NewApplicationPreparation(
         "BIZINFO",

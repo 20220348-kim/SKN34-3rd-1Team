@@ -128,6 +128,7 @@ data class ApplicationPreparationResponse(
     val createdAt: OffsetDateTime,
     val updatedAt: OffsetDateTime,
     val form: ApplicationFormResponse,
+    val contents: List<ApplicationContentVersionResponse>,
 ) {
     companion object {
         fun from(result: ApplicationPreparationDetailResult) = ApplicationPreparationResponse(
@@ -146,6 +147,7 @@ data class ApplicationPreparationResponse(
                     ApplicationFormSectionResponse.from(section, result.facts.filter { it.sectionKey == section.key })
                 },
             ),
+            result.contents.map { ApplicationContentVersionResponse.from(it, result.facts) },
         )
     }
 }
@@ -222,3 +224,20 @@ data class ApplicationPreparationPageResponse(
 }
 
 private val SEOUL = ZoneId.of("Asia/Seoul")
+
+data class ApplicationContentVersionResponse(
+    val id: Long,
+    val sectionKey: String,
+    val inputRevision: Long,
+    val kind: String,
+    val content: String,
+    val stale: Boolean,
+    val createdAt: OffsetDateTime,
+    val confirmedAt: OffsetDateTime?,
+) {
+    companion object {
+        fun from(version: ai.govbiz.core.applicationpreparation.domain.ApplicationContentVersion, facts: List<ConfirmedApplicationFact>) =
+            ApplicationContentVersionResponse(version.id, version.sectionKey, version.inputRevision, version.kind, version.content,
+                version.isStale(facts), version.createdAt.atZone(SEOUL).toOffsetDateTime(), version.confirmedAt?.atZone(SEOUL)?.toOffsetDateTime())
+    }
+}

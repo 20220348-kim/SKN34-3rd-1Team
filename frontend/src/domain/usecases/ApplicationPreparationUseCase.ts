@@ -1,5 +1,6 @@
 import { applicationProgressStages, validateNewApplicationPreparation, type InterpretApplicationPreparation, type NewApplicationPreparation, type ReplaceApplicationPreparationInputs, type UpdateApplicationProgress } from '../entities/ApplicationPreparation'
 import type { ApplicationPreparationRepository } from '../repositories/ApplicationPreparationRepository'
+import type { GenerateApplicationDraft, SaveApplicationContent, ConfirmApplicationContent } from '../entities/ApplicationPreparation'
 
 /** 지원 양식 조회와 신청 준비 건 생성·목록·상세는 AI 실행 없이 동작합니다. */
 export class ApplicationPreparationUseCase {
@@ -10,6 +11,19 @@ export class ApplicationPreparationUseCase {
   }
 
   forms(signal?: AbortSignal) { return this.repository.forms(signal) }
+  documents(id: number, signal?: AbortSignal) { return this.repository.documents(id, signal) }
+  generateDocuments(id: number, revision: number, signal?: AbortSignal) { return this.repository.generateDocuments(id, revision, signal) }
+  downloadDocument(id: number, fileId: number, signal?: AbortSignal) { return this.repository.downloadDocument(id, fileId, signal) }
+  generateDraft(id: number, sectionKey: string, input: GenerateApplicationDraft, signal?: AbortSignal) {
+    return this.repository.generateDraft(id, sectionKey, input, signal)
+  }
+  saveContent(id: number, sectionKey: string, input: SaveApplicationContent, signal?: AbortSignal) {
+    if (!input.content.trim() || input.content.length > 15000) throw new Error('작성본은 1~15,000자로 입력해 주세요.')
+    return this.repository.saveContent(id, sectionKey, input, signal)
+  }
+  confirmContent(id: number, sectionKey: string, input: ConfirmApplicationContent, signal?: AbortSignal) {
+    return this.repository.confirmContent(id, sectionKey, input, signal)
+  }
   discoveryJobs(signal?: AbortSignal) { return this.repository.discoveryJobs(signal) }
   discoveryJob(id: number, signal?: AbortSignal) {
     if (!Number.isSafeInteger(id) || id <= 0) throw new Error('올바른 분석 작업이 아닙니다.')

@@ -6,6 +6,8 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 
 from app.application_preparation.models import DiscoverFormsRequest, FormDiscoveryValidationError, InterpretRequest
 from app.application_preparation.service import ApplicationPreparationError, ApplicationPreparationService
+from app.application_preparation.models import DraftRequest
+from app.application_preparation.document import DocumentRequest
 
 router = APIRouter(prefix="/internal/v1/application-preparations", tags=["internal"])
 logger = logging.getLogger(__name__)
@@ -13,6 +15,32 @@ logger = logging.getLogger(__name__)
 
 def get_service(request: Request) -> ApplicationPreparationService:
     return request.app.state.container.application_preparation_service
+
+
+@router.post("/document")
+async def place_document(payload: DocumentRequest, service: Annotated[ApplicationPreparationService, Depends(get_service)]):
+    try:
+        return await service.place_document(payload)
+    except ApplicationPreparationError as error:
+        raise HTTPException(status_code=504 if str(error) == "APPLICATION_PREPARATION_TIMEOUT" else 503,
+                            detail={"code": str(error)}) from error
+
+
+@router.get("/draft/configuration")
+async def draft_configuration(service: Annotated[ApplicationPreparationService, Depends(get_service)]):
+    return service.draft_configuration()
+
+
+@router.post("/draft")
+async def draft(payload: DraftRequest, service: Annotated[ApplicationPreparationService, Depends(get_service)]):
+    try:
+        return await service.draft(payload)
+    except ApplicationPreparationError as error:
+        timed_out = str(error) == "APPLICATION_PREPARATION_TIMEOUT"
+        logger.warning("application_draft_failed error_type=%s", type(error.__cause__ or error).__name__)
+        raise HTTPException(
+            status_code=504 if timed_out else 503, detail={"code": str(error)},
+        ) from error
 
 
 @router.get("/configuration")

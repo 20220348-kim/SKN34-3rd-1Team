@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { asValue } from 'awilix/browser'
-import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, within, waitFor } from '@testing-library/react'
 import { Provider } from 'react-redux'
 import { MemoryRouter, Route, Routes } from 'react-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -12,6 +12,7 @@ import { ApplicationPreparationError } from '../../../../domain/errors/Applicati
 import { ApplicationPreparationUseCase } from '../../../../domain/usecases/ApplicationPreparationUseCase'
 import { signedIn } from '../../../shared/auth/state/authSlice'
 import { ApplicationPreparationEditorPage, ApplicationPreparationListPage } from './ApplicationPreparationPages'
+import { ApplicationDocumentPage } from './ApplicationDocumentPage'
 
 const original = appContainer.resolve('applicationPreparationUseCase')
 const originalCatalog = appContainer.resolve('browseSupportProgramsUseCase')
@@ -53,6 +54,7 @@ const secondForm: ApplicationForm = {
   supportedServiceFields: ['MARKETING'],
 }
 const detail = {
+  contents: [] as ApplicationPreparation['contents'],
   id: 12,
   inputRevision: 3,
   progressStage: 'PREPARING' as const,
@@ -63,7 +65,7 @@ const detail = {
   updatedAt: '2026-09-11T01:00:00+09:00',
   form: structuredClone(firstForm),
 }
-const repository = { discoveryJobs: vi.fn(), discoveryJob: vi.fn(), forms: vi.fn(), discover: vi.fn(), list: vi.fn(), delete: vi.fn(), get: vi.fn(), create: vi.fn(), interpret: vi.fn(), replaceInputs: vi.fn(), updateProgress: vi.fn() }
+const repository = { documents: vi.fn(), generateDocuments: vi.fn(), downloadDocument: vi.fn(), generateDraft: vi.fn(), saveContent: vi.fn(), confirmContent: vi.fn(), discoveryJobs: vi.fn(), discoveryJob: vi.fn(), forms: vi.fn(), discover: vi.fn(), list: vi.fn(), delete: vi.fn(), get: vi.fn(), create: vi.fn(), interpret: vi.fn(), replaceInputs: vi.fn(), updateProgress: vi.fn() }
 
 function completedDiscovery(result: { items: ApplicationForm[]; warnings: string[]; cached: boolean }) {
   return { id: 77, sourceCode: result.items[0].sourceCode, sourceProgramId: result.items[0].sourceProgramId,
@@ -81,8 +83,165 @@ function deferred<T>() {
   return { promise, resolve, reject }
 }
 
+const documentFile = { id: 81, inputRevision: 3, fileName: '신청서_초안_v3.hwpx', mediaType: 'application/hwp+zip', size: 400 }
+
+it.each(['APPLICATION_PREPARATION_RUN_CONFLICT'])('waits for the existing document after %s without repeating generation', async (code) => {
+  vi.useFakeTimers()
+  repository.get.mockResolvedValue(readyPreparation())
+  repository.documents.mockResolvedValueOnce([]).mockResolvedValueOnce([]).mockResolvedValueOnce([documentFile])
+  repository.generateDocuments.mockRejectedValueOnce(new ApplicationPreparationError(409, code))
+  await act(async () => { mount('/app/application-preparations/12/documents?generate=3') })
+  expect(screen.queryByRole('alert')).toBeNull()
+  await act(async () => { await vi.advanceTimersByTimeAsync(6000) })
+  expect(screen.getByRole('button', { name: '신청문서 1 다운로드' })).toBeTruthy()
+  expect(repository.generateDocuments).toHaveBeenCalledTimes(1)
+  expect(repository.documents).toHaveBeenCalledTimes(3)
+})
+
+it.each(['REQUEST_TIMEOUT', 'REQUEST_FAILED', 'AI_SERVICE_INVALID_RESPONSE'])('shows %s immediately without polling a potentially failed generation', async (code) => {
+  vi.useFakeTimers()
+  repository.get.mockResolvedValue(readyPreparation())
+  repository.generateDocuments.mockRejectedValueOnce(new ApplicationPreparationError(502, code))
+  await act(async () => { mount('/app/application-preparations/12/documents?generate=3') })
+  expect(screen.getByRole('alert')).toBeTruthy()
+  await act(async () => { await vi.advanceTimersByTimeAsync(120000) })
+  expect(repository.documents).toHaveBeenCalledTimes(1)
+  expect(repository.generateDocuments).toHaveBeenCalledTimes(1)
+})
+
+it('stops waiting for an existing generation when the results page is closed', async () => {
+  vi.useFakeTimers()
+  repository.get.mockResolvedValue(readyPreparation())
+  repository.generateDocuments.mockRejectedValueOnce(new ApplicationPreparationError(409, 'APPLICATION_PREPARATION_RUN_CONFLICT'))
+  let rendered!: ReturnType<typeof mount>
+  await act(async () => { rendered = mount('/app/application-preparations/12/documents?generate=3') })
+  rendered.unmount()
+  await act(async () => { await vi.advanceTimersByTimeAsync(120000) })
+  expect(repository.documents).toHaveBeenCalledTimes(1)
+  expect(repository.generateDocuments).toHaveBeenCalledTimes(1)
+})
+
+it('moves to a separate results page, generates a native file and returns to saved answers', async () => {
+  repository.get.mockResolvedValue(readyPreparation())
+  mount('/app/application-preparations/12')
+  const button = await screen.findByRole('button', { name: '초안 생성하기' })
+  const next = screen.getByRole('button', { name: '다음 항목' })
+  expect(next.compareDocumentPosition(button) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  expect(repository.generateDocuments).not.toHaveBeenCalled()
+  fireEvent.click(button)
+  await screen.findByRole('button', { name: '신청문서 1 다운로드' })
+  expect(screen.queryByLabelText('답변 입력')).toBeNull()
+  expect(screen.queryByLabelText('작성본 내용')).toBeNull()
+  expect(repository.generateDocuments).toHaveBeenCalledWith(12, 3, expect.any(AbortSignal))
+  fireEvent.click(screen.getByRole('link', { name: '이전으로 · 답변 수정' }))
+  await screen.findByLabelText('답변 입력')
+  expect(screen.getByText('새봄테크')).toBeTruthy()
+})
+
+it('blocks generation for missing answers or unsaved answers in any section', async () => {
+  repository.get.mockResolvedValueOnce(readyPreparation())
+  mount('/app/application-preparations/12')
+  await screen.findByLabelText('답변 입력')
+  fireEvent.change(screen.getByLabelText('답변 입력'), { target: { value: '변경한 업체명' } })
+  fireEvent.click(screen.getByRole('button', { name: '다음 항목' }))
+  expect((screen.getByRole('button', { name: '초안 생성하기' }) as HTMLButtonElement).disabled).toBe(true)
+  expect(repository.generateDocuments).not.toHaveBeenCalled()
+})
+
+it('reuses a stored native document on refresh without another generation call', async () => {
+  repository.get.mockResolvedValue(readyPreparation())
+  repository.documents.mockResolvedValue([documentFile])
+  mount('/app/application-preparations/12/documents?generate=3')
+  await screen.findByRole('button', { name: '신청문서 1 다운로드' })
+  expect(repository.generateDocuments).not.toHaveBeenCalled()
+})
+
+it('regenerates the document with the revised answers after returning to the input page', async () => {
+  const ready = readyPreparation()
+  repository.get.mockResolvedValue(ready)
+  repository.documents.mockResolvedValueOnce([documentFile]).mockResolvedValue([])
+  const revised = structuredClone(ready)
+  revised.inputRevision = 4
+  revised.form.sections[0].facts[0].value = '변경한 업체명'
+  repository.replaceInputs.mockImplementation(async () => { repository.get.mockResolvedValue(revised); return revised })
+  repository.generateDocuments.mockResolvedValue([{ ...documentFile, id: 82, inputRevision: 4, fileName: '신청서_초안_v4.hwpx' }])
+  mount('/app/application-preparations/12/documents')
+  await screen.findByRole('button', { name: '신청문서 1 다운로드' })
+  fireEvent.click(screen.getByRole('link', { name: '이전으로 · 답변 수정' }))
+  fireEvent.change(await screen.findByLabelText('답변 입력'), { target: { value: '변경한 업체명' } })
+  fireEvent.click(screen.getByRole('button', { name: '문서 답변 저장' }))
+  await screen.findByText('변경한 업체명')
+  fireEvent.click(screen.getByRole('button', { name: '초안 생성하기' }))
+  await screen.findByText('신청서_초안_v4.hwpx')
+  expect(repository.generateDocuments).toHaveBeenCalledWith(12, 4, expect.any(AbortSignal))
+})
+
+it('does not expose a download for a failed generation and retries the same revision', async () => {
+  repository.get.mockResolvedValue(readyPreparation())
+  repository.generateDocuments.mockRejectedValueOnce(new ApplicationPreparationError(422, 'APPLICATION_DOCUMENT_MAPPING_FAILED'))
+  mount('/app/application-preparations/12/documents?generate=3')
+  expect((await screen.findByRole('alert')).textContent).toContain('기입 위치')
+  expect(screen.queryByRole('button', { name: /다운로드/ })).toBeNull()
+  fireEvent.click(screen.getByRole('button', { name: '다시 시도' }))
+  await screen.findByRole('button', { name: '신청문서 1 다운로드' })
+  expect(repository.generateDocuments.mock.calls.map((call) => call[1])).toEqual([3, 3])
+})
+
+it('prevents generating with a stale revision and aborts requests after leaving', async () => {
+  repository.get.mockResolvedValue(readyPreparation())
+  const { unmount } = mount('/app/application-preparations/12/documents?generate=2')
+  expect((await screen.findByRole('alert')).textContent).toContain('답변이 변경')
+  expect(repository.generateDocuments).not.toHaveBeenCalled()
+  const signal = repository.get.mock.calls[0][1] as AbortSignal
+  unmount()
+  expect(signal.aborted).toBe(true)
+})
+
+it('downloads binary data using the original extension and reports download errors', async () => {
+  repository.get.mockResolvedValue(readyPreparation())
+  repository.documents.mockResolvedValue([documentFile])
+  repository.downloadDocument.mockResolvedValueOnce(new Blob(['zip'], { type: documentFile.mediaType }))
+    .mockRejectedValueOnce(new ApplicationPreparationError(404, 'APPLICATION_PREPARATION_NOT_FOUND'))
+  vi.stubGlobal('URL', Object.assign(URL, { createObjectURL: vi.fn(() => 'blob:test'), revokeObjectURL: vi.fn() }))
+  const clicked = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) {
+    expect(this.download).toBe(documentFile.fileName)
+  })
+  mount('/app/application-preparations/12/documents')
+  fireEvent.click(await screen.findByRole('button', { name: '신청문서 1 다운로드' }))
+  await waitFor(() => expect(clicked).toHaveBeenCalledTimes(1))
+  fireEvent.click(screen.getByRole('button', { name: '신청문서 1 다운로드' }))
+  await screen.findByRole('alert')
+  expect(repository.downloadDocument).toHaveBeenCalledWith(12, 81, expect.any(AbortSignal))
+  clicked.mockRestore()
+  vi.unstubAllGlobals()
+})
+
+function readyPreparation(): ApplicationPreparation {
+  const ready: ApplicationPreparation = structuredClone(detail)
+  ready.form.sections.forEach((section) => {
+    section.status = 'INPUT_CONFIRMED'
+    section.facts = section.fields.map((field, index) => ({ id: index + 1, fieldKey: field.key, status: 'PROVIDED',
+      value: '새봄테크', sourceText: '새봄테크', inputRevision: 3, updatedAt: detail.updatedAt }))
+  })
+  return ready
+}
+
+it('lists unknown and unanswered fields separately from the downloadable document', async () => {
+  const ready = readyPreparation()
+  ready.form.sections[1].facts[0].status = 'UNKNOWN'
+  ready.form.sections[1].facts[0].value = null
+  repository.get.mockResolvedValue(ready)
+  repository.documents.mockResolvedValue([documentFile])
+  mount('/app/application-preparations/12/documents')
+  const report = await screen.findByRole('region', { name: '답변이 없어 기입하지 않은 항목' })
+  expect(within(report).getByText('바우처 활용 계획 · 과제명')).toBeTruthy()
+  expect(within(report).queryByText('기업 개요 · 업체명')).toBeNull()
+})
+
 beforeEach(() => {
   vi.resetAllMocks()
+  repository.documents.mockResolvedValue([])
+  repository.generateDocuments.mockResolvedValue([documentFile])
   repository.discoveryJobs.mockResolvedValue([])
   repository.forms.mockResolvedValue([structuredClone(firstForm)])
   repository.discover.mockResolvedValue(completedDiscovery({ items: [structuredClone(firstForm)], warnings: ['원문 대조 필요'], cached: false }))
@@ -144,6 +303,7 @@ function mount(path: string) {
   store.dispatch(signedIn({ email: 'owner@example.com', role: 'USER', tier: 'MEMBER', emailVerified: false, hasPassword: true, company: null }))
   const rendered = render(<Provider store={store}><MemoryRouter initialEntries={[path]}><Routes>
     <Route path="/app/application-preparations" element={<ApplicationPreparationListPage />} />
+    <Route path="/app/application-preparations/:preparationId/documents" element={<ApplicationDocumentPage />} />
     <Route path="/app/application-preparations/new" element={<ApplicationPreparationEditorPage create />} />
     <Route path="/app/application-preparations/:preparationId" element={<ApplicationPreparationEditorPage />} />
   </Routes></MemoryRouter></Provider>)
@@ -553,7 +713,7 @@ describe('application preparation creation and detail', () => {
     fireEvent.click(screen.getByRole('button', { name: '문서 답변 저장' }))
     await screen.findByRole('alert')
     expect((screen.getByLabelText('답변 입력') as HTMLTextAreaElement).value).toBe('보존할 답변')
-    expect(screen.queryByText(/저장된 답변/)).toBeNull()
+    expect(screen.queryByText(/저장된 답변 \d+개/)).toBeNull()
   })
 
   it('offers official single choices and keeps the selected answer when navigating', async () => {

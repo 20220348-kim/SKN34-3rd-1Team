@@ -54,6 +54,12 @@ import org.mockito.ArgumentMatchers.any
 import org.mockito.Mockito.`when`
 import org.mockito.Mockito.times
 import org.mockito.Mockito.verify
+import ai.govbiz.core.applicationpreparation.client.ai.dto.AiApplicationDraftRequest
+import ai.govbiz.core.applicationpreparation.client.ai.dto.AiApplicationDraftPayload
+import ai.govbiz.core.applicationpreparation.client.ai.dto.AiApplicationDocumentRequest
+import ai.govbiz.core.applicationpreparation.client.ai.dto.AiApplicationDocumentPayload
+import ai.govbiz.core.applicationpreparation.domain.ApplicationDocumentPlacement
+import ai.govbiz.core.applicationpreparation.service.ApplicationDocumentEditor
 
 /** 실제 세션부터 manifest·MyBatis·MySQL까지 신청 준비 기본 흐름을 연결합니다. */
 @SpringBootTest(properties = [
@@ -66,6 +72,7 @@ import org.mockito.Mockito.verify
 @AutoConfigureMockMvc
 @Import(MySqlTestContainerConfig::class)
 class ApplicationPreparationApiIntegrationTest {
+    @Autowired private lateinit var documentEditor: ApplicationDocumentEditor
     @Autowired private lateinit var mvc: MockMvc
     @Autowired private lateinit var accounts: AccountRepository
     @Autowired private lateinit var sessions: AccountSessionService
@@ -452,6 +459,113 @@ class ApplicationPreparationApiIntegrationTest {
             .contentType(MediaType.APPLICATION_JSON).content("""{"expectedRevision":1,"facts":[]}"""))
             .andExpect(status().isNotFound())
         assertEquals(0, jdbc.queryForObject("SELECT COUNT(*) FROM application_preparation_fact", Int::class.java))
+    }
+
+    @Test
+    fun createsEditsConfirmsAndReloadsDraftsThroughOwnedHttpContracts() {
+        val id = create(owner)
+        val endpoint = "$BASE/$id/sections/company-overview"
+        val requestKey = UUID.randomUUID().toString()
+        fun generate(session: Cookie = owner) = post("$endpoint/drafts").cookie(session).header(HttpHeaders.ORIGIN, ORIGIN)
+            .contentType(MediaType.APPLICATION_JSON).content("""{"expectedRevision":2,"expectedVersionId":null,"requestKey":"$requestKey"}""")
+        mvc.perform(post("$endpoint/drafts").cookie(owner).header(HttpHeaders.ORIGIN, ORIGIN).contentType(MediaType.APPLICATION_JSON)
+            .content("""{"expectedRevision":1,"expectedVersionId":null,"requestKey":"$requestKey"}"""))
+            .andExpect(status().isBadRequest())
+        val fields = listOf("company-name", "contact-person", "company-history", "main-products", "main-customers")
+        val facts = fields.map { field -> mapOf("fieldKey" to field, "status" to "UNKNOWN", "value" to null, "sourceText" to "미정") }
+        mvc.perform(put("$endpoint/inputs").cookie(owner).header(HttpHeaders.ORIGIN, ORIGIN).contentType(MediaType.APPLICATION_JSON)
+            .content(json.writeValueAsString(mapOf("expectedRevision" to 1, "facts" to facts))))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.form.sections[0].status").value("INPUT_CONFIRMED"))
+        `when`(ai.draftConfiguration()).thenReturn(AiApplicationPreparationConfigurationPayload("application-preparation-draft-v1", "test-model", PROMPT_VERSION))
+        val fallback = AiApplicationDraftRequest(preparationId = id, inputRevision = 2, formVersionId = FORM_VERSION,
+            sectionKey = "company-overview", serviceField = "TECHNICAL_SUPPORT", sectionTitle = "기업 개요", sectionDescription = "설명",
+            currentFacts = emptyList(), fieldOptions = emptyList())
+        `when`(ai.draft(any(AiApplicationDraftRequest::class.java) ?: fallback)).thenAnswer { invocation ->
+            val request = invocation.getArgument<AiApplicationDraftRequest>(0)
+            AiApplicationDraftPayload("application-preparation-draft-v1", id, 2, FORM_VERSION, "company-overview", "test-model", PROMPT_VERSION,
+                request.fieldOptions.joinToString("\n") { "${it.label}: 미정" }, emptyList())
+        }
+        mvc.perform(generate(other)).andExpect(status().isNotFound())
+        val generated = mvc.perform(generate()).andExpect(status().isOk())
+            .andExpect(jsonPath("$.contents[0].kind").value("AI_DRAFT"))
+            .andExpect(jsonPath("$.contents[0].stale").value(false)).andReturn().response
+        val first = json.readTree(generated.contentAsString).path("contents").path(0).path("id").asLong()
+        mvc.perform(generate()).andExpect(status().isOk()).andExpect(jsonPath("$.contents.length()").value(1))
+        verify(ai, times(1)).draft(any(AiApplicationDraftRequest::class.java) ?: fallback)
+        val saved = mvc.perform(put("$endpoint/content").cookie(owner).header(HttpHeaders.ORIGIN, ORIGIN).contentType(MediaType.APPLICATION_JSON)
+            .content(json.writeValueAsString(mapOf("expectedRevision" to 2, "expectedVersionId" to first, "content" to "사용자가 수정한 문안 😀"))))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.contents.length()").value(2)).andReturn().response
+        val second = json.readTree(saved.contentAsString).path("contents").path(0).path("id").asLong()
+        mvc.perform(put("$BASE/$id/progress-stage").cookie(owner).header(HttpHeaders.ORIGIN, ORIGIN)
+            .contentType(MediaType.APPLICATION_JSON).content("""{"expectedProgressRevision":1,"progressStage":"APPLIED"}"""))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.progressStage").value("APPLIED"))
+            .andExpect(jsonPath("$.inputRevision").value(2))
+            .andExpect(jsonPath("$.contents[0].id").value(second))
+            .andExpect(jsonPath("$.contents[0].content").value("사용자가 수정한 문안 😀"))
+        mvc.perform(post("$endpoint/confirmations").cookie(owner).header(HttpHeaders.ORIGIN, ORIGIN).contentType(MediaType.APPLICATION_JSON)
+            .content("""{"expectedRevision":2,"expectedVersionId":$second}"""))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.contents[0].confirmedAt").isNotEmpty())
+        mvc.perform(get("$BASE/$id").cookie(owner)).andExpect(status().isOk())
+            .andExpect(jsonPath("$.contents[0].content").value("사용자가 수정한 문안 😀"))
+        mvc.perform(put("$endpoint/inputs").cookie(owner).header(HttpHeaders.ORIGIN, ORIGIN).contentType(MediaType.APPLICATION_JSON)
+            .content("""{"expectedRevision":2,"facts":[]}"""))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.contents[0].stale").value(true))
+        mvc.perform(post("$endpoint/confirmations").cookie(owner).header(HttpHeaders.ORIGIN, ORIGIN).contentType(MediaType.APPLICATION_JSON)
+            .content("""{"expectedRevision":3,"expectedVersionId":$second}"""))
+            .andExpect(status().isConflict())
+    }
+
+    @Test
+    fun generatesDownloadsAndRegeneratesOriginalHwpxWithSessionOwnershipAndStoredFiles() {
+        val original = requireNotNull(javaClass.getResourceAsStream("/combinationreview/general.hwpx")).readBytes()
+        val target = documentEditor.inspect(original, "HWPX").targets.first { it.text.isBlank() }
+        `when`(bizInfoAttachments.collect("BIZINFO", DISCOVERY_PROGRAM_ID)).thenReturn(SupportProgramAttachments("동적 지원사업", listOf(
+            SupportProgramAttachment("https://www.bizinfo.go.kr/file", "신청양식.hwpx", "HWPX", original),
+        ), emptyList()))
+        `when`(documentParser.parse(original, "HWPX")).thenReturn(listOf(SupportProgramDocumentBlock(DISCOVERY_LOCATOR, DISCOVERY_BLOCK_TEXT)))
+        val fallback = AiApplicationDocumentRequest(facts = emptyList(), targets = emptyList(), pageImages = emptyList())
+        `when`(ai.placeDocument(any(AiApplicationDocumentRequest::class.java) ?: fallback)).thenReturn(
+            AiApplicationDocumentPayload("application-document-v1", listOf(ApplicationDocumentPlacement("business-plan:business-overview", target.id)), emptyList()),
+        )
+        val discovered = mvc.perform(post("$BASE/forms/discover").cookie(owner).header(HttpHeaders.ORIGIN, ORIGIN).contentType(MediaType.APPLICATION_JSON)
+            .content("""{"sourceCode":"BIZINFO","sourceProgramId":"$DISCOVERY_PROGRAM_ID"}""")).andExpect(status().isOk()).andReturn().response
+        val version = json.readTree(discovered.contentAsString).path("items").path(0).path("formVersionId").asString()
+        val created = mvc.perform(post(BASE).cookie(owner).header(HttpHeaders.ORIGIN, ORIGIN).contentType(MediaType.APPLICATION_JSON)
+            .content("""{"sourceCode":"BIZINFO","sourceProgramId":"$DISCOVERY_PROGRAM_ID","formVersionId":"$version","serviceField":"GENERAL"}""")).andExpect(status().isCreated()).andReturn().response
+        val id = json.readTree(created.contentAsString).path("id").asLong()
+        fun save(revision: Long, value: String) {
+            mvc.perform(put("$BASE/$id/sections/business-plan/inputs").cookie(owner).header(HttpHeaders.ORIGIN, ORIGIN).contentType(MediaType.APPLICATION_JSON)
+                .content("""{"expectedRevision":$revision,"facts":[{"fieldKey":"business-overview","status":"PROVIDED","value":"$value","sourceText":"$value"}]}"""))
+                .andExpect(status().isOk())
+        }
+        fun generate(revision: Long): Long {
+            val response = mvc.perform(post("$BASE/$id/documents").cookie(owner).header(HttpHeaders.ORIGIN, ORIGIN).contentType(MediaType.APPLICATION_JSON)
+                .content("""{"expectedRevision":$revision}""")).andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].fileName").value("신청양식_초안_v$revision.hwpx")).andReturn().response
+            return json.readTree(response.contentAsString).path(0).path("id").asLong()
+        }
+        save(1, "새봄 & 연구소")
+        val fileId = generate(2)
+        mvc.perform(put("$BASE/$id/progress-stage").cookie(owner).header(HttpHeaders.ORIGIN, ORIGIN)
+            .contentType(MediaType.APPLICATION_JSON).content("""{"expectedProgressRevision":1,"progressStage":"APPLIED"}"""))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.inputRevision").value(2))
+        mvc.perform(get("$BASE/$id/documents").cookie(owner)).andExpect(status().isOk())
+            .andExpect(jsonPath("$[0].id").value(fileId))
+        assertEquals(fileId, generate(2))
+        verify(ai, times(1)).placeDocument(any(AiApplicationDocumentRequest::class.java) ?: fallback)
+        val downloaded = mvc.perform(get("$BASE/$id/documents/$fileId/download").cookie(owner)).andExpect(status().isOk())
+            .andExpect(header().string(HttpHeaders.CACHE_CONTROL, "no-store"))
+            .andExpect(content().contentType("application/hwp+zip")).andReturn().response.contentAsByteArray
+        assertEquals("새봄 & 연구소", documentEditor.inspect(downloaded, "HWPX").targets.single { it.id == target.id }.text)
+        mvc.perform(get("$BASE/$id/documents/$fileId/download").cookie(other)).andExpect(status().isNotFound())
+        mvc.perform(get("$BASE/$id/documents/$fileId/download")).andExpect(status().isUnauthorized())
+        save(2, "수정한 사업")
+        mvc.perform(get("$BASE/$id/documents").cookie(owner)).andExpect(status().isOk()).andExpect(jsonPath("$.length()").value(0))
+        val revised = generate(3)
+        org.junit.jupiter.api.Assertions.assertNotEquals(fileId, revised)
+        val revisedBytes = mvc.perform(get("$BASE/$id/documents/$revised/download").cookie(owner)).andExpect(status().isOk()).andReturn().response.contentAsByteArray
+        assertEquals("수정한 사업", documentEditor.inspect(revisedBytes, "HWPX").targets.single { it.id == target.id }.text)
     }
 
     private fun create(session: Cookie, field: String = "TECHNICAL_SUPPORT"): Long {

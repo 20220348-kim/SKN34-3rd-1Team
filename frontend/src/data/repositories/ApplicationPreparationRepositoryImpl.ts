@@ -3,11 +3,14 @@ import type {
   InterpretApplicationPreparation,
   NewApplicationPreparation,
   ReplaceApplicationPreparationInputs,
+  GenerateApplicationDraft,
+  SaveApplicationContent,
+  ConfirmApplicationContent,
   UpdateApplicationProgress,
 } from '../../domain/entities/ApplicationPreparation'
 import type { ApplicationPreparationRepository } from '../../domain/repositories/ApplicationPreparationRepository'
 import { ApplicationPreparationError } from '../../domain/errors/ApplicationPreparationError'
-import { applicationPreparationRequest as request } from '../api/applicationPreparationApi'
+import { applicationPreparationRequest as request, downloadApplicationDocument } from '../api/applicationPreparationApi'
 import {
   applicationPreparationPageSchema,
   applicationPreparationSchema,
@@ -17,8 +20,36 @@ import {
 } from '../models/ApplicationPreparationDto'
 
 const cursor = (beforeId?: number) => `?size=20${beforeId === undefined ? '' : `&beforeId=${beforeId}`}`
+const documentsSchema = z.array(z.object({
+  id: z.number().int().positive(), inputRevision: z.number().int().positive(),
+  fileName: z.string().min(1).max(500).regex(/^[^\\/]+\.(hwp|hwpx|pdf)$/i).refine((name) => [...name].every((character) => character.charCodeAt(0) >= 32)),
+  mediaType: z.enum(['application/pdf', 'application/x-hwp', 'application/hwp+zip']),
+  size: z.number().int().positive().max(32 * 1024 * 1024),
+})).max(20)
 
 export class ApplicationPreparationRepositoryImpl implements ApplicationPreparationRepository {
+  documents(id: number, signal?: AbortSignal) { return request(`/${id}/documents`, documentsSchema, 'GET', undefined, signal, 'preparation') }
+  async generateDocuments(id: number, expectedRevision: number, signal?: AbortSignal) {
+    const files = await request(`/${id}/documents`, documentsSchema, 'POST', { expectedRevision }, signal, 'preparation')
+    if (files.length === 0 || files.some((file) => file.inputRevision !== expectedRevision)) throw new ApplicationPreparationError(502, 'INVALID_RESPONSE')
+    return files
+  }
+  downloadDocument(id: number, fileId: number, signal?: AbortSignal) { return downloadApplicationDocument(id, fileId, signal) }
+  async generateDraft(id: number, sectionKey: string, input: GenerateApplicationDraft, signal?: AbortSignal) {
+    const result = await request(`/${id}/sections/${encodeURIComponent(sectionKey)}/drafts`, applicationPreparationSchema, 'POST', input, signal, 'preparation')
+    if (result.id !== id || !result.contents.some((version) => version.sectionKey === sectionKey)) throw new ApplicationPreparationError(502, 'INVALID_RESPONSE')
+    return result
+  }
+  async saveContent(id: number, sectionKey: string, input: SaveApplicationContent, signal?: AbortSignal) {
+    const result = await request(`/${id}/sections/${encodeURIComponent(sectionKey)}/content`, applicationPreparationSchema, 'PUT', input, signal, 'preparation')
+    if (result.id !== id || !result.contents.some((version) => version.sectionKey === sectionKey && version.id > input.expectedVersionId && version.content === input.content && version.kind === 'USER_EDIT')) throw new ApplicationPreparationError(502, 'INVALID_RESPONSE')
+    return result
+  }
+  async confirmContent(id: number, sectionKey: string, input: ConfirmApplicationContent, signal?: AbortSignal) {
+    const result = await request(`/${id}/sections/${encodeURIComponent(sectionKey)}/confirmations`, applicationPreparationSchema, 'POST', input, signal, 'preparation')
+    if (result.id !== id || !result.contents.some((version) => version.id === input.expectedVersionId && version.sectionKey === sectionKey && version.confirmedAt !== null)) throw new ApplicationPreparationError(502, 'INVALID_RESPONSE')
+    return result
+  }
   async forms(signal?: AbortSignal) {
     return (await request('/forms', supportedApplicationFormsSchema, 'GET', undefined, signal)).items
   }

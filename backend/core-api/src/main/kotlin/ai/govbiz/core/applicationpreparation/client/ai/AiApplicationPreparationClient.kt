@@ -17,12 +17,43 @@ import org.springframework.stereotype.Component
 import org.springframework.web.client.RestClient
 import tools.jackson.core.JacksonException
 import tools.jackson.databind.ObjectMapper
+import ai.govbiz.core.applicationpreparation.client.ai.dto.AiApplicationDraftRequest
+import ai.govbiz.core.applicationpreparation.client.ai.dto.AiApplicationDraftPayload
 
 @Component
 class AiApplicationPreparationClient(
     @param:Qualifier("aiServiceRestClient") private val client: RestClient,
     private val json: ObjectMapper,
 ) {
+    fun placeDocument(request: ai.govbiz.core.applicationpreparation.client.ai.dto.AiApplicationDocumentRequest): ai.govbiz.core.applicationpreparation.client.ai.dto.AiApplicationDocumentPayload = executeAiServiceCall {
+        client.post().uri("/internal/v1/application-preparations/document").contentType(MediaType.APPLICATION_JSON).body(request).retrieve()
+            .onStatus({ it.value() == 504 }, { _, _ -> throw AiServiceCallException.timeout(null) })
+            .onStatus({ it.value() != 200 }, { _, _ -> throw AiServiceCallException.invalidResponse("Document placement failed", null) })
+            .body(ai.govbiz.core.applicationpreparation.client.ai.dto.AiApplicationDocumentPayload::class.java)
+            ?: throw AiServiceCallException.invalidResponse("Document placement was empty", null)
+    }
+
+    fun draftConfiguration(): AiApplicationPreparationConfigurationPayload = executeAiServiceCall {
+        client.get().uri("/internal/v1/application-preparations/draft/configuration").retrieve()
+            .onStatus({ it.value() != 200 }, { _, _ -> throw AiServiceCallException.unavailable(null) })
+            .body(AiApplicationPreparationConfigurationPayload::class.java)
+            ?: throw AiServiceCallException.invalidResponse("Application draft configuration was empty", null)
+    }
+
+    fun draft(request: AiApplicationDraftRequest): AiApplicationDraftPayload = executeAiServiceCall {
+        client.post().uri("/internal/v1/application-preparations/draft").contentType(MediaType.APPLICATION_JSON).body(request).retrieve()
+            .onStatus({ it.value() == 504 }, { _, _ -> throw AiServiceCallException.timeout(null) })
+            .onStatus({ it.value() == 503 }, { _, response ->
+                if (readErrorCode(response) == "APPLICATION_PREPARATION_FAILED") {
+                    throw AiServiceCallException.invalidResponse("Application draft response failed validation", null)
+                }
+                throw AiServiceCallException.unavailable(null)
+            })
+            .onStatus({ it.value() != 200 }, { _, _ -> throw AiServiceCallException.unavailable(null) })
+            .body(AiApplicationDraftPayload::class.java)
+            ?: throw AiServiceCallException.invalidResponse("Application draft response was empty", null)
+    }
+
     fun configuration(): AiApplicationPreparationConfigurationPayload = executeAiServiceCall {
         client.get().uri("/internal/v1/application-preparations/configuration").retrieve()
             .onStatus({ it.value() != 200 }, { _, _ -> throw AiServiceCallException.unavailable(null) })
