@@ -140,6 +140,7 @@ OPENAI_API_KEY=발급받은_OpenAI_API_키
 | `ACCOUNT_OAUTH_GOOGLE_CLIENT_ID` / `ACCOUNT_OAUTH_GOOGLE_CLIENT_SECRET` | 빈 값 | Google 로그인 클라이언트. 비어 있으면 Google 버튼을 눌렀을 때 로그인 화면이 미설정 안내를 표시 |
 | `ACCOUNT_OAUTH_KAKAO_CLIENT_ID` / `ACCOUNT_OAUTH_KAKAO_CLIENT_SECRET` | 빈 값 | 카카오 REST API 키·Client Secret. 비어 있으면 카카오 버튼을 눌렀을 때 로그인 화면이 미설정 안내를 표시 |
 | `ACCOUNT_OAUTH_KAKAO_ADMIN_KEY` | 빈 값 | 탈퇴 때 카카오 연결 끊기용 어드민 키 |
+| `KAKAO_CHANNEL_ID` | 빈 값 | 도우미 "담당자에게 문의" 버튼이 여는 카카오톡 채널 공개 ID(`_`로 시작). Web의 `VITE_KAKAO_CHANNEL_ID`로 전달되며 비어 있으면 문의 항목을 보여 주지 않음 |
 | `ACCOUNT_OAUTH_CONNECT_TIMEOUT` / `ACCOUNT_OAUTH_READ_TIMEOUT` | `2s` / `10s` | 공급자 호출 제한시간 |
 | `BIZNO_API_KEY` | 빈 값 | 기업 등록 시 사업자등록번호를 확인하는 Bizno API 키. 비어 있으면 프로필의 기업 조회·등록이 503 |
 | `BIZNO_URL` | `https://bizno.net/api/fapi` | Bizno 조회 endpoint |

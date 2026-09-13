@@ -1,6 +1,7 @@
 import { asValue } from 'awilix/browser'
 
 import { fetchCoreApiHealth } from '../../data/api/fetchCoreApiHealth'
+import { kakaoChannelChatUrl } from '../../data/config/kakaoChannel'
 import { createLocalSessionHintStorage } from '../../data/storage/sessionHintStorage'
 import type { AppContainer } from './types'
 
@@ -8,6 +9,7 @@ import type { AppContainer } from './types'
 export function registerExternalServices(container: AppContainer) {
   container.register({
     fetchCoreApiHealth: asValue(fetchCoreApiHealth),
+    kakaoChannelChatUrl: asValue(kakaoChannelChatUrl),
     sessionHintStorage: asValue(createLocalSessionHintStorage()),
   })
 }

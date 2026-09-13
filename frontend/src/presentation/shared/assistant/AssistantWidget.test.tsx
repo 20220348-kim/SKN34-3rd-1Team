@@ -34,6 +34,7 @@ function isoDaysFromNow(days: number): string {
 
 beforeEach(() => {
   vi.stubGlobal('fetch', vi.fn(() => new Promise<Response>(() => {})))
+  vi.stubEnv('VITE_KAKAO_CHANNEL_ID', '_govbizTest')
   window.sessionStorage.clear()
 })
 
@@ -41,6 +42,7 @@ afterEach(() => {
   cleanup()
   vi.restoreAllMocks()
   vi.unstubAllGlobals()
+  vi.unstubAllEnvs()
 })
 
 describe('GovBiz 도우미 위젯', () => {
@@ -62,7 +64,7 @@ describe('GovBiz 도우미 위젯', () => {
     // 어느 화면에서 열어도 같은 주제 목록이 먼저 나옵니다.
     const replies = within(panel).getByRole('group', { name: '빠른 답변' })
     expect(within(replies).getAllByRole('button').map((button) => button.textContent)).toEqual([
-      ...assistantHelpTopics.map((topic) => topic.label), assistantMessages.quickLoginBenefits,
+      ...assistantHelpTopics.map((topic) => topic.label), assistantMessages.quickLoginBenefits, assistantMessages.quickContact,
     ])
 
     const topic = assistantHelpTopics[0]!
@@ -149,6 +151,29 @@ describe('GovBiz 도우미 위젯', () => {
     fireEvent.click(within(panel).getByRole('menuitem', { name: assistantMessages.newConversation }))
     expect(within(log).queryByText(assistantMessages.freeTextPreparing)).toBeNull()
     expect(within(log).getByText(assistantMessages.greetingAsk)).toBeTruthy()
+  })
+
+  it('담당자 문의를 고르면 카카오톡 채널 1:1 채팅을 새 탭으로 여는 링크를 주고, 채널 ID가 없으면 문의 항목을 두지 않는다', () => {
+    renderApp('/', null)
+    fireEvent.click(screen.getByRole('button', { name: assistantMessages.openLauncher }))
+    const panel = screen.getByRole('dialog', { name: assistantMessages.name })
+    fireEvent.click(within(panel).getByRole('button', { name: assistantMessages.quickContact }))
+
+    const log = within(panel).getByRole('log', { name: '대화' })
+    expect(within(log).getByText(assistantMessages.contactIntro)).toBeTruthy()
+    const link = within(log).getByRole('link', { name: assistantMessages.contactKakao })
+    expect(link.getAttribute('href')).toBe('https://pf.kakao.com/_govbizTest/chat')
+    expect(link.getAttribute('target')).toBe('_blank')
+    expect(link.getAttribute('rel')).toBe('noopener noreferrer')
+    // 바깥 주소는 앱 화면 이동이 아니므로 패널은 열린 채입니다.
+    expect(screen.getByRole('dialog', { name: assistantMessages.name })).toBeTruthy()
+
+    cleanup()
+    vi.stubEnv('VITE_KAKAO_CHANNEL_ID', 'not-a-channel-id')
+    renderApp('/', null)
+    fireEvent.click(screen.getByRole('button', { name: assistantMessages.openLauncher }))
+    const again = screen.getByRole('dialog', { name: assistantMessages.name })
+    expect(within(again).queryByRole('button', { name: assistantMessages.quickContact })).toBeNull()
   })
 
   it('비로그인이 상태 질문을 고르면 로그인 안내와 복귀 경로가 담긴 링크를 준다', () => {
