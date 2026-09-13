@@ -34,8 +34,6 @@ export function useApplicationPreparationEditorViewModel(id: number | null, init
   const [discoveryInput, setDiscoveryInput] = useState(initialSourceProgramId)
   const [discovering, setDiscovering] = useState(false)
   const [discoveryWarnings, setDiscoveryWarnings] = useState<string[]>([])
-  const [discoveryJobs, setDiscoveryJobs] = useState<ApplicationFormDiscoveryJob[]>([])
-  const [discoveryHistoryError, setDiscoveryHistoryError] = useState<Error | null>(null)
   const [activeDiscoveryJob, setActiveDiscoveryJob] = useState<ApplicationFormDiscoveryJob | null>(null)
   const [discoveryPollingPaused, setDiscoveryPollingPaused] = useState(false)
   const discoveryRequestKey = useRef<string | null>(null)
@@ -178,22 +176,16 @@ export function useApplicationPreparationEditorViewModel(id: number | null, init
     discoveryLookupId.current = null
   }, [activeDiscoveryJob, discoveryPollingPaused])
 
-  useEffect(() => {
-    if (id !== null) return
-    const controller = new AbortController()
-    void useCase.discoveryJobs(controller.signal).then((jobs) => {
-      if (!controller.signal.aborted) setDiscoveryJobs((current) => [
-        ...current, ...jobs.filter((job) => !current.some((item) => item.id === job.id)),
-      ].sort((a, b) => b.id - a.id).slice(0, 20))
-    }).catch((caught: unknown) => {
-      if (!controller.signal.aborted) setDiscoveryHistoryError(asError(caught))
-    })
-    return () => controller.abort()
-  }, [id, useCase])
+  const clearProgramSelection = useCallback(() => {
+    if (submittingGuard.current || discoveryController.current || (activeDiscoveryJob && ['QUEUED', 'RUNNING'].includes(activeDiscoveryJob.status) && !discoveryPollingPaused)) return
+    setManualDiscoveryInput('')
+    setDiscoverySourceCode('')
+    setServiceField('GENERAL')
+    setError(null)
+  }, [activeDiscoveryJob, discoveryPollingPaused, setManualDiscoveryInput])
 
   const acceptDiscoveryJob = useCallback((job: ApplicationFormDiscoveryJob) => {
     setActiveDiscoveryJob(job)
-    setDiscoveryJobs((jobs) => [job, ...jobs.filter((item) => item.id !== job.id)].sort((a, b) => b.id - a.id).slice(0, 20))
     if (job.status === 'SUCCEEDED' && job.result) {
       const result = job.result
       const firstForm = result.items[0]
@@ -464,8 +456,6 @@ export function useApplicationPreparationEditorViewModel(id: number | null, init
     serviceField,
     discoveryInput,
     discovering: discovering || (activeDiscoveryId !== null && !discoveryPollingPaused),
-    discoveryJobs,
-    discoveryHistoryError,
     activeDiscoveryJob,
     loadDiscoveryJob,
     discoveryPollingPaused,
@@ -486,6 +476,7 @@ export function useApplicationPreparationEditorViewModel(id: number | null, init
     setCatalogKeyword,
     searchPrograms,
     selectProgram,
+    clearProgramSelection,
     setManualDiscoveryInput,
     discoverForms,
     backToProgramSelection,
