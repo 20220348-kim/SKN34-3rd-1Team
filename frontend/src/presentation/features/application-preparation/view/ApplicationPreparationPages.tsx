@@ -264,29 +264,11 @@ function ApplicationPreparationEditor({ id, initialSourceCode, initialSourceProg
         onRetry={noDiscoveredForm || vm.submitting || vm.discovering ? undefined : id === null ? vm.discoverForms : vm.load}
         officialSource={canOpenOfficialSource ? officialSource : undefined}
       />}
-      {id === null && <section className={s.card} aria-label="최근 공식 문서 분석 작업">
-        <h2 className={s.cardTitle}>최근 공식 문서 분석 작업</h2>
-        <p className={s.muted}>분석은 화면을 떠나도 계속됩니다. 새로고침 후에는 아래 작업을 선택해 상태와 결과를 다시 확인하세요.</p>
-        {vm.discoveryHistoryError && <p role="alert">{vm.discoveryHistoryError.message} 페이지를 새로고침하면 목록을 다시 조회합니다.</p>}
-        {vm.discoveryJobs.length === 0 && !vm.discoveryHistoryError && <p className={s.muted}>최근 분석 작업이 없습니다.</p>}
-        <ul className={s.jobList} aria-label="최근 공식 문서 분석 작업 목록">{vm.discoveryJobs.map((job) => <li key={job.id} className={s.jobItem}>
-          <div className="min-w-0">
-            <strong className={s.jobTitle}>{job.programTitle}</strong>
-            <p className={s.jobMeta}>
-              <span>{catalogSourceLabels[job.sourceCode as keyof typeof catalogSourceLabels] ?? job.sourceCode}</span>
-              <span aria-hidden="true">·</span>
-              <time dateTime={job.createdAt}>{readableTime(job.createdAt)}</time>
-              <span className={s.jobStatus}>{{ QUEUED: '대기 중', RUNNING: '분석 중', SUCCEEDED: '완료', FAILED: '실패', UNKNOWN: '관리자 확인 필요' }[job.status]}</span>
-            </p>
-          </div>
-          <button type="button" className={`${s.button} shrink-0`} disabled={vm.discovering || vm.submitting} onClick={() => { void vm.loadDiscoveryJob(job.id) }}>상태·결과 보기</button>
-        </li>)}</ul>
-        {vm.activeDiscoveryJob && vm.creationStep === 'PROGRAM' && <p role="status" aria-live="polite">
+        {id === null && vm.activeDiscoveryJob && vm.creationStep === 'PROGRAM' && <p role="status" aria-live="polite">
           {{ QUEUED: '작업이 접수되어 분석 순서를 기다리고 있습니다.', RUNNING: '공식 첨부를 수집하고 AI가 문항을 분석하고 있습니다.',
             SUCCEEDED: '저장된 분석 결과를 확인했습니다.', FAILED: '분석 작업이 실패로 종료되었습니다.', UNKNOWN: '분석 결과가 불확실하여 관리자 확인이 필요합니다.' }[vm.activeDiscoveryJob.status]}
           {vm.discoveryPollingPaused && ' 상태 조회가 중단되었습니다. 다시 시도하면 기존 작업만 조회하며 새 분석을 실행하지 않습니다.'}
         </p>}
-      </section>}
 
       {id === null && <form className={s.form} aria-labelledby="create-preparation-title" onSubmit={(event) => {
         event.preventDefault()
@@ -306,6 +288,7 @@ function ApplicationPreparationEditor({ id, initialSourceCode, initialSourceProg
               <p className={s.muted}>{catalogSourceLabels[vm.selectedProgram.sourceCode as keyof typeof catalogSourceLabels] ?? vm.selectedProgram.sourceName} · {vm.selectedProgram.organization} · {programStatusLabels[vm.selectedProgram.status]}</p>
               <p className={s.muted}>{vm.selectedProgram.applicationPeriod}</p>
             </div>
+            <button className={s.button} disabled={vm.discovering || vm.submitting} type="button" onClick={vm.clearProgramSelection}>선택 취소</button>
             <button className={s.primary} disabled={vm.discovering || vm.submitting} type="button" onClick={() => { void vm.discoverForms() }}>
               {vm.discovering ? '공식 첨부 분석 중…' : '신청 문서 찾기'}
             </button>
@@ -329,7 +312,7 @@ function ApplicationPreparationEditor({ id, initialSourceCode, initialSourceProg
             unsupportedLabel="문서 지원 준비 중"
             onToggle={(program) => {
               const selected = vm.selectedProgram?.sourceCode === program.sourceCode && vm.selectedProgram.id === program.id
-              if (selected) vm.setManualDiscoveryInput('')
+              if (selected) vm.clearProgramSelection()
               else vm.selectProgram(program)
             }}
             onRetry={vm.savedProgramChoices.retry}

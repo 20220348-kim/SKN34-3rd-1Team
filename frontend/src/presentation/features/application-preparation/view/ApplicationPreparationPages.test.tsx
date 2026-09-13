@@ -516,6 +516,21 @@ describe('application preparation creation and detail', () => {
     expect((await screen.findByRole('alert')).textContent).toContain(message)
   })
 
+  it('clears a selected program and allows choosing it again without analysis', async () => {
+    mount('/app/application-preparations/new')
+    fireEvent.click(screen.getByRole('button', { name: '공고 검색' }))
+    fireEvent.click(await screen.findByRole('button', { name: '선택' }))
+    expect(screen.getByRole('heading', { name: '선택한 공고' })).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: '선택 취소' }))
+    expect(screen.queryByRole('heading', { name: '선택한 공고' })).toBeNull()
+    expect(screen.queryByRole('button', { name: '신청 문서 찾기' })).toBeNull()
+    expect(screen.queryByRole('region', { name: '최근 공식 문서 분석 작업' })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: '선택' }))
+    expect(screen.getByRole('heading', { name: '선택한 공고' })).toBeTruthy()
+    expect(repository.discover).not.toHaveBeenCalled()
+    expect(repository.discoveryJobs).not.toHaveBeenCalled()
+  })
+
   it('polls an accepted job and shows its saved result without another POST', async () => {
     vi.useFakeTimers()
     const completed = completedDiscovery({ items: [firstForm], warnings: [], cached: false })
@@ -532,40 +547,7 @@ describe('application preparation creation and detail', () => {
     expect(repository.discoveryJob).toHaveBeenCalledTimes(2)
   })
 
-  it('reopens a previous job from the account history without submitting analysis', async () => {
-    const completed = completedDiscovery({ items: [firstForm], warnings: [], cached: true })
-    repository.discoveryJobs.mockResolvedValueOnce([{ ...completed, result: null }])
-    repository.discoveryJob.mockResolvedValueOnce(completed)
-    mount('/app/application-preparations/new')
-    const history = await screen.findByRole('list', { name: '최근 공식 문서 분석 작업 목록' })
-    const historyItem = await within(history).findByRole('listitem')
-    expect(within(historyItem).getByText(firstForm.programTitle)).toBeTruthy()
-    expect(within(historyItem).getByText('기업마당')).toBeTruthy()
-    expect(within(historyItem).queryByText(firstForm.sourceProgramId)).toBeNull()
-    expect(historyItem.className).toContain('rounded-xl')
-    fireEvent.click(await screen.findByRole('button', { name: '상태·결과 보기' }))
-    expect(await screen.findByLabelText('작성할 공식 첨부')).toBeTruthy()
-    expect(repository.discover).not.toHaveBeenCalled()
-  })
 
-  it('opens the official notice from a failed history card after reload', async () => {
-    const failed = {
-      ...completedDiscovery({ items: [firstForm], warnings: [], cached: false }),
-      status: 'FAILED' as const,
-      result: null,
-      failureCode: 'APPLICATION_FORM_SOURCE_UNSUPPORTED',
-    }
-    repository.discoveryJobs.mockResolvedValueOnce([failed])
-    repository.discoveryJob.mockResolvedValueOnce(failed)
-    mount('/app/application-preparations/new')
-
-    const history = await screen.findByRole('list', { name: '최근 공식 문서 분석 작업 목록' })
-    fireEvent.click(await within(history).findByRole('button', { name: '상태·결과 보기' }))
-
-    expect((await screen.findByRole('alert')).textContent).toContain('공식 PDF/HWP/HWPX 첨부를 확보하고 읽을 수 있는 공고만')
-    expect(screen.getByRole('link', { name: /공고 원문 열기/ }).getAttribute('href')).toBe(firstForm.sourceUrl)
-    expect(repository.discover).not.toHaveBeenCalled()
-  })
 
   it('keeps the request key when submission response is lost', async () => {
     repository.discover.mockRejectedValueOnce(new ApplicationPreparationError(0, 'REQUEST_FAILED'))
@@ -577,17 +559,6 @@ describe('application preparation creation and detail', () => {
     expect(repository.discover.mock.calls[0][3]).toBe(repository.discover.mock.calls[1][3])
   })
 
-  it('retries a failed history lookup with GET even before a job was loaded', async () => {
-    const completed = completedDiscovery({ items: [firstForm], warnings: [], cached: true })
-    repository.discoveryJobs.mockResolvedValueOnce([{ ...completed, result: null }])
-    repository.discoveryJob.mockRejectedValueOnce(new ApplicationPreparationError(0, 'REQUEST_FAILED')).mockResolvedValueOnce(completed)
-    mount('/app/application-preparations/new?sourceCode=BIZINFO&sourceProgramId=PBLN_1')
-    fireEvent.click(await screen.findByRole('button', { name: '상태·결과 보기' }))
-    fireEvent.click(await screen.findByRole('button', { name: '다시 시도' }))
-    await screen.findByLabelText('작성할 공식 첨부')
-    expect(repository.discoveryJob).toHaveBeenCalledTimes(2)
-    expect(repository.discover).not.toHaveBeenCalled()
-  })
 
   it('stops polling on failure and retries only the existing GET', async () => {
     vi.useFakeTimers()
@@ -600,7 +571,7 @@ describe('application preparation creation and detail', () => {
     await act(async () => vi.advanceTimersByTimeAsync(3000))
     await act(async () => vi.advanceTimersByTimeAsync(9000))
     expect(repository.discoveryJob).toHaveBeenCalledTimes(1)
-    await act(async () => fireEvent.click(screen.getByRole('button', { name: '상태·결과 보기' })))
+    await act(async () => fireEvent.click(screen.getByRole('button', { name: '다시 시도' })))
     expect(screen.getByRole('alert').textContent).toContain('관리자 확인이 필요합니다')
     await act(async () => vi.advanceTimersByTimeAsync(9000))
     expect(repository.discover).toHaveBeenCalledTimes(1)
