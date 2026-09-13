@@ -25,6 +25,9 @@ const form = {
 const detail = {
   id: 1,
   inputRevision: 1,
+  progressStage: 'PREPARING',
+  progressRevision: 1,
+  progressStageUpdatedAt: '2026-09-11T00:00:00+09:00',
   serviceField: 'TECHNICAL_SUPPORT',
   createdAt: '2026-09-11T00:00:00+09:00',
   updatedAt: '2026-09-11T00:00:00+09:00',
@@ -35,7 +38,8 @@ describe('application preparation DTO schemas', () => {
   it('accepts the planned forms, list and detail contracts', () => {
     expect(supportedApplicationFormsSchema.safeParse({ items: [form] }).success).toBe(true)
     expect(applicationPreparationPageSchema.safeParse({
-      items: [{ id: 1, inputRevision: 1, serviceField: 'CONSULTING', programTitle: '지원사업', formTitle: '양식', updatedAt: detail.updatedAt }],
+      items: [{ id: 1, inputRevision: 1, progressStage: 'PREPARING', progressRevision: 1, progressStageUpdatedAt: detail.updatedAt,
+        sourceCode: 'BIZINFO', sourceProgramId: 'PBLN_1', serviceField: 'CONSULTING', programTitle: '지원사업', formTitle: '양식', updatedAt: detail.updatedAt }],
       nextBeforeId: 1,
     }).success).toBe(true)
     expect(applicationPreparationSchema.safeParse(detail).success).toBe(true)
@@ -52,7 +56,8 @@ describe('application preparation DTO schemas', () => {
 
   it('rejects duplicate form and page ids and a detail field unsupported by its form', () => {
     expect(supportedApplicationFormsSchema.safeParse({ items: [form, form] }).success).toBe(false)
-    const summary = { id: 1, inputRevision: 1, serviceField: 'CONSULTING', programTitle: '지원사업', formTitle: '양식', updatedAt: detail.updatedAt }
+    const summary = { id: 1, inputRevision: 1, progressStage: 'PREPARING', progressRevision: 1, progressStageUpdatedAt: detail.updatedAt,
+      sourceCode: 'BIZINFO', sourceProgramId: 'PBLN_1', serviceField: 'CONSULTING', programTitle: '지원사업', formTitle: '양식', updatedAt: detail.updatedAt }
     expect(applicationPreparationPageSchema.safeParse({ items: [summary, summary], nextBeforeId: null }).success).toBe(false)
     expect(applicationPreparationSchema.safeParse({ ...detail, serviceField: 'MARKETING' }).success).toBe(false)
   })

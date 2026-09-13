@@ -4,6 +4,8 @@ import ai.govbiz.core._common.test.MySqlTestContainerConfig
 import ai.govbiz.core.account.domain.NewAccount
 import ai.govbiz.core.account.repository.AccountRepository
 import ai.govbiz.core.applicationpreparation.domain.ApplicationServiceField
+import ai.govbiz.core.applicationpreparation.domain.ApplicationProgressStage
+import ai.govbiz.core.applicationpreparation.domain.ApplicationProgressUpdateResult
 import ai.govbiz.core.applicationpreparation.domain.NewApplicationPreparation
 import ai.govbiz.core.applicationpreparation.domain.ApplicationFactStatus
 import ai.govbiz.core.applicationpreparation.domain.ApplicationInputReplaceResult
@@ -47,10 +49,36 @@ class ApplicationPreparationRepositoryIntegrationTest {
     @Test
     fun roundTripsEveryServiceFieldAndKeepsOwnerIsolation() {
         val created = ApplicationServiceField.entries.map { field -> repository.create(ownerId, draft(field)) }
-        assertTrue(created.all { it.inputRevision == 1L && it.ownerAccountId == ownerId })
+        assertTrue(created.all {
+            it.inputRevision == 1L && it.ownerAccountId == ownerId &&
+                it.progressStage == ApplicationProgressStage.PREPARING && it.progressRevision == 1L
+        })
         assertEquals(ApplicationServiceField.entries, repository.listOwned(ownerId, null, 51).reversed().map { it.serviceField })
         assertNull(repository.findOwned(otherId, created.first().id))
         assertEquals(created.first(), repository.findOwned(ownerId, created.first().id))
+    }
+
+    @Test
+    fun updatesProgressWithOwnerAndIndependentRevisionProtection() {
+        val created = repository.create(ownerId, draft())
+        val updated = repository.updateProgressOwned(
+            ownerId,
+            created.id,
+            created.progressRevision,
+            ApplicationProgressStage.DOCUMENT_REVIEW,
+        ) as ApplicationProgressUpdateResult.Updated
+
+        assertEquals(ApplicationProgressStage.DOCUMENT_REVIEW, updated.preparation.progressStage)
+        assertEquals(2L, updated.preparation.progressRevision)
+        assertEquals(1L, updated.preparation.inputRevision)
+        assertEquals(
+            ApplicationProgressUpdateResult.RevisionConflict,
+            repository.updateProgressOwned(ownerId, created.id, 1, ApplicationProgressStage.SELECTED),
+        )
+        assertEquals(
+            ApplicationProgressUpdateResult.NotFound,
+            repository.updateProgressOwned(otherId, created.id, 2, ApplicationProgressStage.SELECTED),
+        )
     }
 
     @Test
@@ -74,6 +102,12 @@ class ApplicationPreparationRepositoryIntegrationTest {
         }
         assertThrows(DataAccessException::class.java) {
             jdbc.update("UPDATE application_preparation SET input_revision = 0 WHERE id = ?", created.id)
+        }
+        assertThrows(DataAccessException::class.java) {
+            jdbc.update("UPDATE application_preparation SET progress_stage = 'INVALID' WHERE id = ?", created.id)
+        }
+        assertThrows(DataAccessException::class.java) {
+            jdbc.update("UPDATE application_preparation SET progress_revision = 0 WHERE id = ?", created.id)
         }
         assertThrows(DataAccessException::class.java) {
             jdbc.update("UPDATE application_preparation SET form_version_id = '잘못된-버전' WHERE id = ?", created.id)

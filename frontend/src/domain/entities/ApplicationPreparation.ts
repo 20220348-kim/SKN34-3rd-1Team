@@ -1,6 +1,9 @@
 export const applicationServiceFields = ['GENERAL', 'CONSULTING', 'TECHNICAL_SUPPORT', 'MARKETING'] as const
 export type ApplicationServiceField = typeof applicationServiceFields[number]
 
+export const applicationProgressStages = ['PREPARING', 'APPLIED', 'DOCUMENT_REVIEW', 'PRESENTATION_REVIEW', 'SELECTED', 'REJECTED'] as const
+export type ApplicationProgressStage = typeof applicationProgressStages[number]
+
 export const applicationServiceFieldLabels: Record<ApplicationServiceField, string> = {
   GENERAL: '일반 신청',
   CONSULTING: '컨설팅',
@@ -77,6 +80,11 @@ export type ApplicationForm = {
 export type ApplicationPreparationSummary = {
   id: number
   inputRevision: number
+  progressStage: ApplicationProgressStage
+  progressRevision: number
+  progressStageUpdatedAt: string
+  sourceCode: string
+  sourceProgramId: string
   serviceField: ApplicationServiceField
   programTitle: string
   formTitle: string
@@ -86,6 +94,9 @@ export type ApplicationPreparationSummary = {
 export type ApplicationPreparation = {
   id: number
   inputRevision: number
+  progressStage: ApplicationProgressStage
+  progressRevision: number
+  progressStageUpdatedAt: string
   serviceField: ApplicationServiceField
   createdAt: string
   updatedAt: string
@@ -102,6 +113,11 @@ export type NewApplicationPreparation = {
   sourceProgramId: string
   formVersionId: string
   serviceField: ApplicationServiceField
+}
+
+export type UpdateApplicationProgress = {
+  expectedProgressRevision: number
+  progressStage: ApplicationProgressStage
 }
 
 export type DiscoveredApplicationForms = {

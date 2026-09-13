@@ -1,6 +1,8 @@
 package ai.govbiz.core.applicationpreparation.repository
 
 import ai.govbiz.core.applicationpreparation.domain.ApplicationPreparationSummary
+import ai.govbiz.core.applicationpreparation.domain.ApplicationProgressStage
+import ai.govbiz.core.applicationpreparation.domain.ApplicationProgressUpdateResult
 import ai.govbiz.core.applicationpreparation.domain.ApplicationServiceField
 import ai.govbiz.core.applicationpreparation.domain.NewApplicationPreparation
 import ai.govbiz.core.applicationpreparation.domain.StoredApplicationPreparation
@@ -29,6 +31,9 @@ class ApplicationPreparationRepository(
             sourceProgramId = draft.sourceProgramId,
             formVersionId = draft.formVersionId,
             serviceField = draft.serviceField.name,
+            progressStage = ApplicationProgressStage.PREPARING.name,
+            progressRevision = 1,
+            progressStageUpdatedAt = now,
             createdAt = now,
             updatedAt = now,
         )
@@ -47,6 +52,11 @@ class ApplicationPreparationRepository(
             ApplicationPreparationSummary(
                 id = row.id,
                 inputRevision = row.inputRevision,
+                progressStage = ApplicationProgressStage.valueOf(row.progressStage),
+                progressRevision = row.progressRevision,
+                progressStageUpdatedAt = requireNotNull(row.progressStageUpdatedAt),
+                sourceCode = row.sourceCode,
+                sourceProgramId = row.sourceProgramId,
                 formVersionId = row.formVersionId,
                 serviceField = ApplicationServiceField.valueOf(row.serviceField),
                 createdAt = requireNotNull(row.createdAt),
@@ -61,10 +71,32 @@ class ApplicationPreparationRepository(
         return mapper.deleteOwned(ownerAccountId, preparationId) == 1
     }
 
+    @Transactional
+    fun updateProgressOwned(
+        ownerAccountId: Long,
+        preparationId: Long,
+        expectedProgressRevision: Long,
+        progressStage: ApplicationProgressStage,
+    ): ApplicationProgressUpdateResult {
+        require(ownerAccountId > 0 && preparationId > 0 && expectedProgressRevision in 1 until Long.MAX_VALUE)
+        val now = LocalDateTime.now(clock).truncatedTo(ChronoUnit.MICROS)
+        if (mapper.updateProgressOwned(ownerAccountId, preparationId, expectedProgressRevision, progressStage.name, now) == 1) {
+            return ApplicationProgressUpdateResult.Updated(requireNotNull(mapper.findOwned(ownerAccountId, preparationId)).toStored())
+        }
+        return if (mapper.findOwned(ownerAccountId, preparationId) === null) {
+            ApplicationProgressUpdateResult.NotFound
+        } else {
+            ApplicationProgressUpdateResult.RevisionConflict
+        }
+    }
+
     private fun ApplicationPreparationDbRow.toStored(): StoredApplicationPreparation = StoredApplicationPreparation(
         id = id,
         ownerAccountId = ownerAccountId,
         inputRevision = inputRevision,
+        progressStage = ApplicationProgressStage.valueOf(progressStage),
+        progressRevision = progressRevision,
+        progressStageUpdatedAt = requireNotNull(progressStageUpdatedAt),
         draft = NewApplicationPreparation(
             sourceCode = sourceCode,
             sourceProgramId = sourceProgramId,

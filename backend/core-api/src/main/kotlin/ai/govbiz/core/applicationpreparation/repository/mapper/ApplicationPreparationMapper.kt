@@ -22,4 +22,12 @@ interface ApplicationPreparationMapper {
         @Param("ownerAccountId") ownerAccountId: Long,
         @Param("preparationId") preparationId: Long,
     ): Int
+
+    fun updateProgressOwned(
+        @Param("ownerAccountId") ownerAccountId: Long,
+        @Param("preparationId") preparationId: Long,
+        @Param("expectedProgressRevision") expectedProgressRevision: Long,
+        @Param("progressStage") progressStage: String,
+        @Param("updatedAt") updatedAt: java.time.LocalDateTime,
+    ): Int
 }

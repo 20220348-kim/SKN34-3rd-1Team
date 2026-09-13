@@ -8,6 +8,7 @@ import ai.govbiz.core.applicationpreparation.controller.dto.SupportedApplication
 import ai.govbiz.core.applicationpreparation.controller.dto.ApplicationInterpretationResponse
 import ai.govbiz.core.applicationpreparation.controller.dto.InterpretApplicationPreparationRequest
 import ai.govbiz.core.applicationpreparation.controller.dto.ReplaceApplicationPreparationInputsRequest
+import ai.govbiz.core.applicationpreparation.controller.dto.UpdateApplicationProgressRequest
 import ai.govbiz.core.applicationpreparation.controller.dto.DiscoverApplicationFormsRequest
 import ai.govbiz.core.applicationpreparation.controller.dto.DiscoveredApplicationFormsResponse
 import ai.govbiz.core.applicationpreparation.service.ApplicationFormDiscoveryService
@@ -90,6 +91,18 @@ class ApplicationPreparationController(
         service.deleteOwned(account, id)
         return ResponseEntity.noContent().cacheControl(CacheControl.noStore()).build()
     }
+
+    @PutMapping("/{id}/progress-stage")
+    fun updateProgress(
+        account: Account,
+        @PathVariable @Min(1) id: Long,
+        @RequestBody @Valid request: UpdateApplicationProgressRequest,
+    ): ResponseEntity<ApplicationPreparationResponse> =
+        ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(
+            ApplicationPreparationResponse.from(
+                service.updateProgress(account, id, request.expectedProgressRevision, request.toProgressStage()),
+            ),
+        )
 
     @PostMapping("/{id}/sections/{sectionKey}/messages")
     fun interpret(

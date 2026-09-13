@@ -8,6 +8,9 @@
         <result column="source_program_id" property="sourceProgramId" />
         <result column="form_version_id" property="formVersionId" />
         <result column="service_field" property="serviceField" />
+        <result column="progress_stage" property="progressStage" />
+        <result column="progress_revision" property="progressRevision" />
+        <result column="progress_stage_updated_at" property="progressStageUpdatedAt" />
         <result column="input_revision" property="inputRevision" />
         <result column="created_at" property="createdAt" />
         <result column="updated_at" property="updatedAt" />
@@ -15,16 +18,19 @@
 
     <sql id="columns">
         id, owner_account_id, source_code, source_program_id, form_version_id,
-        service_field, input_revision, created_at, updated_at
+        service_field, progress_stage, progress_revision, progress_stage_updated_at,
+        input_revision, created_at, updated_at
     </sql>
 
     <insert id="insertPreparation" useGeneratedKeys="true" keyProperty="id">
         INSERT INTO application_preparation (
             owner_account_id, source_code, source_program_id, form_version_id,
-            service_field, input_revision, created_at, updated_at
+            service_field, progress_stage, progress_revision, progress_stage_updated_at,
+            input_revision, created_at, updated_at
         ) VALUES (
             #{ownerAccountId}, #{sourceCode}, #{sourceProgramId}, #{formVersionId},
-            #{serviceField}, #{inputRevision}, #{createdAt}, #{updatedAt}
+            #{serviceField}, #{progressStage}, #{progressRevision}, #{progressStageUpdatedAt},
+            #{inputRevision}, #{createdAt}, #{updatedAt}
         )
     </insert>
 
@@ -49,4 +55,15 @@
         DELETE FROM application_preparation
         WHERE id = #{preparationId} AND owner_account_id = #{ownerAccountId}
     </delete>
+
+    <update id="updateProgressOwned">
+        UPDATE application_preparation
+        SET progress_stage = #{progressStage},
+            progress_revision = progress_revision + 1,
+            progress_stage_updated_at = #{updatedAt},
+            updated_at = #{updatedAt}
+        WHERE id = #{preparationId}
+          AND owner_account_id = #{ownerAccountId}
+          AND progress_revision = #{expectedProgressRevision}
+    </update>
 </mapper>

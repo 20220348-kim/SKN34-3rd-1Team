@@ -1,10 +1,11 @@
 import { z } from 'zod'
-import { applicationServiceFields } from '../../domain/entities/ApplicationPreparation'
+import { applicationProgressStages, applicationServiceFields } from '../../domain/entities/ApplicationPreparation'
 import { isOfficialSupportProgramSourceUrl } from './SupportProgramDto'
 
 const id = z.number().int().positive().max(Number.MAX_SAFE_INTEGER)
 const time = z.string().datetime({ offset: true })
 const serviceField = z.enum(applicationServiceFields)
+const progressStage = z.enum(applicationProgressStages)
 const field = z.object({
   key: z.string().regex(/^[a-z][a-z0-9-]{0,63}$/),
   label: z.string().min(1).max(100),
@@ -73,6 +74,11 @@ export const discoveredApplicationFormsSchema = z.object({
 export const applicationPreparationSummarySchema = z.object({
   id,
   inputRevision: id,
+  progressStage,
+  progressRevision: id,
+  progressStageUpdatedAt: time,
+  sourceCode: z.string().min(1).max(64),
+  sourceProgramId: z.string().min(1).max(255),
   serviceField,
   programTitle: z.string().min(1),
   formTitle: z.string().min(1),
@@ -109,6 +115,9 @@ export const applicationPreparationPageSchema = z.object({
 export const applicationPreparationSchema = z.object({
   id,
   inputRevision: id,
+  progressStage,
+  progressRevision: id,
+  progressStageUpdatedAt: time,
   serviceField,
   createdAt: time,
   updatedAt: time,

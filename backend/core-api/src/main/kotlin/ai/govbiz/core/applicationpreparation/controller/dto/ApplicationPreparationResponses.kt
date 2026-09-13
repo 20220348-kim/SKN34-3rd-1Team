@@ -119,6 +119,11 @@ data class DiscoveredApplicationFormsResponse(
 data class ApplicationPreparationResponse(
     val id: Long,
     val inputRevision: Long,
+    val progressStage: String,
+    val progressRevision: Long,
+    val progressStageUpdatedAt: OffsetDateTime,
+    val sourceCode: String,
+    val sourceProgramId: String,
     val serviceField: String,
     val createdAt: OffsetDateTime,
     val updatedAt: OffsetDateTime,
@@ -126,12 +131,17 @@ data class ApplicationPreparationResponse(
 ) {
     companion object {
         fun from(result: ApplicationPreparationDetailResult) = ApplicationPreparationResponse(
-            result.preparation.id,
-            result.preparation.inputRevision,
-            result.preparation.draft.serviceField.name,
-            result.preparation.createdAt.atZone(SEOUL).toOffsetDateTime(),
-            result.preparation.updatedAt.atZone(SEOUL).toOffsetDateTime(),
-            ApplicationFormResponse.from(result.form).copy(
+            id = result.preparation.id,
+            inputRevision = result.preparation.inputRevision,
+            progressStage = result.preparation.progressStage.name,
+            progressRevision = result.preparation.progressRevision,
+            progressStageUpdatedAt = result.preparation.progressStageUpdatedAt.atZone(SEOUL).toOffsetDateTime(),
+            sourceCode = result.preparation.draft.sourceCode,
+            sourceProgramId = result.preparation.draft.sourceProgramId,
+            serviceField = result.preparation.draft.serviceField.name,
+            createdAt = result.preparation.createdAt.atZone(SEOUL).toOffsetDateTime(),
+            updatedAt = result.preparation.updatedAt.atZone(SEOUL).toOffsetDateTime(),
+            form = ApplicationFormResponse.from(result.form).copy(
                 sections = result.form.sections.map { section ->
                     ApplicationFormSectionResponse.from(section, result.facts.filter { it.sectionKey == section.key })
                 },
@@ -172,6 +182,11 @@ data class ApplicationFactSuggestionResponse(
 data class ApplicationPreparationSummaryResponse(
     val id: Long,
     val inputRevision: Long,
+    val progressStage: String,
+    val progressRevision: Long,
+    val progressStageUpdatedAt: OffsetDateTime,
+    val sourceCode: String,
+    val sourceProgramId: String,
     val serviceField: String,
     val programTitle: String,
     val formTitle: String,
@@ -179,12 +194,17 @@ data class ApplicationPreparationSummaryResponse(
 ) {
     companion object {
         fun from(result: ApplicationPreparationListItemResult) = ApplicationPreparationSummaryResponse(
-            result.preparation.id,
-            result.preparation.inputRevision,
-            result.preparation.serviceField.name,
-            result.form.programTitle,
-            result.form.formTitle,
-            result.preparation.updatedAt.atZone(SEOUL).toOffsetDateTime(),
+            id = result.preparation.id,
+            inputRevision = result.preparation.inputRevision,
+            progressStage = result.preparation.progressStage.name,
+            progressRevision = result.preparation.progressRevision,
+            progressStageUpdatedAt = result.preparation.progressStageUpdatedAt.atZone(SEOUL).toOffsetDateTime(),
+            sourceCode = result.preparation.sourceCode,
+            sourceProgramId = result.preparation.sourceProgramId,
+            serviceField = result.preparation.serviceField.name,
+            programTitle = result.form.programTitle,
+            formTitle = result.form.formTitle,
+            updatedAt = result.preparation.updatedAt.atZone(SEOUL).toOffsetDateTime(),
         )
     }
 }

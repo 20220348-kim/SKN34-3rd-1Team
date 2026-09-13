@@ -2,6 +2,8 @@ package ai.govbiz.core.applicationpreparation.service
 
 import ai.govbiz.core.account.domain.Account
 import ai.govbiz.core.applicationpreparation.domain.NewApplicationPreparation
+import ai.govbiz.core.applicationpreparation.domain.ApplicationProgressStage
+import ai.govbiz.core.applicationpreparation.domain.ApplicationProgressUpdateResult
 import ai.govbiz.core.applicationpreparation.domain.ApplicationInputReplaceResult
 import ai.govbiz.core.applicationpreparation.domain.ApplicationInterpretationInputSnapshot
 import ai.govbiz.core.applicationpreparation.domain.NewConfirmedApplicationFact
@@ -58,6 +60,23 @@ class ApplicationPreparationService(
 
     fun deleteOwned(account: Account, preparationId: Long) {
         if (!repository.deleteOwned(account.id, preparationId)) throw ApplicationPreparationNotFoundException()
+    }
+
+    fun updateProgress(
+        account: Account,
+        preparationId: Long,
+        expectedProgressRevision: Long,
+        progressStage: ApplicationProgressStage,
+    ): ApplicationPreparationDetailResult = when (
+        val result = repository.updateProgressOwned(account.id, preparationId, expectedProgressRevision, progressStage)
+    ) {
+        ApplicationProgressUpdateResult.NotFound -> throw ApplicationPreparationNotFoundException()
+        ApplicationProgressUpdateResult.RevisionConflict -> throw ApplicationPreparationRevisionConflictException()
+        is ApplicationProgressUpdateResult.Updated -> ApplicationPreparationDetailResult(
+            result.preparation,
+            forms.requireVersion(result.preparation.draft.formVersionId),
+            inputs.listOwnedFacts(account.id, preparationId),
+        )
     }
 
     fun interpret(

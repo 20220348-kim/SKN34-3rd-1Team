@@ -23,6 +23,9 @@ const form = {
 const detail = {
   id: 1,
   inputRevision: 1,
+  progressStage: 'PREPARING',
+  progressRevision: 1,
+  progressStageUpdatedAt: '2026-09-11T00:00:00+09:00',
   serviceField: 'TECHNICAL_SUPPORT',
   createdAt: '2026-09-11T00:00:00+09:00',
   updatedAt: '2026-09-11T00:00:00+09:00',
@@ -205,6 +208,22 @@ describe('application preparation HTTP boundary', () => {
     expect(calls[1]?.[0]).toMatch(/\/1\/sections\/company-overview\/inputs$/)
     expect(JSON.parse(calls[0]?.[1].body as string)).toEqual(interpretation)
     expect(JSON.parse(calls[1]?.[1].body as string)).toEqual(inputs)
+  })
+
+  it('updates the owned progress stage with its independent revision', async () => {
+    const updated = { ...detail, progressStage: 'APPLIED', progressRevision: 2 }
+    const fetchMock = vi.fn().mockResolvedValue(Response.json(updated))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(new ApplicationPreparationRepositoryImpl().updateProgress(1, {
+      expectedProgressRevision: 1,
+      progressStage: 'APPLIED',
+    })).resolves.toEqual(updated)
+
+    const [url, options] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(url).toMatch(/\/1\/progress-stage$/)
+    expect(options.method).toBe('PUT')
+    expect(JSON.parse(options.body as string)).toEqual({ expectedProgressRevision: 1, progressStage: 'APPLIED' })
   })
 
   it('propagates cancellation to fetch without converting it to a visible request error', async () => {

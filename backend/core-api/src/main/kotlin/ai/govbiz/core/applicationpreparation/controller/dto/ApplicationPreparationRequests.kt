@@ -2,6 +2,7 @@ package ai.govbiz.core.applicationpreparation.controller.dto
 
 import ai.govbiz.core.applicationpreparation.controller.exception.InvalidApplicationPreparationInputException
 import ai.govbiz.core.applicationpreparation.domain.ApplicationServiceField
+import ai.govbiz.core.applicationpreparation.domain.ApplicationProgressStage
 import ai.govbiz.core.applicationpreparation.domain.NewApplicationPreparation
 import jakarta.validation.constraints.NotBlank
 import jakarta.validation.constraints.Pattern
@@ -64,3 +65,14 @@ data class ApplicationPreparationFactRequest(
     @field:Size(max = 2000) val value: String?,
     @field:NotBlank @field:Size(max = 4000) val sourceText: String,
 )
+
+data class UpdateApplicationProgressRequest(
+    @field:Min(1) val expectedProgressRevision: Long,
+    @field:NotBlank val progressStage: String,
+) {
+    fun toProgressStage(): ApplicationProgressStage = try {
+        ApplicationProgressStage.valueOf(progressStage)
+    } catch (_: IllegalArgumentException) {
+        throw InvalidApplicationPreparationInputException()
+    }
+}

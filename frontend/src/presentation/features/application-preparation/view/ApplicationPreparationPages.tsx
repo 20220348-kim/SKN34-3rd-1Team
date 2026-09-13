@@ -259,7 +259,7 @@ export function ApplicationPreparationEditorPage({ create = false }: { create?: 
   const initialSourceCode = supportedDocumentSources.includes(requestedSourceCode) ? requestedSourceCode : ''
   const initialSourceProgramId = initialSourceCode ? searchParams.get('sourceProgramId') ?? '' : ''
   return <ApplicationPreparationEditor
-    key={`${account.email}:${id ?? 'new'}`}
+    key={`${account.email}:${id ?? `new:${initialSourceCode}:${initialSourceProgramId}`}`}
     id={id}
     initialSourceCode={initialSourceCode}
     initialSourceProgramId={initialSourceProgramId}
