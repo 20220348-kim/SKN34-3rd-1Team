@@ -8,6 +8,7 @@ import ai.govbiz.core.account.domain.OAuthProfile
 import ai.govbiz.core.account.domain.OAuthProvider
 import ai.govbiz.core.account.helper.OAuthStateCookieHelper
 import ai.govbiz.core.account.helper.SessionCookieHelper
+import ai.govbiz.core.account.helper.SignupTestHelper
 import ai.govbiz.core.account.service.AccountOAuthUnlinkService
 import jakarta.servlet.http.Cookie
 import java.net.URI
@@ -124,7 +125,7 @@ class AccountOAuthFlowIntegrationTest {
     fun doesNotLinkASocialAccountToAnExistingEmailAccount() {
         mockMvc.perform(
             post("/api/v1/auth/signup").contentType(MediaType.APPLICATION_JSON)
-                .content("""{"email":"manager@company.co.kr","password":"password1"}"""),
+                .content(SignupTestHelper.signupJson(jdbcTemplate, "manager@company.co.kr", "password1")),
         ).andExpect(status().isCreated())
         stubProfile(kakaoClient, OAuthProfile(OAuthProvider.KAKAO, KAKAO_SUBJECT, "manager@company.co.kr"))
 

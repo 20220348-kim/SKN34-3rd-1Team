@@ -24,6 +24,7 @@ const supportedDocumentSources = ['BIZINFO', 'KSTARTUP', 'MSIT', 'CNTRADE_NOTICE
 export function useApplicationPreparationEditorViewModel(id: number | null, initialSourceCode = '', initialSourceProgramId = '', loadSavedPrograms = false) {
   const useCase = appContainer.resolve('applicationPreparationUseCase')
   const catalogUseCase = appContainer.resolve('browseSupportProgramsUseCase')
+  const programDetailUseCase = appContainer.resolve('getSupportProgramDetailUseCase')
   const navigate = useNavigate()
   const savedProgramChoices = useSavedSupportProgramChoices(id === null && loadSavedPrograms)
   const [forms, setForms] = useState<ApplicationForm[]>([])
@@ -138,9 +139,7 @@ export function useApplicationPreparationEditorViewModel(id: number | null, init
     }
   }, [catalogKeyword, catalogUseCase])
 
-  const selectProgram = useCallback((program: SupportProgram) => {
-    if (discoveryController.current || (activeDiscoveryJob && ['QUEUED', 'RUNNING'].includes(activeDiscoveryJob.status) && !discoveryPollingPaused)) return
-    if (!supportedDocumentSources.includes(program.sourceCode)) return
+  const applyProgramSelection = useCallback((program: SupportProgram, preserveDiscoveryRequestKey = false) => {
     setSelectedProgram(program)
     setDiscoverySourceCode(program.sourceCode)
     setDiscoveryInput(program.id)
@@ -151,9 +150,33 @@ export function useApplicationPreparationEditorViewModel(id: number | null, init
     setError(null)
     setActiveDiscoveryJob(null)
     setDiscoveryPollingPaused(false)
-    discoveryRequestKey.current = null
+    if (!preserveDiscoveryRequestKey) discoveryRequestKey.current = null
     discoveryLookupId.current = null
-  }, [activeDiscoveryJob, discoveryPollingPaused])
+  }, [])
+
+  const selectProgram = useCallback((program: SupportProgram) => {
+    if (discoveryController.current || (activeDiscoveryJob && ['QUEUED', 'RUNNING'].includes(activeDiscoveryJob.status) && !discoveryPollingPaused)) return
+    if (!supportedDocumentSources.includes(program.sourceCode)) return
+    applyProgramSelection(program)
+  }, [activeDiscoveryJob, applyProgramSelection, discoveryPollingPaused])
+
+  useEffect(() => {
+    if (id !== null || !initialSourceCode || !initialSourceProgramId) return
+    const controller = new AbortController()
+    setLoading(true)
+    setError(null)
+    void programDetailUseCase.execute({ sourceCode: initialSourceCode, sourceProgramId: initialSourceProgramId }, controller.signal)
+      .then((program) => {
+        if (!controller.signal.aborted && program) applyProgramSelection(program, true)
+      })
+      .catch((caught: unknown) => {
+        if (!controller.signal.aborted) setError(asError(caught))
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setLoading(false)
+      })
+    return () => controller.abort()
+  }, [applyProgramSelection, id, initialSourceCode, initialSourceProgramId, programDetailUseCase])
 
   const setManualDiscoveryInput = useCallback((value: string) => {
     if (discoveryController.current || (activeDiscoveryJob && ['QUEUED', 'RUNNING'].includes(activeDiscoveryJob.status) && !discoveryPollingPaused)) return

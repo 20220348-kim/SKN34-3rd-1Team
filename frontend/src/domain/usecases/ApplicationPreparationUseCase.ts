@@ -1,4 +1,4 @@
-import { validateNewApplicationPreparation, type InterpretApplicationPreparation, type NewApplicationPreparation, type ReplaceApplicationPreparationInputs } from '../entities/ApplicationPreparation'
+import { applicationProgressStages, validateNewApplicationPreparation, type InterpretApplicationPreparation, type NewApplicationPreparation, type ReplaceApplicationPreparationInputs, type UpdateApplicationProgress } from '../entities/ApplicationPreparation'
 import type { ApplicationPreparationRepository } from '../repositories/ApplicationPreparationRepository'
 import type { GenerateApplicationDraft, SaveApplicationContent, ConfirmApplicationContent } from '../entities/ApplicationPreparation'
 
@@ -68,6 +68,11 @@ export class ApplicationPreparationUseCase {
     if (!Number.isSafeInteger(id) || id <= 0 || !/^[a-z][a-z0-9-]{0,63}$/.test(sectionKey)) throw new Error('올바른 작성 항목이 아닙니다.')
     if (new Set(input.facts.map(({ fieldKey }) => fieldKey)).size !== input.facts.length) throw new Error('같은 입력 항목이 중복되었습니다.')
     return this.repository.replaceInputs(id, sectionKey, input, signal)
+  }
+  updateProgress(id: number, input: UpdateApplicationProgress, signal?: AbortSignal) {
+    if (!Number.isSafeInteger(id) || id <= 0 || !Number.isSafeInteger(input.expectedProgressRevision) || input.expectedProgressRevision <= 0 ||
+      !applicationProgressStages.includes(input.progressStage)) throw new Error('올바른 진행 단계 변경이 아닙니다.')
+    return this.repository.updateProgress(id, input, signal)
   }
 }
 

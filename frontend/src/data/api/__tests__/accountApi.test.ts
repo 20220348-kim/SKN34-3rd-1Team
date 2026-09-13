@@ -13,7 +13,9 @@ import {
   logOutApi,
   requestPasswordResetApi,
   resetPasswordApi,
+  sendSignupEmailCodeApi,
   signUpApi,
+  verifySignupEmailCodeApi,
 } from '../accountApi'
 
 afterEach(() => {
@@ -29,19 +31,19 @@ describe('signUpApi', () => {
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse(sessionResponse, 201))
     vi.stubGlobal('fetch', fetchMock)
 
-    await expect(signUpApi({ email: 'manager@company.co.kr', password: 'password1' })).resolves.toEqual(sessionResponse)
+    await expect(signUpApi({ email: 'manager@company.co.kr', password: 'password1', emailPassToken: 'a'.repeat(43) })).resolves.toEqual(sessionResponse)
 
     const [requestUrl, init] = fetchMock.mock.calls[0] as [string, RequestInit]
     expect(new URL(requestUrl).pathname).toBe('/api/v1/auth/signup')
     expect(init.method).toBe('POST')
     expect(init.credentials).toBe('include')
-    expect(JSON.parse(String(init.body))).toEqual({ email: 'manager@company.co.kr', password: 'password1' })
+    expect(JSON.parse(String(init.body))).toEqual({ email: 'manager@company.co.kr', password: 'password1', emailPassToken: 'a'.repeat(43) })
   })
 
   it('returns the conflict code of a duplicate email', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(problemResponse(409, 'EMAIL_ALREADY_REGISTERED')))
 
-    await expect(signUpApi({ email: 'manager@company.co.kr', password: 'password1' }))
+    await expect(signUpApi({ email: 'manager@company.co.kr', password: 'password1', emailPassToken: 'a'.repeat(43) }))
       .rejects.toMatchObject({ name: 'AccountApiError', status: 409, code: 'EMAIL_ALREADY_REGISTERED' })
   })
 })
@@ -202,7 +204,7 @@ describe('AccountRepositoryImpl', () => {
       .mockResolvedValueOnce(jsonResponse(sessionResponse, 201)))
     const storage = createMemorySessionHintStorage()
     const repository = new AccountRepositoryImpl({ sessionHintStorage: storage })
-    const command = { email: 'manager@company.co.kr', password: 'password1' }
+    const command = { email: 'manager@company.co.kr', password: 'password1', emailPassToken: 'a'.repeat(43) }
 
     await expect(repository.signUp(command)).resolves.toEqual({ outcome: 'email-taken' })
     await expect(repository.signUp(command)).resolves.toEqual({ outcome: 'rate-limited', retryAfterSeconds: 30 })
@@ -332,5 +334,48 @@ describe('password reset apis', () => {
     await expect(repository.requestPasswordReset('manager@company.co.kr')).resolves.toEqual({ outcome: 'mail-unavailable' })
     await expect(repository.requestPasswordReset('manager@company.co.kr')).resolves.toEqual({ outcome: 'requested' })
     await expect(repository.resetPassword('a'.repeat(43), 'new-password-2')).resolves.toEqual({ outcome: 'token-invalid' })
+  })
+})
+
+describe('signup email code apis', () => {
+  it('posts the send and verify requests without a session and parses the pass token', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(null, { status: 204 }))
+      .mockResolvedValueOnce(jsonResponse({ passToken: 'b'.repeat(43), expiresAt: '2026-09-13T18:00:00+09:00' }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(sendSignupEmailCodeApi('manager@company.co.kr')).resolves.toBeUndefined()
+    await expect(verifySignupEmailCodeApi('manager@company.co.kr', '482137')).resolves.toEqual({ passToken: 'b'.repeat(43), expiresAt: '2026-09-13T18:00:00+09:00' })
+
+    const calls = fetchMock.mock.calls as [string, RequestInit][]
+    expect(new URL(calls[0]![0]).pathname).toBe('/api/v1/auth/signup/email-code')
+    expect(calls[0]![1].method).toBe('POST')
+    expect(calls[0]![1].credentials).toBeUndefined()
+    expect(JSON.parse(String(calls[0]![1].body))).toEqual({ email: 'manager@company.co.kr' })
+    expect(new URL(calls[1]![0]).pathname).toBe('/api/v1/auth/signup/email-code/verify')
+    expect(JSON.parse(String(calls[1]![1].body))).toEqual({ email: 'manager@company.co.kr', code: '482137' })
+  })
+
+  it('maps taken emails, unavailable mail, wrong or expired codes and a stale pass to results in the repository', async () => {
+    vi.stubGlobal('fetch', vi.fn()
+      .mockResolvedValueOnce(problemResponse(409, 'EMAIL_ALREADY_REGISTERED'))
+      .mockResolvedValueOnce(problemResponse(503, 'EMAIL_VERIFICATION_MAIL_UNAVAILABLE'))
+      .mockResolvedValueOnce(problemResponse(429, 'EMAIL_CODE_RATE_LIMITED', { retryAfterSeconds: 40 }))
+      .mockResolvedValueOnce(new Response(null, { status: 204 }))
+      .mockResolvedValueOnce(problemResponse(422, 'EMAIL_CODE_INVALID'))
+      .mockResolvedValueOnce(problemResponse(422, 'EMAIL_CODE_EXPIRED'))
+      .mockResolvedValueOnce(jsonResponse({ passToken: 'b'.repeat(43), expiresAt: '2026-09-13T18:00:00+09:00' }))
+      .mockResolvedValueOnce(problemResponse(422, 'EMAIL_VERIFICATION_REQUIRED')))
+    const repository = new AccountRepositoryImpl({ sessionHintStorage: createMemorySessionHintStorage() })
+
+    await expect(repository.sendSignupEmailCode('manager@company.co.kr')).resolves.toEqual({ outcome: 'email-taken' })
+    await expect(repository.sendSignupEmailCode('manager@company.co.kr')).resolves.toEqual({ outcome: 'mail-unavailable' })
+    await expect(repository.sendSignupEmailCode('manager@company.co.kr')).resolves.toEqual({ outcome: 'rate-limited', retryAfterSeconds: 40 })
+    await expect(repository.sendSignupEmailCode('manager@company.co.kr')).resolves.toEqual({ outcome: 'sent' })
+    await expect(repository.verifySignupEmailCode('manager@company.co.kr', '000000')).resolves.toEqual({ outcome: 'code-invalid' })
+    await expect(repository.verifySignupEmailCode('manager@company.co.kr', '000000')).resolves.toEqual({ outcome: 'code-expired' })
+    await expect(repository.verifySignupEmailCode('manager@company.co.kr', '482137')).resolves.toEqual({ outcome: 'verified', passToken: 'b'.repeat(43) })
+    await expect(repository.signUp({ email: 'manager@company.co.kr', password: 'password1', emailPassToken: 'b'.repeat(43) }))
+      .resolves.toEqual({ outcome: 'verification-required' })
   })
 })

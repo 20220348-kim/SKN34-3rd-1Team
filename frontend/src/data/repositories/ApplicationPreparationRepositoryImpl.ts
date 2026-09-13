@@ -6,6 +6,7 @@ import type {
   GenerateApplicationDraft,
   SaveApplicationContent,
   ConfirmApplicationContent,
+  UpdateApplicationProgress,
 } from '../../domain/entities/ApplicationPreparation'
 import type { ApplicationPreparationRepository } from '../../domain/repositories/ApplicationPreparationRepository'
 import { ApplicationPreparationError } from '../../domain/errors/ApplicationPreparationError'
@@ -100,6 +101,13 @@ export class ApplicationPreparationRepositoryImpl implements ApplicationPreparat
   async replaceInputs(id: number, sectionKey: string, input: ReplaceApplicationPreparationInputs, signal?: AbortSignal) {
     const result = await request(`/${id}/sections/${encodeURIComponent(sectionKey)}/inputs`, applicationPreparationSchema, 'PUT', input, signal, 'preparation')
     if (result.id !== id || result.inputRevision !== input.expectedRevision + 1) {
+      throw new ApplicationPreparationError(502, 'INVALID_RESPONSE')
+    }
+    return result
+  }
+  async updateProgress(id: number, input: UpdateApplicationProgress, signal?: AbortSignal) {
+    const result = await request(`/${id}/progress-stage`, applicationPreparationSchema, 'PUT', input, signal, 'preparation')
+    if (result.id !== id || result.progressRevision !== input.expectedProgressRevision + 1 || result.progressStage !== input.progressStage) {
       throw new ApplicationPreparationError(502, 'INVALID_RESPONSE')
     }
     return result

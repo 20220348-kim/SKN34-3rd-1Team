@@ -91,11 +91,6 @@ export function AssistantPanel({ vm, launcherRef }: { vm: AssistantViewModel; la
               <button className={styles.menuItem} type="button" role="menuitem" onClick={() => { setIsMenuOpen(false); vm.startNewConversation() }}>
                 {assistantMessages.newConversation}
               </button>
-              <button className={styles.menuItem} type="button" role="menuitem" onClick={() => { setIsMenuOpen(false); vm.clearConversation() }}>
-                {assistantMessages.clearConversation}
-              </button>
-              <span className={styles.menuNote}>{assistantMessages.helpCenter}</span>
-              <span className={styles.menuNote}>{assistantMessages.notStored}</span>
             </div>
           ) : null}
         </div>
@@ -192,7 +187,9 @@ function AssistantCard({ card, onNavigate }: { card: AssistantCardModel; onNavig
           {row.detail !== null ? <span className={styles.cardRowDetail}>{row.detail}</span> : null}
         </div>
       ))}
-      {card.buttons.map((button) => (
+      {card.buttons.map((button) => button.external ? (
+        <a className={styles.cardButton} key={`${button.label}-${button.to}`} href={button.to} target="_blank" rel="noopener noreferrer">{button.label}</a>
+      ) : (
         <Link className={styles.cardButton} key={`${button.label}-${button.to}`} to={button.to} onClick={onNavigate}>{button.label}</Link>
       ))}
     </div>

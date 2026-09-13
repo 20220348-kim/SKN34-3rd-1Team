@@ -2,6 +2,7 @@ package ai.govbiz.core.supportprogram.controller
 
 import ai.govbiz.core._common.test.MySqlTestContainerConfig
 import ai.govbiz.core.account.helper.SessionCookieHelper
+import ai.govbiz.core.account.helper.SignupTestHelper
 import jakarta.servlet.http.Cookie
 import java.time.LocalDate
 import org.junit.jupiter.api.BeforeEach
@@ -165,7 +166,7 @@ class SavedSupportProgramFlowIntegrationTest {
         val response = mockMvc.perform(
             post("/api/v1/auth/signup")
                 .contentType(MediaType.APPLICATION_JSON)
-                .content("""{"email":"$email","password":"password1"}"""),
+                .content(SignupTestHelper.signupJson(jdbcTemplate, email, "password1")),
         )
             .andExpect(status().isCreated())
             .andReturn().response

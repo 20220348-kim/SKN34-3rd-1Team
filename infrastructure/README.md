@@ -1,5 +1,9 @@
 # GovBiz Docker Compose
 
+이 문서는 **개발용 `compose.yaml`** 안내입니다. 별도 `compose.prod.yaml`·Nginx·Vercel을 사용하는
+[AWS 운영 배포 준비](../docs/deployment-aws-vercel.md)는 개발 파일과 프로젝트/볼륨을 공유하지 않습니다.
+운영 설정은 준비됐지만 실제 AWS/Vercel 자원 배포는 별도입니다.
+
 Docker Compose는 React 개발 서버, Core API, AI Service, 원본 카탈로그용 MySQL과 의미 검색용
 Qdrant, Nori·BM25 키워드 검색용 Elasticsearch, 로그인 후 검색 결과 복원용 Redis, 리포트·중복 검토·공식 문서 분석용 RabbitMQ를 함께 실행하는 로컬 개발 구성입니다. 회원 세션은 동작하지만 개발용 시드 로그인이 켜져 있고 쿠키 `Secure`가
 꺼져 있으므로 운영 배포·TLS·운영 인증 구성으로 쓰지 않습니다.
@@ -127,7 +131,8 @@ OPENAI_API_KEY=발급받은_OpenAI_API_키
 | `ACCOUNT_DEV_LOGIN_EMAIL` | `admin@govbiz.local` | 개발용 관리자 시드 계정 이메일 |
 | `ACCOUNT_DEV_LOGIN_MEMBER_EMAIL` | `member@govbiz.local` | 개발용 회원 시드 계정 이메일 |
 | `ACCOUNT_DEV_LOGIN_PASSWORD` | `govbiz-admin1` | 시드 계정을 만들 때 저장하는 비밀번호. 로그인 폼으로도 쓸 수 있으므로 공유 환경에서는 교체 |
-| `ACCOUNT_PASSWORD_RESET_MAIL_ENABLED` | `false` | 비밀번호 재설정 메일 전송. 끄면 개발용 로그인이 켜진 Compose에서는 재설정 링크가 core-api 로그(WARN)에 찍히므로 `docker compose logs core-api`에서 복사해 열면 됨 |
+| `ACCOUNT_PASSWORD_RESET_MAIL_ENABLED` | `false` | 비밀번호 재설정 메일 전송. 끄면 개발용 로그인이 켜진 Compose에서는 재설정 링크가 core-api 로그(WARN)에 찍히므로 `docker compose logs core-api`에서 복사해 열면 됨. 회원가입 인증번호 메일도 이 값과 `ACCOUNT_PASSWORD_RESET_FROM`을 그대로 쓰며, 꺼져 있으면 인증번호가 같은 로그에 찍힘 |
+| `ACCOUNT_EMAIL_VERIFICATION_CODE_TTL` | `PT10M` | 회원가입 인증번호 유효 시간 |
 | `ACCOUNT_PASSWORD_RESET_FROM` | 빈 값 | 재설정 메일 발신 주소. 메일을 켜면 `SMTP_*`와 함께 필수 |
 | `ACCOUNT_PASSWORD_RESET_FRONTEND_BASE_URL` | `http://127.0.0.1:5173` | 메일 링크가 여는 프런트 origin |
 | `ACCOUNT_OAUTH_CALLBACK_BASE_URL` | `http://127.0.0.1:5173` | 소셜 로그인 콜백 origin. Compose는 브라우저가 5173만 쓰고 Vite가 `/api`를 넘기므로 공급자 콘솔에 `http://127.0.0.1:5173/api/v1/auth/oauth/{kakao\|google}/callback`을 등록 |
@@ -135,6 +140,7 @@ OPENAI_API_KEY=발급받은_OpenAI_API_키
 | `ACCOUNT_OAUTH_GOOGLE_CLIENT_ID` / `ACCOUNT_OAUTH_GOOGLE_CLIENT_SECRET` | 빈 값 | Google 로그인 클라이언트. 비어 있으면 Google 버튼을 눌렀을 때 로그인 화면이 미설정 안내를 표시 |
 | `ACCOUNT_OAUTH_KAKAO_CLIENT_ID` / `ACCOUNT_OAUTH_KAKAO_CLIENT_SECRET` | 빈 값 | 카카오 REST API 키·Client Secret. 비어 있으면 카카오 버튼을 눌렀을 때 로그인 화면이 미설정 안내를 표시 |
 | `ACCOUNT_OAUTH_KAKAO_ADMIN_KEY` | 빈 값 | 탈퇴 때 카카오 연결 끊기용 어드민 키 |
+| `KAKAO_CHANNEL_ID` | 빈 값 | 도우미 "담당자에게 문의" 버튼이 여는 카카오톡 채널 공개 ID(`_`로 시작). Web의 `VITE_KAKAO_CHANNEL_ID`로 전달되며 비어 있으면 문의 항목을 보여 주지 않음 |
 | `ACCOUNT_OAUTH_CONNECT_TIMEOUT` / `ACCOUNT_OAUTH_READ_TIMEOUT` | `2s` / `10s` | 공급자 호출 제한시간 |
 | `BIZNO_API_KEY` | 빈 값 | 기업 등록 시 사업자등록번호를 확인하는 Bizno API 키. 비어 있으면 프로필의 기업 조회·등록이 503 |
 | `BIZNO_URL` | `https://bizno.net/api/fapi` | Bizno 조회 endpoint |

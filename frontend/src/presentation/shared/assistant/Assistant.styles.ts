@@ -50,7 +50,6 @@ export const assistantStyles = {
   ),
   menu: 'absolute right-0 top-9 z-[2] w-[176px] rounded-xl border border-sample-border bg-white p-1.5 text-[13px] text-app-ink shadow-[0_10px_30px_-12px_rgb(0_0_0_/_32%)]',
   menuItem: 'block w-full cursor-pointer rounded-lg border-0 bg-transparent px-2.5 py-2 text-left text-[13px] text-app-ink hover:bg-app-canvas focus-visible:outline-2 focus-visible:outline-brand-primary',
-  menuNote: 'block px-2.5 py-2 text-[12px] text-sample-muted',
 
   // 대화 영역
   log: 'flex min-h-0 flex-1 flex-col gap-3.5 overflow-y-auto bg-white px-3.5 py-4',

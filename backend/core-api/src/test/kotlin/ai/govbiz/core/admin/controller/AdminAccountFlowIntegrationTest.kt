@@ -2,6 +2,7 @@ package ai.govbiz.core.admin.controller
 
 import ai.govbiz.core._common.test.MySqlTestContainerConfig
 import ai.govbiz.core.account.helper.SessionCookieHelper
+import ai.govbiz.core.account.helper.SignupTestHelper
 import jakarta.servlet.http.Cookie
 import java.util.concurrent.atomic.AtomicInteger
 import org.hamcrest.Matchers.containsInAnyOrder
@@ -250,7 +251,7 @@ class AdminAccountFlowIntegrationTest {
 
     private fun signUp(email: String): Cookie {
         val response = mockMvc.perform(
-            post("/api/v1/auth/signup").fromNextAddress().json("""{"email":"$email","password":"password1"}"""),
+            post("/api/v1/auth/signup").fromNextAddress().json(SignupTestHelper.signupJson(jdbcTemplate, email, "password1")),
         )
             .andExpect(status().isCreated())
             .andReturn().response

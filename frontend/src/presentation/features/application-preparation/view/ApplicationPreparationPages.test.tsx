@@ -17,8 +17,10 @@ import { ApplicationDocumentPage } from './ApplicationDocumentPage'
 const original = appContainer.resolve('applicationPreparationUseCase')
 const originalCatalog = appContainer.resolve('browseSupportProgramsUseCase')
 const originalSavedPrograms = appContainer.resolve('browseSavedSupportProgramsUseCase')
+const originalProgramDetail = appContainer.resolve('getSupportProgramDetailUseCase')
 const browsePrograms = vi.fn()
 const browseSavedPrograms = vi.fn()
+const getProgramDetail = vi.fn()
 const firstForm: ApplicationForm = {
   formVersionId: 'verified-form-v1',
   sourceCode: 'BIZINFO',
@@ -55,12 +57,15 @@ const detail = {
   contents: [] as ApplicationPreparation['contents'],
   id: 12,
   inputRevision: 3,
+  progressStage: 'PREPARING' as const,
+  progressRevision: 1,
+  progressStageUpdatedAt: '2026-09-11T01:00:00+09:00',
   serviceField: 'TECHNICAL_SUPPORT' as const,
   createdAt: '2026-09-11T00:00:00+09:00',
   updatedAt: '2026-09-11T01:00:00+09:00',
   form: structuredClone(firstForm),
 }
-const repository = { documents: vi.fn(), generateDocuments: vi.fn(), downloadDocument: vi.fn(), generateDraft: vi.fn(), saveContent: vi.fn(), confirmContent: vi.fn(), discoveryJobs: vi.fn(), discoveryJob: vi.fn(), forms: vi.fn(), discover: vi.fn(), list: vi.fn(), delete: vi.fn(), get: vi.fn(), create: vi.fn(), interpret: vi.fn(), replaceInputs: vi.fn() }
+const repository = { documents: vi.fn(), generateDocuments: vi.fn(), downloadDocument: vi.fn(), generateDraft: vi.fn(), saveContent: vi.fn(), confirmContent: vi.fn(), discoveryJobs: vi.fn(), discoveryJob: vi.fn(), forms: vi.fn(), discover: vi.fn(), list: vi.fn(), delete: vi.fn(), get: vi.fn(), create: vi.fn(), interpret: vi.fn(), replaceInputs: vi.fn(), updateProgress: vi.fn() }
 
 function completedDiscovery(result: { items: ApplicationForm[]; warnings: string[]; cached: boolean }) {
   return { id: 77, sourceCode: result.items[0].sourceCode, sourceProgramId: result.items[0].sourceProgramId,
@@ -269,10 +274,16 @@ beforeEach(() => {
     regions: [], categories: [], startupStages: [], applicantTypes: [], founderAges: [],
   })
   browseSavedPrograms.mockResolvedValue([])
+  getProgramDetail.mockImplementation(async (identity: { sourceCode: string; sourceProgramId: string }) => ({
+    ...structuredClone(supportPrograms[0]),
+    sourceCode: identity.sourceCode,
+    id: identity.sourceProgramId,
+  }))
   appContainer.register({
     applicationPreparationUseCase: asValue(new ApplicationPreparationUseCase(repository)),
     browseSupportProgramsUseCase: asValue({ execute: browsePrograms }),
     browseSavedSupportProgramsUseCase: asValue({ execute: browseSavedPrograms }),
+    getSupportProgramDetailUseCase: asValue({ execute: getProgramDetail }),
   })
 })
 
@@ -283,6 +294,7 @@ afterEach(() => {
     applicationPreparationUseCase: asValue(original),
     browseSupportProgramsUseCase: asValue(originalCatalog),
     browseSavedSupportProgramsUseCase: asValue(originalSavedPrograms),
+    getSupportProgramDetailUseCase: asValue(originalProgramDetail),
   })
 })
 
@@ -339,7 +351,9 @@ describe('application preparation list', () => {
     const nextPage = deferred<ApplicationPreparationPage>()
     repository.list
       .mockResolvedValueOnce({
-        items: [{ id: 12, inputRevision: 1, serviceField: 'TECHNICAL_SUPPORT', programTitle: firstForm.programTitle, formTitle: firstForm.formTitle, updatedAt: detail.updatedAt }],
+        items: [{ id: 12, inputRevision: 1, progressStage: 'PREPARING', progressRevision: 1, progressStageUpdatedAt: detail.updatedAt,
+          sourceCode: firstForm.sourceCode, sourceProgramId: firstForm.sourceProgramId,
+          serviceField: 'TECHNICAL_SUPPORT', programTitle: firstForm.programTitle, formTitle: firstForm.formTitle, updatedAt: detail.updatedAt }],
         nextBeforeId: 12,
       })
       .mockReturnValueOnce(nextPage.promise)
@@ -349,7 +363,9 @@ describe('application preparation list', () => {
     expect(screen.getByRole('status').textContent).toContain('이전 신청 준비')
     expect((screen.getByRole('button', { name: '이전 작업 불러오는 중…' }) as HTMLButtonElement).disabled).toBe(true)
     await act(async () => nextPage.resolve({
-      items: [{ id: 11, inputRevision: 1, serviceField: 'MARKETING', programTitle: secondForm.programTitle, formTitle: secondForm.formTitle, updatedAt: detail.updatedAt }],
+      items: [{ id: 11, inputRevision: 1, progressStage: 'PREPARING', progressRevision: 1, progressStageUpdatedAt: detail.updatedAt,
+        sourceCode: secondForm.sourceCode, sourceProgramId: secondForm.sourceProgramId,
+        serviceField: 'MARKETING', programTitle: secondForm.programTitle, formTitle: secondForm.formTitle, updatedAt: detail.updatedAt }],
       nextBeforeId: null,
     }))
 
@@ -369,13 +385,17 @@ describe('application preparation list', () => {
     })
     expect(firstSignal.aborted).toBe(true)
     await act(async () => secondRequest.resolve({
-      items: [{ id: 21, inputRevision: 1, serviceField: 'MARKETING', programTitle: '최신 사용자 신청', formTitle: secondForm.formTitle, updatedAt: detail.updatedAt }],
+      items: [{ id: 21, inputRevision: 1, progressStage: 'PREPARING', progressRevision: 1, progressStageUpdatedAt: detail.updatedAt,
+        sourceCode: secondForm.sourceCode, sourceProgramId: secondForm.sourceProgramId,
+        serviceField: 'MARKETING', programTitle: '최신 사용자 신청', formTitle: secondForm.formTitle, updatedAt: detail.updatedAt }],
       nextBeforeId: null,
     }))
     expect(await screen.findByText('최신 사용자 신청')).toBeTruthy()
 
     await act(async () => firstRequest.resolve({
-      items: [{ id: 20, inputRevision: 1, serviceField: 'CONSULTING', programTitle: '이전 사용자 신청', formTitle: firstForm.formTitle, updatedAt: detail.updatedAt }],
+      items: [{ id: 20, inputRevision: 1, progressStage: 'PREPARING', progressRevision: 1, progressStageUpdatedAt: detail.updatedAt,
+        sourceCode: firstForm.sourceCode, sourceProgramId: firstForm.sourceProgramId,
+        serviceField: 'CONSULTING', programTitle: '이전 사용자 신청', formTitle: firstForm.formTitle, updatedAt: detail.updatedAt }],
       nextBeforeId: null,
     }))
     expect(screen.queryByText('이전 사용자 신청')).toBeNull()
@@ -383,7 +403,9 @@ describe('application preparation list', () => {
 
   it('requires confirmation and removes only the selected saved preparation after deletion succeeds', async () => {
     repository.list.mockResolvedValueOnce({
-      items: [{ id: 12, inputRevision: 3, serviceField: 'TECHNICAL_SUPPORT', programTitle: firstForm.programTitle, formTitle: firstForm.formTitle, updatedAt: detail.updatedAt }],
+      items: [{ id: 12, inputRevision: 3, progressStage: 'PREPARING', progressRevision: 1, progressStageUpdatedAt: detail.updatedAt,
+        sourceCode: firstForm.sourceCode, sourceProgramId: firstForm.sourceProgramId,
+        serviceField: 'TECHNICAL_SUPPORT', programTitle: firstForm.programTitle, formTitle: firstForm.formTitle, updatedAt: detail.updatedAt }],
       nextBeforeId: null,
     })
     mount('/app/application-preparations')
@@ -402,6 +424,21 @@ describe('application preparation list', () => {
 })
 
 describe('application preparation creation and detail', () => {
+  it('automatically selects the notice passed by the support preparation link', async () => {
+    const program = { ...structuredClone(supportPrograms[0]), sourceCode: 'KSTARTUP', id: '177911', title: '자동 선택할 창업 지원 공고' }
+    getProgramDetail.mockResolvedValueOnce(program)
+
+    mount('/app/application-preparations/new?sourceCode=KSTARTUP&sourceProgramId=177911')
+
+    const selectedHeading = await screen.findByRole('heading', { name: '선택한 공고' })
+    expect(selectedHeading.closest('section')?.textContent).toContain('자동 선택할 창업 지원 공고')
+    expect(getProgramDetail).toHaveBeenCalledWith(
+      { sourceCode: 'KSTARTUP', sourceProgramId: '177911' },
+      expect.any(AbortSignal),
+    )
+    expect(screen.getByRole('button', { name: '신청 문서 찾기' })).toBeTruthy()
+  })
+
   it('selects a notice from saved programs without searching the catalog', async () => {
     const program = { ...structuredClone(supportPrograms[0]), sourceCode: 'KSTARTUP', id: '177911', title: '관심 창업 지원 공고' }
     const form = { ...structuredClone(firstForm), sourceCode: 'KSTARTUP', sourceProgramId: program.id }

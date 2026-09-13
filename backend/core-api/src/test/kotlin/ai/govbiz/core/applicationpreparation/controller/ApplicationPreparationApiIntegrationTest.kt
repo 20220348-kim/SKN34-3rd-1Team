@@ -245,6 +245,9 @@ class ApplicationPreparationApiIntegrationTest {
             .andExpect(status().isCreated())
             .andExpect(header().string(HttpHeaders.CACHE_CONTROL, "no-store"))
             .andExpect(jsonPath("$.inputRevision").value(1))
+            .andExpect(jsonPath("$.progressStage").value("PREPARING"))
+            .andExpect(jsonPath("$.progressRevision").value(1))
+            .andExpect(jsonPath("$.progressStageUpdatedAt", endsWith("+09:00")))
             .andExpect(jsonPath("$.serviceField").value("TECHNICAL_SUPPORT"))
             .andExpect(jsonPath("$.form.sections.length()").value(3))
             .andExpect(jsonPath("$.ownerAccountId").doesNotExist())
@@ -256,6 +259,31 @@ class ApplicationPreparationApiIntegrationTest {
         mvc.perform(get("$BASE/$id").cookie(owner)).andExpect(status().isOk()).andExpect(content().json(response.contentAsString))
         mvc.perform(get("$BASE/$id").cookie(other)).andExpect(status().isNotFound())
             .andExpect(jsonPath("$.code").value("APPLICATION_PREPARATION_NOT_FOUND"))
+    }
+
+    @Test
+    fun updatesOnlyTheOwnedProgressWithItsIndependentRevision() {
+        val id = create(owner)
+        val body = """{"expectedProgressRevision":1,"progressStage":"APPLIED"}"""
+
+        mvc.perform(put("$BASE/$id/progress-stage").cookie(owner).header(HttpHeaders.ORIGIN, ORIGIN)
+            .contentType(MediaType.APPLICATION_JSON).content(body))
+            .andExpect(status().isOk())
+            .andExpect(header().string(HttpHeaders.CACHE_CONTROL, "no-store"))
+            .andExpect(jsonPath("$.progressStage").value("APPLIED"))
+            .andExpect(jsonPath("$.progressRevision").value(2))
+            .andExpect(jsonPath("$.inputRevision").value(1))
+
+        mvc.perform(put("$BASE/$id/progress-stage").cookie(owner).header(HttpHeaders.ORIGIN, ORIGIN)
+            .contentType(MediaType.APPLICATION_JSON).content(body))
+            .andExpect(status().isConflict())
+            .andExpect(jsonPath("$.code").value("APPLICATION_PREPARATION_REVISION_CONFLICT"))
+        mvc.perform(put("$BASE/$id/progress-stage").cookie(other).header(HttpHeaders.ORIGIN, ORIGIN)
+            .contentType(MediaType.APPLICATION_JSON).content("""{"expectedProgressRevision":2,"progressStage":"SELECTED"}"""))
+            .andExpect(status().isNotFound())
+        mvc.perform(put("$BASE/$id/progress-stage").cookie(owner).header(HttpHeaders.ORIGIN, ORIGIN)
+            .contentType(MediaType.APPLICATION_JSON).content("""{"expectedProgressRevision":2,"progressStage":"UNKNOWN"}"""))
+            .andExpect(status().isBadRequest())
     }
 
     @Test
@@ -315,6 +343,8 @@ class ApplicationPreparationApiIntegrationTest {
         mvc.perform(get(BASE).cookie(owner).param("size", "2"))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.items[0].id").value(newest))
+            .andExpect(jsonPath("$.items[0].progressStage").value("PREPARING"))
+            .andExpect(jsonPath("$.items[0].progressRevision").value(1))
             .andExpect(jsonPath("$.items[1].id").value(middle))
             .andExpect(jsonPath("$.nextBeforeId").value(middle))
             .andExpect(jsonPath("$.items[0].form").doesNotExist())
@@ -466,6 +496,13 @@ class ApplicationPreparationApiIntegrationTest {
             .content(json.writeValueAsString(mapOf("expectedRevision" to 2, "expectedVersionId" to first, "content" to "사용자가 수정한 문안 😀"))))
             .andExpect(status().isOk()).andExpect(jsonPath("$.contents.length()").value(2)).andReturn().response
         val second = json.readTree(saved.contentAsString).path("contents").path(0).path("id").asLong()
+        mvc.perform(put("$BASE/$id/progress-stage").cookie(owner).header(HttpHeaders.ORIGIN, ORIGIN)
+            .contentType(MediaType.APPLICATION_JSON).content("""{"expectedProgressRevision":1,"progressStage":"APPLIED"}"""))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.progressStage").value("APPLIED"))
+            .andExpect(jsonPath("$.inputRevision").value(2))
+            .andExpect(jsonPath("$.contents[0].id").value(second))
+            .andExpect(jsonPath("$.contents[0].content").value("사용자가 수정한 문안 😀"))
         mvc.perform(post("$endpoint/confirmations").cookie(owner).header(HttpHeaders.ORIGIN, ORIGIN).contentType(MediaType.APPLICATION_JSON)
             .content("""{"expectedRevision":2,"expectedVersionId":$second}"""))
             .andExpect(status().isOk()).andExpect(jsonPath("$.contents[0].confirmedAt").isNotEmpty())
@@ -510,6 +547,11 @@ class ApplicationPreparationApiIntegrationTest {
         }
         save(1, "새봄 & 연구소")
         val fileId = generate(2)
+        mvc.perform(put("$BASE/$id/progress-stage").cookie(owner).header(HttpHeaders.ORIGIN, ORIGIN)
+            .contentType(MediaType.APPLICATION_JSON).content("""{"expectedProgressRevision":1,"progressStage":"APPLIED"}"""))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.inputRevision").value(2))
+        mvc.perform(get("$BASE/$id/documents").cookie(owner)).andExpect(status().isOk())
+            .andExpect(jsonPath("$[0].id").value(fileId))
         assertEquals(fileId, generate(2))
         verify(ai, times(1)).placeDocument(any(AiApplicationDocumentRequest::class.java) ?: fallback)
         val downloaded = mvc.perform(get("$BASE/$id/documents/$fileId/download").cookie(owner)).andExpect(status().isOk())

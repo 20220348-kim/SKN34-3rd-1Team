@@ -18,6 +18,11 @@ import ai.govbiz.core.admin.service.exception.AdminAccountNotFoundException
 import ai.govbiz.core.admin.service.exception.AdminAccountStateConflictException
 import ai.govbiz.core.admin.service.exception.AdminSelfActionException
 import ai.govbiz.core.admin.service.exception.AdminTargetProtectedException
+import ai.govbiz.core.account.service.exception.EmailCodeExpiredException
+import ai.govbiz.core.account.service.exception.EmailCodeInvalidException
+import ai.govbiz.core.account.service.exception.EmailCodeRateLimitedException
+import ai.govbiz.core.account.service.exception.EmailVerificationMailUnavailableException
+import ai.govbiz.core.account.service.exception.EmailVerificationRequiredException
 import ai.govbiz.core.account.service.exception.PasswordResetMailUnavailableException
 import ai.govbiz.core.account.service.exception.PasswordResetTokenInvalidException
 import ai.govbiz.core.account.service.exception.EmailAlreadyRegisteredException
@@ -832,6 +837,80 @@ class ApiExceptionHandler {
                 "Password Reset Mail Unavailable",
                 "The password reset email cannot be sent right now.",
                 "PASSWORD_RESET_MAIL_UNAVAILABLE",
+            ),
+            request,
+        )
+
+    @ExceptionHandler(EmailCodeInvalidException::class)
+    fun handleEmailCodeInvalidException(request: HttpServletRequest): ResponseEntity<ProblemDetail> =
+        problemResponse(
+            ProblemDefinition(
+                HttpStatus.UNPROCESSABLE_CONTENT,
+                URI.create("urn:govbiz:problem:email-code-invalid"),
+                "Email Code Invalid",
+                "The email verification code does not match.",
+                "EMAIL_CODE_INVALID",
+            ),
+            request,
+        )
+
+    @ExceptionHandler(EmailCodeExpiredException::class)
+    fun handleEmailCodeExpiredException(request: HttpServletRequest): ResponseEntity<ProblemDetail> =
+        problemResponse(
+            ProblemDefinition(
+                HttpStatus.UNPROCESSABLE_CONTENT,
+                URI.create("urn:govbiz:problem:email-code-expired"),
+                "Email Code Expired",
+                "The email verification code is missing, expired, or out of attempts. Request a new code.",
+                "EMAIL_CODE_EXPIRED",
+            ),
+            request,
+        )
+
+    @ExceptionHandler(EmailCodeRateLimitedException::class)
+    fun handleEmailCodeRateLimitedException(
+        exception: EmailCodeRateLimitedException,
+        request: HttpServletRequest,
+    ): ResponseEntity<ProblemDetail> {
+        val response = problemResponse(
+            ProblemDefinition(
+                HttpStatus.TOO_MANY_REQUESTS,
+                URI.create("urn:govbiz:problem:email-code-rate-limited"),
+                "Email Code Rate Limited",
+                "Too many verification code requests for this email. Please retry later.",
+                "EMAIL_CODE_RATE_LIMITED",
+            ),
+            request,
+        )
+        response.body?.setProperty("retryAfterSeconds", exception.retryAfterSeconds)
+        return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
+            .header(HttpHeaders.RETRY_AFTER, exception.retryAfterSeconds.toString())
+            .contentType(MediaType.APPLICATION_PROBLEM_JSON)
+            .body(response.body)
+    }
+
+    @ExceptionHandler(EmailVerificationRequiredException::class)
+    fun handleEmailVerificationRequiredException(request: HttpServletRequest): ResponseEntity<ProblemDetail> =
+        problemResponse(
+            ProblemDefinition(
+                HttpStatus.UNPROCESSABLE_CONTENT,
+                URI.create("urn:govbiz:problem:email-verification-required"),
+                "Email Verification Required",
+                "Verify the email with the mailed code before signing up.",
+                "EMAIL_VERIFICATION_REQUIRED",
+            ),
+            request,
+        )
+
+    @ExceptionHandler(EmailVerificationMailUnavailableException::class)
+    fun handleEmailVerificationMailUnavailableException(request: HttpServletRequest): ResponseEntity<ProblemDetail> =
+        problemResponse(
+            ProblemDefinition(
+                HttpStatus.SERVICE_UNAVAILABLE,
+                URI.create("urn:govbiz:problem:email-verification-mail-unavailable"),
+                "Email Verification Mail Unavailable",
+                "The email verification code cannot be sent right now.",
+                "EMAIL_VERIFICATION_MAIL_UNAVAILABLE",
             ),
             request,
         )

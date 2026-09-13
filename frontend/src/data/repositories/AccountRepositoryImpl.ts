@@ -12,7 +12,9 @@ import type {
   LogInResult,
   RequestPasswordResetResult,
   ResetPasswordResult,
+  SendSignupEmailCodeResult,
   SignUpResult,
+  VerifySignupEmailCodeResult,
 } from '../../domain/repositories/AccountRepository'
 import {
   AccountApiError,
@@ -25,6 +27,8 @@ import {
   logOutApi,
   requestPasswordResetApi,
   resetPasswordApi,
+  sendSignupEmailCodeApi,
+  verifySignupEmailCodeApi,
   oauthStartUrl,
   signUpApi,
 } from '../api/accountApi'
@@ -49,6 +53,7 @@ export class AccountRepositoryImpl implements AccountRepository {
     } catch (error) {
       if (error instanceof AccountApiError) {
         if (error.status === 409) return { outcome: 'email-taken' }
+        if (error.status === 422 && error.code === 'EMAIL_VERIFICATION_REQUIRED') return { outcome: 'verification-required' }
         if (error.status === 429) return { outcome: 'rate-limited', retryAfterSeconds: error.retryAfterSeconds }
       }
       throw error
@@ -155,6 +160,36 @@ export class AccountRepositoryImpl implements AccountRepository {
     } catch (error) {
       if (error instanceof AccountApiError) {
         if (error.status === 422) return { outcome: 'token-invalid' }
+        if (error.status === 429) return { outcome: 'rate-limited', retryAfterSeconds: error.retryAfterSeconds }
+      }
+      throw error
+    }
+  }
+
+  /** 409(가입됨)·503(메일 불가)·429는 화면이 안내하는 업무 결과이고, 그 외 실패는 예외로 둡니다. */
+  async sendSignupEmailCode(email: string, signal?: AbortSignal): Promise<SendSignupEmailCodeResult> {
+    try {
+      await sendSignupEmailCodeApi(email, signal)
+      return { outcome: 'sent' }
+    } catch (error) {
+      if (error instanceof AccountApiError) {
+        if (error.status === 409) return { outcome: 'email-taken' }
+        if (error.status === 503) return { outcome: 'mail-unavailable' }
+        if (error.status === 429) return { outcome: 'rate-limited', retryAfterSeconds: error.retryAfterSeconds }
+      }
+      throw error
+    }
+  }
+
+  /** 422는 코드로 불일치와 만료를 구분해 화면이 다르게 안내합니다. */
+  async verifySignupEmailCode(email: string, code: string, signal?: AbortSignal): Promise<VerifySignupEmailCodeResult> {
+    try {
+      const pass = await verifySignupEmailCodeApi(email, code, signal)
+      return { outcome: 'verified', passToken: pass.passToken }
+    } catch (error) {
+      if (error instanceof AccountApiError) {
+        if (error.status === 422 && error.code === 'EMAIL_CODE_INVALID') return { outcome: 'code-invalid' }
+        if (error.status === 422) return { outcome: 'code-expired' }
         if (error.status === 429) return { outcome: 'rate-limited', retryAfterSeconds: error.retryAfterSeconds }
       }
       throw error

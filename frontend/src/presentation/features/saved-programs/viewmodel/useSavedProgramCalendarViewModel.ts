@@ -15,7 +15,7 @@ import {
   type SavedProgramCalendarFilters,
 } from './savedProgramCalendar'
 
-export type SavedProgramsViewMode = 'calendar' | 'list'
+export type SavedProgramsViewMode = 'calendar' | 'list' | 'pipeline'
 export type SavedProgramsBrowseUseCase = Pick<BrowseSavedSupportProgramsUseCase, 'execute'>
 
 const savedProgramListPageSize = 8
@@ -102,7 +102,8 @@ export function useSavedProgramCalendarViewModel(
 
   return {
     ...display, today, phase: loadState.phase, weeks, programsInMonth, allProgramsInMonth, filters, activeFilterCount,
-    viewMode, listPage: safeListPage, listTotalPages, listPrograms, filteredProgramCount: filteredPrograms.length,
+    viewMode, listPage: safeListPage, listTotalPages, listPrograms, programs, filteredPrograms,
+    filteredProgramCount: filteredPrograms.length,
     totalProgramCount: programs.length,
     years: selectableYears(display.year),
     canPreviousMonth: display.year > firstCalendarYear || display.month > 1,

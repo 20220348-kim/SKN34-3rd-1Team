@@ -15,6 +15,7 @@ import org.springframework.security.crypto.password.PasswordEncoder
     AccountSessionProperties::class,
     AccountDevLoginProperties::class,
     AccountPasswordResetProperties::class,
+    AccountEmailVerificationProperties::class,
     AccountOAuthProperties::class,
 )
 class AccountAuthConfig {

@@ -2,6 +2,9 @@
 .env
 .env.*
 !.env.example
+!infrastructure/.env.production.example
+.vercel/
+infrastructure/certs/
 
 # Python
 __pycache__/

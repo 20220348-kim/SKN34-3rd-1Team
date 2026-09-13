@@ -13,12 +13,16 @@ export type AccountLogIn = {
 export type AccountSignUp = {
   email: string
   password: string
+  /** 인증번호 확인이 돌려준 43자 통행 토큰입니다. 같은 이메일로 인증한 것이어야 합니다. */
+  emailPassToken: string
 }
 
 /** 가입 실패 사유도 화면이 다른 안내를 보여야 하므로 결과로 구분합니다. 성공하면 서버가 바로 세션을 발급합니다. */
 export type SignUpResult =
   | { outcome: 'session'; session: AuthSession }
   | { outcome: 'email-taken' }
+  /** 통행 토큰이 없거나 만료됐거나 다른 이메일로 인증한 것입니다. 인증부터 다시 합니다. */
+  | { outcome: 'verification-required' }
   | { outcome: 'rate-limited'; retryAfterSeconds: number | null }
 
 /** 로그인 실패 사유는 화면이 다른 안내를 보여야 하므로 예외가 아닌 결과로 구분합니다. */
@@ -52,6 +56,20 @@ export type ResetPasswordResult =
   | { outcome: 'token-invalid' }
   | { outcome: 'rate-limited'; retryAfterSeconds: number | null }
 
+/** 인증번호 발송 결과입니다. 이미 가입된 이메일, 메일 불가, 재전송 대기·발송 한도는 화면이 다르게 안내합니다. */
+export type SendSignupEmailCodeResult =
+  | { outcome: 'sent' }
+  | { outcome: 'email-taken' }
+  | { outcome: 'mail-unavailable' }
+  | { outcome: 'rate-limited'; retryAfterSeconds: number | null }
+
+/** 인증번호 확인 결과입니다. 맞으면 가입에 실을 통행 토큰을 받습니다. */
+export type VerifySignupEmailCodeResult =
+  | { outcome: 'verified'; passToken: string }
+  | { outcome: 'code-invalid' }
+  | { outcome: 'code-expired' }
+  | { outcome: 'rate-limited'; retryAfterSeconds: number | null }
+
 /** 계정 기능이 Data Layer의 HTTP·저장소 세부사항과 분리되도록 하는 Domain 포트입니다. */
 export interface AccountRepository {
   signUp(command: AccountSignUp, signal?: AbortSignal): Promise<SignUpResult>
@@ -72,6 +90,10 @@ export interface AccountRepository {
   requestPasswordReset(email: string, signal?: AbortSignal): Promise<RequestPasswordResetResult>
   /** 메일 링크의 토큰으로 새 비밀번호를 저장합니다. 성공하면 서버가 모든 세션을 끝냅니다. */
   resetPassword(token: string, newPassword: string, signal?: AbortSignal): Promise<ResetPasswordResult>
+  /** 가입할 이메일로 6자리 인증번호를 요청합니다. 로그인 없이 부릅니다. */
+  sendSignupEmailCode(email: string, signal?: AbortSignal): Promise<SendSignupEmailCodeResult>
+  /** 인증번호를 확인하고 가입 요청에 실을 통행 토큰을 받습니다. */
+  verifySignupEmailCode(email: string, code: string, signal?: AbortSignal): Promise<VerifySignupEmailCodeResult>
   /** 소셜 로그인을 시작하는 Core API 주소입니다. 화면이 바로 링크로 그리도록 요청 없이 계산합니다. */
   oauthStartUrl(provider: OAuthProviderId): string
   /** 소셜 로그인 콜백이 세션 쿠키를 심은 뒤 부릅니다. 세션 힌트를 남기고 계정을 읽으며, 세션이 없으면 null입니다. */

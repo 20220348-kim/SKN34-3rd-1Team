@@ -9,6 +9,11 @@
 
 ## 서비스 경계
 
+AWS 운영 진입 경로는 `Vercel routing middleware → CloudFront VPC origin → Nginx → Core`로 준비했습니다.
+미들웨어는 프록시 공유 비밀값·신뢰 IP만 추가하며 업무/AI 실행을 맡지 않습니다. Core는 운영 Compose에서
+Nginx 한 IP의 전달 헤더만 신뢰하고 기존 계정·Origin 검증을 유지합니다.
+[운영 설정과 미검증 배포 경계](deployment-aws-vercel.md)를 참고하세요. 실제 클라우드 배포 완료를 뜻하지 않습니다.
+
 신청 문서 작성 도우미는 `ApplicationFormDiscoveryJobController → ApplicationFormDiscoveryJobService → Repository → MyBatis → MySQL`
 로 V26 분석 작업과 Outbox를 함께 저장하고 202를 반환합니다.
 `ApplicationFormDiscoveryOutboxScheduler → QueueClient → RabbitMQ → ApplicationFormDiscoveryJobConsumer → JobService`
@@ -33,14 +38,16 @@ AI는 답변을 다시 쓰지 않고 기입 위치만 선택합니다. Core가 �
 HWP/HWPX는 파란 텍스트 후보와 표 문맥을 함께 전달하여 예시 삭제 대상도 선택합니다. Core는 후보 ID를 검증하고 선택된 파란 예시만 제거한 뒤 검은 글씨로 기입합니다. PDF의 기존 텍스트 삭제는 지원하지 않습니다.
 HWP는 hwplib 1.1.11, HWPX는 ZIP/XML, PDF는 PDFBox와 OFL NanumGothic 글꼴을 사용합니다.
 PDF 입력값은 AcroForm 필드로 남겨 다시 편집할 수 있습니다. 문서를 다른 확장자로 변환하지 않습니다.
-`ApplicationDocumentRepository → MyBatis → MySQL`이 V30의 생성 파일·원본 hash·기입 위치를 저장합니다.
-V31의 생성기 버전으로 이전 결과와 구분하여 같은 답변 revision의 수정된 초안을 재생성하며 이전 파일은 보존합니다.
+`ApplicationDocumentRepository → MyBatis → MySQL`이 V32의 생성 파일·원본 hash·기입 위치를 저장합니다.
+V33의 생성기 버전으로 이전 결과와 구분하여 같은 답변 revision의 수정된 초안을 재생성하며 이전 파일은 보존합니다.
 생성기 3은 HWP 선택 컨트롤의 정확한 값 매칭을 Core에서 처리하고 나머지 답변 위치를 AI에 요청합니다. 체크 그룹 갱신·밑줄 빈칸 치환·HWP 줄 배치 재계산 뒤 저장합니다. 미정 답변은 기입 대상에서 제외하고 Frontend가 누락 항목을 표시합니다. 전체 페이지 조판과 실제 양식의 의미적 배치 품질은 자동 테스트와 별도로 검수해야 합니다.
 외부 호출은 DB transaction 밖에서 실행하고 저장 시 입력 revision을 잠금으로 재확인합니다.
 같은 revision의 저장 파일은 재사용하며, 현재 프로세스에서 같은 준비 건의 동시 생성은 거절합니다.
 Frontend는 입력 화면과 `/:preparationId/documents` 결과 화면을 분리합니다. 원본 파일 단위로 다운로드하며,
 내려받은 파일에서 수정하거나 이전 입력 화면에서 답변을 수정·저장한 뒤 다시 생성합니다.
-V29의 문항별 텍스트 작성본 API·기록은 남아 있으나 현재 UI는 호출하지 않습니다.
+V31의 문항별 텍스트 작성본 API·기록은 남아 있으나 현재 UI는 호출하지 않습니다.
+
+`/app/saved-programs`의 진행 관리에서는 신청 준비 건의 단계를 조회·변경합니다. 단계 변경은 문서 입력 revision과 분리된 진행 revision으로 보호합니다.
 
 Frontend는 현재 공고의 활성 분석 작업을 3초마다 확인하며, 조회 재시도는 새 분석을 만들지 않습니다.
 AI Service의 명시적 근거 검증 실패(`422 / APPLICATION_FORM_AI_INVALID_RESPONSE`)는 Client의 전용 예외 → DiscoveryService의 업무 오류 → JobService의 FAILED 저장으로 연결됩니다. 공고 재선택 후 새 요청은 허용하되 자동 재호출하지 않으며, 통신 유실·시간 초과는 UNKNOWN으로 차단합니다.

@@ -31,7 +31,7 @@ function messageFor(code: string, status: number): string {
   if (code === 'APPLICATION_FORM_SOURCE_UNAVAILABLE') return '공식 공고나 첨부를 지금 불러올 수 없습니다. 잠시 후 다시 시도해 주세요.'
   if (code === 'APPLICATION_FORM_AI_INVALID_RESPONSE') return 'AI가 공식 첨부의 문항 근거를 확인하지 못해 분석을 종료했습니다. 공고를 다시 선택하면 새 분석을 요청할 수 있습니다.'
   if (code === 'APPLICATION_PREPARATION_SECTION_NOT_FOUND') return '현재 지원하지 않는 작성 항목입니다.'
-  if (code === 'APPLICATION_PREPARATION_REVISION_CONFLICT') return '입력 또는 작성본이 변경되었습니다. 최신 내용을 다시 불러와 확인해 주세요.'
+  if (code === 'APPLICATION_PREPARATION_REVISION_CONFLICT') return '입력·작성본 또는 진행 단계가 변경되었습니다. 최신 내용을 다시 불러와 확인해 주세요.'
   if (code === 'APPLICATION_PREPARATION_RUN_CONFLICT') return '이전 AI 요청이 진행 중이거나 같은 요청을 다시 사용할 수 없습니다. 최신 내용을 불러온 뒤 다시 시도해 주세요.'
   if (code === 'AI_SERVICE_TIMEOUT') return 'AI 처리 시간이 초과되었습니다. 저장된 답변과 작성본을 확인한 뒤 다시 시도해 주세요.'
   if (code === 'AI_SERVICE_UNAVAILABLE' || code === 'AI_SERVICE_INVALID_RESPONSE') return 'AI가 답변을 확인하지 못했습니다. 잠시 후 다시 시도해 주세요.'

@@ -3,6 +3,7 @@ import type { BrowseSupportProgramsUseCase } from '../../domain/usecases/BrowseS
 
 import type { CoreApiHealth } from '../../data/api/coreApiHealth'
 import type { SessionHintStorage } from '../../data/storage/sessionHintStorage'
+import type { KakaoChannelChatUrl } from '../../data/config/kakaoChannel'
 import type { AccountRepository } from '../../domain/repositories/AccountRepository'
 import type { ApplicationPreparationRepository } from '../../domain/repositories/ApplicationPreparationRepository'
 import type { ApplicationPreparationUseCase } from '../../domain/usecases/ApplicationPreparationUseCase'
@@ -62,6 +63,8 @@ import type { LogInUseCase } from '../../domain/usecases/LogInUseCase'
 import type { LogOutUseCase } from '../../domain/usecases/LogOutUseCase'
 import type { RequestPasswordResetUseCase } from '../../domain/usecases/RequestPasswordResetUseCase'
 import type { ResetPasswordUseCase } from '../../domain/usecases/ResetPasswordUseCase'
+import type { SendSignupEmailCodeUseCase } from '../../domain/usecases/SendSignupEmailCodeUseCase'
+import type { VerifySignupEmailCodeUseCase } from '../../domain/usecases/VerifySignupEmailCodeUseCase'
 import type { SignUpUseCase } from '../../domain/usecases/SignUpUseCase'
 import type { PrepareSampleItemUseCase } from '../../domain/usecases/PrepareSampleItemUseCase'
 import type { RestoreSupportProgramSearchUseCase } from '../../domain/usecases/RestoreSupportProgramSearchUseCase'
@@ -112,6 +115,7 @@ export type AppCradle = {
   startOAuthSignInUseCase: StartOAuthSignInUseCase
   completeOAuthSignInUseCase: CompleteOAuthSignInUseCase
   fetchCoreApiHealth: FetchCoreApiHealth
+  kakaoChannelChatUrl: KakaoChannelChatUrl
   getCurrentAccountUseCase: GetCurrentAccountUseCase
   getSupportProgramDetailUseCase: GetSupportProgramDetailUseCase
   getSupportProgramSearchReadinessUseCase: GetSupportProgramSearchReadinessUseCase
@@ -129,6 +133,8 @@ export type AppCradle = {
   signUpUseCase: SignUpUseCase
   requestPasswordResetUseCase: RequestPasswordResetUseCase
   resetPasswordUseCase: ResetPasswordUseCase
+  sendSignupEmailCodeUseCase: SendSignupEmailCodeUseCase
+  verifySignupEmailCodeUseCase: VerifySignupEmailCodeUseCase
   changePasswordUseCase: ChangePasswordUseCase
   getAccountDeletionPreviewUseCase: GetAccountDeletionPreviewUseCase
   deleteAccountUseCase: DeleteAccountUseCase

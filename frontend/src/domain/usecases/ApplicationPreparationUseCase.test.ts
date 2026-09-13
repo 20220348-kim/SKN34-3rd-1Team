@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { ApplicationPreparationUseCase } from './ApplicationPreparationUseCase'
 
-const repository = { documents: vi.fn(), generateDocuments: vi.fn(), downloadDocument: vi.fn(), generateDraft: vi.fn(), saveContent: vi.fn(), confirmContent: vi.fn(), discoveryJobs: vi.fn(), discoveryJob: vi.fn(), forms: vi.fn(), discover: vi.fn(), list: vi.fn(), delete: vi.fn(), get: vi.fn(), create: vi.fn(), interpret: vi.fn(), replaceInputs: vi.fn() }
+const repository = { documents: vi.fn(), generateDocuments: vi.fn(), downloadDocument: vi.fn(), generateDraft: vi.fn(), saveContent: vi.fn(), confirmContent: vi.fn(), discoveryJobs: vi.fn(), discoveryJob: vi.fn(), forms: vi.fn(), discover: vi.fn(), list: vi.fn(), delete: vi.fn(), get: vi.fn(), create: vi.fn(), interpret: vi.fn(), replaceInputs: vi.fn(), updateProgress: vi.fn() }
 const useCase = new ApplicationPreparationUseCase(repository)
 const valid = {
   sourceCode: 'BIZINFO',
@@ -22,6 +22,12 @@ describe('ApplicationPreparationUseCase', () => {
     expect(() => useCase.get(0)).toThrow('주소')
     expect(() => useCase.delete(0)).toThrow('삭제')
     expect(() => useCase.create({ ...valid, formVersionId: '잘못된 버전' })).toThrow('양식')
+  })
+
+  it('validates and forwards an independent progress revision', () => {
+    useCase.updateProgress(3, { expectedProgressRevision: 2, progressStage: 'APPLIED' })
+    expect(repository.updateProgress).toHaveBeenCalledWith(3, { expectedProgressRevision: 2, progressStage: 'APPLIED' }, undefined)
+    expect(() => useCase.updateProgress(3, { expectedProgressRevision: 0, progressStage: 'APPLIED' })).toThrow('진행 단계')
   })
 
   it('accepts supported catalog identities and a manually entered BizInfo URL', () => {

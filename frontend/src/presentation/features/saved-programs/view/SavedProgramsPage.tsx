@@ -1,12 +1,18 @@
 import { useState } from 'react'
 import { Link } from 'react-router'
 
+import { applicationServiceFieldLabels, type ApplicationPreparationSummary, type ApplicationProgressStage } from '../../../../domain/entities/ApplicationPreparation'
 import { regionNames } from '../../../../domain/entities/Region'
 import { supportProgramCategories } from '../../../../domain/entities/SupportProgramCategory'
 import { appPaths, supportProgramDetailPath } from '../../../shared/routes/appPaths'
 import { workspaceChipClassName, workspacePageStyles, workspaceTagClassName, type WorkspaceTagTone } from '../../../shared/workspace/WorkspacePage.styles'
 import { WorkspacePageHeader } from '../../../shared/workspace/WorkspacePageHeader'
 import { savedSupportProgramMessages } from '../../saved-support-program/viewmodel/useSavedSupportProgramsViewModel'
+import {
+  applicationPipelineStages,
+  type ApplicationPipelineListUseCase,
+  useApplicationPipelineViewModel,
+} from '../viewmodel/useApplicationPipelineViewModel'
 import {
   type SavedProgramsBrowseUseCase,
   useSavedProgramCalendarViewModel,
@@ -29,14 +35,16 @@ function Arrow({ direction }: { direction: 'left' | 'right' }) {
 type SavedProgramsPageProps = {
   initial?: { today: string; programs: readonly CalendarProgram[] }
   browseUseCase?: SavedProgramsBrowseUseCase
+  preparationUseCase?: ApplicationPipelineListUseCase
 }
 
 /**
- * 로그인 회원이 실제로 저장한 지원사업을 달력과 목록으로 보여 줍니다.
+ * 로그인 회원이 실제로 저장한 지원사업을 달력·목록으로, 실제 신청 준비 건을 진행 관리로 보여 줍니다.
  * 머리글·탭·검색 칸·필터·카드는 파트너 관리와 같은 공용 모양을 쓰고, 달력만 이 화면 고유입니다.
  */
-export function SavedProgramsPage({ initial, browseUseCase }: SavedProgramsPageProps = {}) {
+export function SavedProgramsPage({ initial, browseUseCase, preparationUseCase }: SavedProgramsPageProps = {}) {
   const vm = useSavedProgramCalendarViewModel(initial, browseUseCase)
+  const pipelineVm = useApplicationPipelineViewModel(vm.viewMode === 'pipeline', preparationUseCase)
   const monthLabel = `${vm.year}년 ${vm.month}월`
   const isEmpty = vm.phase === 'ready' && vm.totalProgramCount === 0
   const activeFilters: { key: keyof SavedProgramCalendarFilters; label: string }[] = [
@@ -52,6 +60,8 @@ export function SavedProgramsPage({ initial, browseUseCase }: SavedProgramsPageP
         onClick={() => vm.setViewMode('calendar')}>달력 보기</button>
       <button type="button" role="tab" aria-selected={vm.viewMode === 'list'} className={workspaceChipClassName(vm.viewMode === 'list')}
         onClick={() => vm.setViewMode('list')}>목록 보기</button>
+      <button type="button" role="tab" aria-selected={vm.viewMode === 'pipeline'} className={workspaceChipClassName(vm.viewMode === 'pipeline')}
+        onClick={() => vm.setViewMode('pipeline')}>진행 관리</button>
     </div>} />
 
     <div className={workspacePageStyles.content}>
@@ -84,7 +94,7 @@ export function SavedProgramsPage({ initial, browseUseCase }: SavedProgramsPageP
           </div>
         </form>
 
-        {vm.phase === 'loading' && vm.totalProgramCount === 0 ? (
+        {vm.viewMode !== 'pipeline' ? (vm.phase === 'loading' && vm.totalProgramCount === 0 ? (
           <section className={workspacePageStyles.card} aria-label="관심 공고 불러오는 중">
             <p className={workspacePageStyles.emptyNote} role="status">{savedSupportProgramMessages.loading}</p>
           </section>
@@ -98,7 +108,7 @@ export function SavedProgramsPage({ initial, browseUseCase }: SavedProgramsPageP
             <p className={workspacePageStyles.emptyNote}>{savedSupportProgramMessages.empty}</p>
             <div><Link className={workspacePageStyles.primaryButton} to={appPaths.chat}>지원사업 찾기</Link></div>
           </section>
-        ) : null}
+        ) : null) : null}
 
         {vm.viewMode === 'calendar' ? <>
           <div className={s.toolbar}>
@@ -132,24 +142,210 @@ export function SavedProgramsPage({ initial, browseUseCase }: SavedProgramsPageP
               )}</tr>)}</tbody>
             </table>
           </div>
-        </> : <SavedProgramList programs={vm.listPrograms} today={vm.today} page={vm.listPage}
-          totalPages={vm.listTotalPages} onPageChange={vm.chooseListPage} />}
+        </> : vm.viewMode === 'list' ? <SavedProgramList programs={vm.listPrograms} today={vm.today} page={vm.listPage}
+          totalPages={vm.listTotalPages} onPageChange={vm.chooseListPage} />
+          : <ApplicationPipeline filteredSavedPrograms={vm.filteredPrograms}
+            filtersActive={vm.activeFilterCount > 0} savedPhase={vm.phase} items={pipelineVm.items} phase={pipelineVm.phase} nextBeforeId={pipelineVm.nextBeforeId}
+            loadingMore={pipelineVm.loadingMore} changingId={pipelineVm.changingId} updateError={pipelineVm.updateError}
+            onRetry={pipelineVm.retry} onLoadMore={pipelineVm.loadMore} onChangeProgress={pipelineVm.changeProgress} />}
       </div>
     </div>
   </>
 }
 
+function ApplicationPipeline({ filteredSavedPrograms, filtersActive, savedPhase, items, phase, nextBeforeId, loadingMore, changingId, updateError, onRetry, onLoadMore, onChangeProgress }: {
+  filteredSavedPrograms: readonly CalendarProgram[]
+  filtersActive: boolean
+  savedPhase: 'loading' | 'ready' | 'failed'
+  items: ApplicationPreparationSummary[]
+  phase: 'idle' | 'loading' | 'ready' | 'failed'
+  nextBeforeId: number | null
+  loadingMore: boolean
+  changingId: number | null
+  updateError: string | null
+  onRetry: () => void
+  onLoadMore: () => void
+  onChangeProgress: (item: ApplicationPreparationSummary, stage: ApplicationProgressStage) => Promise<boolean>
+}) {
+  const [openedColumn, setOpenedColumn] = useState<string | null>(null)
+  const [dialogPage, setDialogPage] = useState(1)
+  const preparedProgramKeys = new Set(items.map(item => `${item.sourceCode}:${item.sourceProgramId}`))
+  const filteredProgramKeys = new Set(filteredSavedPrograms.map(program => `${program.sourceCode}:${program.sourceProgramId}`))
+  const visiblePreparationItems = filtersActive
+    ? items.filter(item => filteredProgramKeys.has(`${item.sourceCode}:${item.sourceProgramId}`))
+    : items
+  const interestPrograms = filteredSavedPrograms.filter(program => !preparedProgramKeys.has(`${program.sourceCode}:${program.sourceProgramId}`))
+  const visibleInterestPrograms = interestPrograms.slice(0, pipelineColumnPreviewSize)
+  const openedStage = applicationPipelineStages.find(stage => stage.key === openedColumn)
+  const openedStageItems = openedStage
+    ? visiblePreparationItems.filter(item => item.progressStage === openedStage.key)
+    : []
+  const openedTotal = openedColumn === 'INTEREST' ? interestPrograms.length : openedStageItems.length
+  const currentDialogPage = safePage(dialogPage, openedTotal, pipelineDialogPageSize)
+
+  function openColumn(key: string) {
+    setDialogPage(1)
+    setOpenedColumn(key)
+  }
+
+  return <div role="tabpanel" aria-label="지원사업 진행 관리" className={s.pipelineSection}>
+    {phase === 'loading' && items.length === 0 ? <section className={workspacePageStyles.card}><p className={workspacePageStyles.emptyNote} role="status">진행 중인 지원사업을 불러오고 있습니다.</p></section> : null}
+    {phase === 'failed' ? <section className={workspacePageStyles.card} aria-label="진행 관리 불러오기 실패">
+      <p className={workspacePageStyles.emptyNote}>진행 중인 지원사업을 불러오지 못했습니다.</p>
+      <div><button type="button" className={workspacePageStyles.secondaryButton} onClick={onRetry}>다시 시도</button></div>
+    </section> : null}
+    {updateError ? <div className={s.pipelineError} role="alert">
+      <span>{updateError}</span>
+      <button type="button" className={workspacePageStyles.quietLink} onClick={onRetry}>최신 상태 불러오기</button>
+    </div> : null}
+
+    <div className={s.pipelineBoard} aria-label="지원사업 파이프라인">
+      <section className={`${s.pipelineColumn} ${pipelineColumnTone[0]}`} aria-labelledby="pipeline-INTEREST">
+        <header className={s.pipelineColumnHeader}>
+          <h2 id="pipeline-INTEREST" className={s.pipelineColumnTitle}>관심</h2>
+          <span className={s.pipelineCount} aria-label={`관심 ${interestPrograms.length}건`}>{interestPrograms.length}</span>
+        </header>
+        <p className={s.pipelineColumnDescription}>저장한 공고 중 아직 지원 준비를 시작하지 않은 사업입니다.</p>
+        <div className={s.pipelineCards}>
+          {visibleInterestPrograms.map(program => <InterestPipelineCard key={program.id} program={program} />)}
+          {savedPhase !== 'loading' && interestPrograms.length === 0 ? <p className={s.pipelineEmpty}>지원 준비 전인 관심 공고가 없습니다.</p> : null}
+          <PipelineColumnMore total={interestPrograms.length} onClick={() => openColumn('INTEREST')} />
+        </div>
+      </section>
+      {applicationPipelineStages.map((stage, index) => {
+        const stageItems = visiblePreparationItems.filter(item => item.progressStage === stage.key)
+        const visibleStageItems = stageItems.slice(0, pipelineColumnPreviewSize)
+        return <section key={stage.key} className={`${s.pipelineColumn} ${pipelineColumnTone[index + 1]}`} aria-labelledby={`pipeline-${stage.key}`}>
+          <header className={s.pipelineColumnHeader}>
+            <h2 id={`pipeline-${stage.key}`} className={s.pipelineColumnTitle}>{stage.label}</h2>
+            <span className={s.pipelineCount} aria-label={`${stage.label} ${stageItems.length}건`}>{stageItems.length}</span>
+          </header>
+          <p className={s.pipelineColumnDescription}>{stage.description}</p>
+          <div className={s.pipelineCards}>
+            {visibleStageItems.map(item => <PipelineCard key={item.id} item={item} changing={changingId === item.id} onChangeProgress={onChangeProgress} />)}
+            {phase === 'ready' && stageItems.length === 0 ? <p className={s.pipelineEmpty}>해당 단계의 사업이 없습니다.</p> : null}
+            <PipelineColumnMore total={stageItems.length} onClick={() => openColumn(stage.key)} />
+          </div>
+        </section>
+      })}
+    </div>
+
+    {openedColumn !== null ? <div className={s.dialogBackdrop} role="presentation" onMouseDown={event => {
+      if (event.target === event.currentTarget) setOpenedColumn(null)
+    }}>
+      <section role="dialog" aria-modal="true" aria-labelledby="pipeline-dialog-title" className={s.pipelineDialog}>
+        <div className={s.dialogHeader}>
+          <div><p className={workspacePageStyles.sectionEyebrow}>진행 단계</p><h2 id="pipeline-dialog-title" className="mt-1 mb-0 text-xl font-bold">
+            {openedColumn === 'INTEREST' ? '관심' : openedStage?.label} · {openedTotal}건
+          </h2></div>
+          <button type="button" className={s.dialogClose} aria-label="진행 단계 공고 닫기" onClick={() => setOpenedColumn(null)}>×</button>
+        </div>
+        <div className={s.pipelineDialogCards}>
+          {openedColumn === 'INTEREST'
+            ? pageItems(interestPrograms, currentDialogPage, pipelineDialogPageSize)
+              .map(program => <InterestPipelineCard key={program.id} program={program} />)
+            : pageItems(openedStageItems, currentDialogPage, pipelineDialogPageSize)
+              .map(item => <PipelineCard key={item.id} item={item} changing={changingId === item.id} onChangeProgress={onChangeProgress} />)}
+        </div>
+        <div className={s.dialogPagination}>
+          <Pagination label={`${openedColumn === 'INTEREST' ? '관심' : openedStage?.label} 단계 페이지`} page={currentDialogPage}
+            totalPages={pageCount(openedTotal, pipelineDialogPageSize)} onPageChange={setDialogPage} />
+        </div>
+      </section>
+    </div> : null}
+
+    {nextBeforeId !== null && phase !== 'failed' ? <div className={s.pipelineMore}>
+      <button type="button" className={workspacePageStyles.secondaryButton} disabled={loadingMore} onClick={onLoadMore}>
+        {loadingMore ? '불러오는 중…' : '이전 신청 준비 더 보기'}
+      </button>
+    </div> : null}
+  </div>
+}
+
+const pipelineColumnPreviewSize = 3
+const pipelineDialogPageSize = 4
+
+function PipelineColumnMore({ total, onClick }: { total: number; onClick: () => void }) {
+  if (total <= pipelineColumnPreviewSize) return null
+  return <button type="button" className={s.pipelineColumnMore} onClick={onClick}>
+    +{total - pipelineColumnPreviewSize}건 더보기
+  </button>
+}
+
+function InterestPipelineCard({ program }: { program: CalendarProgram }) {
+  const detailPath = getDetailPath(program)
+  const startPath = program.sourceCode && program.sourceProgramId
+    ? `${appPaths.applicationPreparationNew}?${new URLSearchParams({ sourceCode: program.sourceCode, sourceProgramId: program.sourceProgramId })}`
+    : null
+  return <article className={s.pipelineCard}>
+    <div className={s.pipelineCardTop}>
+      <span className={workspaceTagClassName('ok')}>{program.category}</span>
+      <span className={s.pipelineRevision}>{program.region}</span>
+    </div>
+    <h3 className={s.pipelineCardTitle} title={program.title}>
+      {detailPath ? <Link className={s.cardTitleLink} to={detailPath}>{program.title}</Link> : program.title}
+    </h3>
+    <p className={s.pipelineFormTitle}>{program.organization}</p>
+    {startPath ? <Link className={`${workspacePageStyles.secondaryButton} ${s.pipelineCardAction}`} to={startPath}>지원 준비 시작</Link> : null}
+  </article>
+}
+
+function PipelineCard({ item, changing, onChangeProgress }: {
+  item: ApplicationPreparationSummary
+  changing: boolean
+  onChangeProgress: (item: ApplicationPreparationSummary, stage: ApplicationProgressStage) => Promise<boolean>
+}) {
+  return <article className={s.pipelineCard}>
+    <div className={s.pipelineCardTop}>
+      <span className={workspaceTagClassName('ok')}>{applicationServiceFieldLabels[item.serviceField]}</span>
+      <span className={s.pipelineRevision}>입력 {item.inputRevision}차</span>
+    </div>
+    <h3 className={s.pipelineCardTitle} title={item.programTitle}>
+      <Link className={s.cardTitleLink} to={`${appPaths.applicationPreparations}/${item.id}`}>{item.programTitle}</Link>
+    </h3>
+    <p className={s.pipelineFormTitle}>{item.formTitle}</p>
+    <label className={s.pipelineStageField}>
+      <span>단계 변경</span>
+      <select aria-label={`${item.programTitle} 단계 변경`} value={item.progressStage} disabled={changing}
+        onChange={event => void onChangeProgress(item, event.target.value as ApplicationProgressStage)}>
+        {applicationPipelineStages.map(stage => <option key={stage.key} value={stage.key}>{stage.label}</option>)}
+      </select>
+    </label>
+    <p className={s.pipelineUpdatedAt}>최근 수정 {formatPipelineDate(item.updatedAt)}</p>
+  </article>
+}
+
+function formatPipelineDate(value: string): string {
+  const date = value.slice(0, 10)
+  return /^\d{4}-\d{2}-\d{2}$/.test(date) ? date.replaceAll('-', '.') : value
+}
+
+const pipelineColumnTone = [
+  'border-[#cfd7df] bg-[#f5f7f9]',
+  'border-[#b4ddc7] bg-[#f1faf5]',
+  'border-[#c9dcf2] bg-[#f4f8fd]',
+  'border-[#ead9a4] bg-[#fffaf0]',
+  'border-[#dfd3eb] bg-[#faf7fd]',
+  'border-[#b4ddc7] bg-[#f1faf5]',
+  'border-[#d7dce1] bg-[#f6f7f8]',
+] as const
+
 const maximumVisibleEvents = 3
+const calendarDialogPageSize = 4
 
 function CalendarEvents({ date, events }: { date: string; events: CalendarEvent[] }) {
   const [showAll, setShowAll] = useState(false)
+  const [dialogPage, setDialogPage] = useState(1)
   if (events.length === 0) return null
   const visible = events.slice(0, maximumVisibleEvents)
   const hiddenCount = events.length - visible.length
+  const totalDialogPages = pageCount(events.length, calendarDialogPageSize)
+  const currentDialogPage = safePage(dialogPage, events.length, calendarDialogPageSize)
+  const dialogEvents = pageItems(events, currentDialogPage, calendarDialogPageSize)
   return <>
     <ul className={s.events} aria-label={`${date} 접수 일정 ${events.length}건`}>
       {visible.map(event => <CalendarEventRow key={`${event.program.id}:${event.type}`} event={event} />)}
-      {hiddenCount > 0 ? <li><button type="button" className={s.overflowCount} onClick={() => setShowAll(true)}>+{hiddenCount}건 더보기</button></li> : null}
+      {hiddenCount > 0 ? <li><button type="button" className={s.overflowCount} onClick={() => { setDialogPage(1); setShowAll(true) }}>+{hiddenCount}건 더보기</button></li> : null}
     </ul>
     {showAll ? <div className={s.dialogBackdrop} role="presentation" onMouseDown={event => {
       if (event.target === event.currentTarget) setShowAll(false)
@@ -160,8 +356,11 @@ function CalendarEvents({ date, events }: { date: string; events: CalendarEvent[
           <button type="button" className={s.dialogClose} aria-label="전체 공고 닫기" onClick={() => setShowAll(false)}>×</button>
         </div>
         <ul className={s.dialogEvents} aria-label={`${date} 전체 접수 일정`}>
-          {events.map(event => <CalendarEventRow key={`${event.program.id}:${event.type}`} event={event} expanded />)}
+          {dialogEvents.map(event => <CalendarEventRow key={`${event.program.id}:${event.type}`} event={event} expanded />)}
         </ul>
+        <div className={s.dialogPagination}>
+          <Pagination label={`${date} 접수 일정 페이지`} page={currentDialogPage} totalPages={totalDialogPages} onPageChange={setDialogPage} />
+        </div>
       </section>
     </div> : null}
   </>
@@ -219,6 +418,38 @@ function SavedProgramList({ programs, today, page, totalPages, onPageChange }: {
     </nav> : null}
     <p className={s.footer}>한 페이지에 8건씩 보여 주며, 공고명을 누르면 지원사업 상세로 갑니다.</p>
   </div>
+}
+
+function Pagination({ label, page, totalPages, onPageChange, compact = false }: {
+  label: string
+  page: number
+  totalPages: number
+  onPageChange: (page: number) => void
+  compact?: boolean
+}) {
+  const maximumPageButtons = compact ? 3 : 5
+  const pageStart = Math.max(1, Math.min(page - Math.floor(maximumPageButtons / 2), totalPages - maximumPageButtons + 1))
+  const pages = Array.from({ length: Math.min(maximumPageButtons, totalPages) }, (_, index) => pageStart + index)
+  const buttonClass = compact ? s.compactPageButton : s.pageButton
+  return <nav className={compact ? s.compactPagination : s.pagination} aria-label={label}>
+    <button type="button" aria-label="이전 페이지" className={`${buttonClass} ${s.inactivePageButton}`} disabled={page === 1} onClick={() => onPageChange(page - 1)}>‹</button>
+    {pages.map(value => <button type="button" key={value} aria-label={`${value}페이지`} aria-current={value === page ? 'page' : undefined}
+      className={`${buttonClass} ${value === page ? s.activePageButton : s.inactivePageButton}`} onClick={() => onPageChange(value)}>{value}</button>)}
+    <button type="button" aria-label="다음 페이지" className={`${buttonClass} ${s.inactivePageButton}`} disabled={page === totalPages} onClick={() => onPageChange(page + 1)}>›</button>
+  </nav>
+}
+
+function pageCount(total: number, pageSize: number): number {
+  return Math.max(1, Math.ceil(total / pageSize))
+}
+
+function safePage(page: number, total: number, pageSize: number): number {
+  return Math.min(Math.max(1, page), pageCount(total, pageSize))
+}
+
+function pageItems<Item>(items: readonly Item[], page: number, pageSize: number): Item[] {
+  const start = (page - 1) * pageSize
+  return items.slice(start, start + pageSize)
 }
 
 function getDetailPath(program: CalendarProgram): string | null {

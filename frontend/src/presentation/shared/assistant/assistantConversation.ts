@@ -11,7 +11,7 @@ import { assistantMessages } from './assistantMessages'
 export type AssistantQuickReply = {
   id: string
   label: string
-  kind: 'topic' | 'help' | 'saved-programs' | 'received-proposals' | 'login-benefits' | 'other'
+  kind: 'topic' | 'help' | 'saved-programs' | 'received-proposals' | 'login-benefits' | 'contact' | 'other'
   /** `help`일 때 도움말 항목 id입니다. */
   helpId?: string
   /** `topic`일 때 주제 id입니다. */
@@ -38,7 +38,8 @@ export type AssistantCardRow = {
   detail: string | null
 }
 
-export type AssistantCardButton = { label: string; to: string }
+/** [external]이면 새 탭에서 바깥 주소를 엽니다. 그 밖에는 앱 안 화면 이동입니다. */
+export type AssistantCardButton = { label: string; to: string; external?: boolean }
 
 /** 목록·버튼이 있는 답변입니다. 버튼은 화면 이동만 합니다. */
 export type AssistantCard = {
@@ -63,6 +64,8 @@ export type AssistantMessage =
 export type AssistantSession = {
   isAuthenticated: boolean
   hasCompany: boolean
+  /** 담당자 문의가 여는 카카오톡 채널 1:1 채팅 주소입니다. null이면 문의 항목을 두지 않습니다. */
+  contactUrl: string | null
 }
 
 const DAY_MS = 86_400_000
@@ -105,9 +108,11 @@ function helpQuickReply(entry: HelpEntry): AssistantQuickReply {
   return { id: `help:${entry.id}`, label: entry.question, kind: 'help', helpId: entry.id }
 }
 
+export const contactQuickReply: AssistantQuickReply = { id: 'contact', label: assistantMessages.quickContact, kind: 'contact' }
+
 /**
  * 처음 열었을 때와 "다른 주제"를 눌렀을 때의 빠른 답변입니다. 화면과 무관하게 도움말 주제 전부와 회원의 상태 질문을 둡니다.
- * 비로그인이면 상태 질문 대신 로그인 안내 하나를 둡니다.
+ * 비로그인이면 상태 질문 대신 로그인 안내 하나를 둡니다. 카카오톡 채널이 설정돼 있으면 담당자 문의를 마지막에 둡니다.
  */
 export function quickRepliesFor(session: AssistantSession): AssistantQuickReply[] {
   const topics = assistantHelpTopics.map<AssistantQuickReply>((topic) => ({ id: `topic:${topic.id}`, label: topic.label, kind: 'topic', topicId: topic.id }))
@@ -117,7 +122,8 @@ export function quickRepliesFor(session: AssistantSession): AssistantQuickReply[
         ...(session.hasCompany ? [{ id: 'status:received-proposals', label: assistantMessages.quickReceivedProposals, kind: 'received-proposals' as const }] : []),
       ]
     : [{ id: 'status:login-benefits', label: assistantMessages.quickLoginBenefits, kind: 'login-benefits' }]
-  return [...topics, ...status]
+  const contact = session.contactUrl === null ? [] : [contactQuickReply]
+  return [...topics, ...status, ...contact]
 }
 
 export const otherQuestionReply: AssistantQuickReply = { id: 'other', label: assistantMessages.otherQuestion, kind: 'other' }
@@ -150,6 +156,14 @@ export function helpAnswer(entry: HelpEntry, pathname: string): AssistantMessage
     card: buttons.length > 0 ? { rows: [], buttons } : null,
     source: assistantMessages.helpSource(entry.title),
     followUps: [...followUps, otherQuestionReply],
+  })
+}
+
+/** 담당자 문의는 카카오톡 채널 1:1 채팅을 새 탭으로 엽니다. 대화는 이 도우미 밖에서 이어집니다. */
+export function contactAnswer(contactUrl: string | null): AssistantMessage {
+  return botMessage([assistantMessages.contactIntro], {
+    card: contactUrl === null ? null : { rows: [], buttons: [{ label: assistantMessages.contactKakao, to: contactUrl, external: true }] },
+    followUps: [otherQuestionReply],
   })
 }
 
