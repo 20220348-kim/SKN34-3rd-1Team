@@ -28,7 +28,8 @@ Frontend는 `/app/application-preparations`의 목록·삭제, `/new`의 지연 
 상세와 질문·사실 확인을 연결합니다. AI 제안은 저장하지 않고 사용자가 선택·수정한 전체 문항 입력만 revision을 올려 저장합니다.
 초안 생성·직접 수정·사용자 확인은 후속 사용자 기능입니다.
 
-Frontend는 최근 20개 분석 작업을 조회하고 선택한 활성 작업을 3초마다 확인합니다. 재시도·이력 조회는 새 분석을 만들지 않습니다.
+Frontend는 최근 20개 분석 작업을 공고명·제공처·요청 시각·상태가 구분된 카드로 표시하고, 선택한 활성 작업을 3초마다 확인합니다.
+재시도·이력 조회는 새 분석을 만들지 않습니다.
 관리자 큐 운영 조회는 `QueueOperationsController → QueueOperationsService → Repository/MyBatis/MySQL + QueueOperationsClient/RabbitMQ`
 로 생성·메일 발송·중복 검토·문서 분석·카카오 연결 해제의 다섯 큐 보관 상태·브로커 관측치를 읽습니다. 메시지 소비/재발행/DB 작업 상태 수정은 없습니다.
 [실행권·만료·결과 불명·관리자 지표·운영 한계](rabbitmq-application-form-discovery.md)를 참고하세요.

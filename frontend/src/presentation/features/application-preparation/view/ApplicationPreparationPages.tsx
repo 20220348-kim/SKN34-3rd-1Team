@@ -243,6 +243,13 @@ function ApplicationPreparationEditor({ id, initialSourceCode, initialSourceProg
     if (vm.creationStep === 'FORM') { setSavedProgramsOpen(false); resultHeading.current?.focus() }
   }, [vm.creationStep])
   const noDiscoveredForm = vm.error instanceof ApplicationPreparationError && vm.error.code === 'APPLICATION_FORM_NO_FORM'
+  const canOpenOfficialSource = vm.error instanceof ApplicationPreparationError
+    && ['APPLICATION_FORM_NO_FORM', 'APPLICATION_FORM_SOURCE_UNSUPPORTED'].includes(vm.error.code)
+  const officialSource = vm.selectedProgram
+    ? { title: vm.selectedProgram.title, url: vm.selectedProgram.sourceUrl }
+    : vm.activeDiscoveryJob?.programSourceUrl
+      ? { title: vm.activeDiscoveryJob.programTitle, url: vm.activeDiscoveryJob.programSourceUrl }
+      : undefined
   return <>
     <WorkspacePageHeader
       parent={{ to: appPaths.applicationPreparations, label: listTitle }}
@@ -255,17 +262,23 @@ function ApplicationPreparationEditor({ id, initialSourceCode, initialSourceProg
       {vm.error && <ErrorNotice
         message={vm.error.message}
         onRetry={noDiscoveredForm || vm.submitting || vm.discovering ? undefined : id === null ? vm.discoverForms : vm.load}
-        officialSource={noDiscoveredForm && vm.selectedProgram
-          ? { title: vm.selectedProgram.title, url: vm.selectedProgram.sourceUrl }
-          : undefined}
+        officialSource={canOpenOfficialSource ? officialSource : undefined}
       />}
       {id === null && <section className={s.card} aria-label="최근 공식 문서 분석 작업">
         <h2 className={s.cardTitle}>최근 공식 문서 분석 작업</h2>
         <p className={s.muted}>분석은 화면을 떠나도 계속됩니다. 새로고침 후에는 아래 작업을 선택해 상태와 결과를 다시 확인하세요.</p>
         {vm.discoveryHistoryError && <p role="alert">{vm.discoveryHistoryError.message} 페이지를 새로고침하면 목록을 다시 조회합니다.</p>}
         {vm.discoveryJobs.length === 0 && !vm.discoveryHistoryError && <p className={s.muted}>최근 분석 작업이 없습니다.</p>}
-        <ul>{vm.discoveryJobs.map((job) => <li key={job.id} className="my-2 flex items-center justify-between gap-3">
-          <span className="min-w-0 break-all text-sm">{job.sourceCode} · {job.sourceProgramId} · {{ QUEUED: '대기 중', RUNNING: '분석 중', SUCCEEDED: '완료', FAILED: '실패', UNKNOWN: '관리자 확인 필요' }[job.status]}</span>
+        <ul className={s.jobList} aria-label="최근 공식 문서 분석 작업 목록">{vm.discoveryJobs.map((job) => <li key={job.id} className={s.jobItem}>
+          <div className="min-w-0">
+            <strong className={s.jobTitle}>{job.programTitle}</strong>
+            <p className={s.jobMeta}>
+              <span>{catalogSourceLabels[job.sourceCode as keyof typeof catalogSourceLabels] ?? job.sourceCode}</span>
+              <span aria-hidden="true">·</span>
+              <time dateTime={job.createdAt}>{readableTime(job.createdAt)}</time>
+              <span className={s.jobStatus}>{{ QUEUED: '대기 중', RUNNING: '분석 중', SUCCEEDED: '완료', FAILED: '실패', UNKNOWN: '관리자 확인 필요' }[job.status]}</span>
+            </p>
+          </div>
           <button type="button" className={`${s.button} shrink-0`} disabled={vm.discovering || vm.submitting} onClick={() => { void vm.loadDiscoveryJob(job.id) }}>상태·결과 보기</button>
         </li>)}</ul>
         {vm.activeDiscoveryJob && vm.creationStep === 'PROGRAM' && <p role="status" aria-live="polite">

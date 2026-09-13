@@ -114,6 +114,8 @@ export type ApplicationFormDiscoveryJob = {
   id: number
   sourceCode: string
   sourceProgramId: string
+  programTitle: string
+  programSourceUrl: string | null
   status: 'QUEUED' | 'RUNNING' | 'SUCCEEDED' | 'FAILED' | 'UNKNOWN'
   result: DiscoveredApplicationForms | null
   failureCode: string | null

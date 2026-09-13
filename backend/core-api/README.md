@@ -118,8 +118,8 @@ UNKNOWN은 같은 검토의 새 실행도 차단합니다. [한도·만료·재�
 |---|---|
 | `GET /api/v1/application-preparations/forms` | 로그인 회원에게 지원 양식·분야·문항 조회. DB·AI 호출 없음 |
 | `POST /api/v1/application-preparations/forms/discovery-jobs` | UUID requestKey·공고 식별자로 V26 작업 접수. 202·Location 반환, Worker가 네 제공처 공식 문서 분석 |
-| `GET /api/v1/application-preparations/forms/discovery-jobs` | 본인의 최근 20개 분석 작업 요약 |
-| `GET /api/v1/application-preparations/forms/discovery-jobs/{id}` | 본인 작업 상태·결과 조회 |
+| `GET /api/v1/application-preparations/forms/discovery-jobs` | 본인의 최근 20개 분석 작업을 공고명·공식 원문 URL과 함께 요약 |
+| `GET /api/v1/application-preparations/forms/discovery-jobs/{id}` | 본인 작업의 공고명·공식 원문 URL·상태·결과 조회 |
 | `POST /api/v1/application-preparations` | 공고·양식 버전·지원 분야를 검증해 본인 준비 건 생성. 201·Location·상세 반환 |
 | `GET /api/v1/application-preparations?size=20&beforeId=123` | 본인 준비 건 목록을 생성 ID 내림차순으로 조회 |
 | `GET /api/v1/application-preparations/{id}` | 본인 준비 건과 선택한 버전의 양식 문항 조회. 타인 건과 없는 건은 같은 404 |

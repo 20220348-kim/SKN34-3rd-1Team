@@ -37,7 +37,7 @@ const creation = {
 
 describe('application preparation HTTP boundary', () => {
   it('rejects mismatched job identity and missing completed results', async () => {
-    const job = { id: 7, sourceCode: 'MSIT', sourceProgramId: '1', status: 'QUEUED', result: null, failureCode: null, createdAt: detail.createdAt }
+    const job = { id: 7, sourceCode: 'MSIT', sourceProgramId: '1', programTitle: '과기정통부 지원사업', programSourceUrl: 'https://www.msit.go.kr/bbs/view.do?nttSeqNo=1', status: 'QUEUED', result: null, failureCode: null, createdAt: detail.createdAt }
     vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce(Response.json(job, { status: 202 }))
       .mockResolvedValueOnce(Response.json({ ...job, id: 8 }))
       .mockResolvedValueOnce(Response.json({ ...job, status: 'SUCCEEDED' })))
@@ -48,7 +48,7 @@ describe('application preparation HTTP boundary', () => {
   })
 
   it('uses GET only when restoring account job history and details', async () => {
-    const job = { id: 7, sourceCode: 'BIZINFO', sourceProgramId: 'PBLN_1', status: 'UNKNOWN', result: null,
+    const job = { id: 7, sourceCode: 'BIZINFO', sourceProgramId: 'PBLN_1', programTitle: form.programTitle, programSourceUrl: form.sourceUrl, status: 'UNKNOWN', result: null,
       failureCode: 'RUN_OUTCOME_UNKNOWN', createdAt: detail.createdAt }
     const fetchMock = vi.fn().mockResolvedValueOnce(Response.json([job])).mockResolvedValueOnce(Response.json(job))
     vi.stubGlobal('fetch', fetchMock)
@@ -73,7 +73,7 @@ describe('application preparation HTTP boundary', () => {
   it('uses the exact URLs, methods, body, session cookie and no-store options', async () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(Response.json({ items: [form] }))
-      .mockResolvedValueOnce(Response.json({ id: 7, sourceCode: form.sourceCode, sourceProgramId: form.sourceProgramId,
+      .mockResolvedValueOnce(Response.json({ id: 7, sourceCode: form.sourceCode, sourceProgramId: form.sourceProgramId, programTitle: form.programTitle, programSourceUrl: form.sourceUrl,
         status: 'SUCCEEDED', result: { items: [form], warnings: [], cached: false }, failureCode: null, createdAt: detail.createdAt }, { status: 202 }))
       .mockResolvedValueOnce(Response.json({ items: [], nextBeforeId: null }))
       .mockResolvedValueOnce(Response.json(detail, { status: 201 }))

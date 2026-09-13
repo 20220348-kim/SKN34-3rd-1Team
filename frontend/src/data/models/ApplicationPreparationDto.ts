@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { applicationServiceFields } from '../../domain/entities/ApplicationPreparation'
+import { isOfficialSupportProgramSourceUrl } from './SupportProgramDto'
 
 const id = z.number().int().positive().max(Number.MAX_SAFE_INTEGER)
 const time = z.string().datetime({ offset: true })
@@ -81,11 +82,16 @@ export const applicationFormDiscoveryJobSchema = z.object({
   id,
   sourceCode: z.enum(['BIZINFO', 'KSTARTUP', 'MSIT', 'CNTRADE_NOTICE']),
   sourceProgramId: z.string().min(1).max(255),
+  programTitle: z.string().min(1).max(500),
+  programSourceUrl: z.string().url().nullable(),
   status: z.enum(['QUEUED', 'RUNNING', 'SUCCEEDED', 'FAILED', 'UNKNOWN']),
   result: discoveredApplicationFormsSchema.nullable(),
   failureCode: z.string().min(1).max(64).nullable(),
   createdAt: time,
 }).superRefine((job, context) => {
+  if (job.programSourceUrl !== null && !isOfficialSupportProgramSourceUrl(job.sourceCode, job.programSourceUrl)) {
+    context.addIssue({ code: 'custom', path: ['programSourceUrl'], message: '분석 작업의 공식 공고 URL이 올바르지 않습니다.' })
+  }
   if ((job.status !== 'SUCCEEDED' && job.result !== null)
     || (job.result !== null && job.result.items.some((form) => form.sourceCode !== job.sourceCode || form.sourceProgramId !== job.sourceProgramId))
     || (['FAILED', 'UNKNOWN'].includes(job.status) !== (job.failureCode !== null))) {

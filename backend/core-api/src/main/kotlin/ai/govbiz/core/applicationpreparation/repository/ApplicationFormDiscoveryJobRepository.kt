@@ -36,7 +36,7 @@ class ApplicationFormDiscoveryJobRepository(
         val row = ApplicationFormDiscoveryJobDbRow(ownerAccountId = ownerId, requestKey = key,
             sourceCode = sourceCode, sourceProgramId = programId, createdAt = now())
         check(mapper.insert(row) == 1 && row.id > 0)
-        return row.toDomain()
+        return requireNotNull(mapper.find(row.id)).toDomain()
     }
 
     fun findOwned(ownerId: Long, id: Long) = mapper.findOwned(ownerId, id)?.toDomain()
@@ -59,7 +59,8 @@ class ApplicationFormDiscoveryJobRepository(
     fun expireStaleWork() { mapper.expireQueued(now()); mapper.expireRunning(now()) }
     private fun now() = LocalDateTime.now(clock).truncatedTo(ChronoUnit.MICROS)
     private fun ApplicationFormDiscoveryJobDbRow.toDomain() = ApplicationFormDiscoveryJob(
-        id, ownerAccountId, requestKey, sourceCode, sourceProgramId, ApplicationFormDiscoveryJobStatus.valueOf(status),
+        id, ownerAccountId, requestKey, sourceCode, sourceProgramId, programTitle, programSourceUrl,
+        ApplicationFormDiscoveryJobStatus.valueOf(status),
         resultJson?.let { json.readValue(it, ApplicationFormDiscoveryResult::class.java) }, failureCode, requireNotNull(createdAt),
     )
 }
