@@ -1,5 +1,9 @@
 # GovBiz Docker Compose
 
+이 문서는 **개발용 `compose.yaml`** 안내입니다. 별도 `compose.prod.yaml`·Nginx·Vercel을 사용하는
+[AWS 운영 배포 준비](../docs/deployment-aws-vercel.md)는 개발 파일과 프로젝트/볼륨을 공유하지 않습니다.
+운영 설정은 준비됐지만 실제 AWS/Vercel 자원 배포는 별도입니다.
+
 Docker Compose는 React 개발 서버, Core API, AI Service, 원본 카탈로그용 MySQL과 의미 검색용
 Qdrant, Nori·BM25 키워드 검색용 Elasticsearch, 로그인 후 검색 결과 복원용 Redis, 리포트·중복 검토·공식 문서 분석용 RabbitMQ를 함께 실행하는 로컬 개발 구성입니다. 회원 세션은 동작하지만 개발용 시드 로그인이 켜져 있고 쿠키 `Secure`가
 꺼져 있으므로 운영 배포·TLS·운영 인증 구성으로 쓰지 않습니다.

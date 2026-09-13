@@ -38,6 +38,9 @@ docker compose --env-file .env --file infrastructure/compose.yaml up --build
 첫 실행은 공고 수집·색인 완료까지 기다려야 하며, 임베딩·AI 답변에는 OpenAI 사용 비용이 발생합니다.
 이 구성은 로컬 개발용입니다. 환경변수·중지·키 없는 통합 검증은 [실행 안내](infrastructure/README.md)를 참고하세요.
 
+Vercel + AWS는 [운영 배포 준비 안내](docs/deployment-aws-vercel.md)를 따릅니다. 개발 Compose는 유지하고
+별도 운영 Compose·Nginx·Vercel 라우팅을 사용합니다. 설정 준비와 실제 클라우드 배포 완료는 구분합니다.
+
 기존 환경은 [백엔드 갱신 절차](infrastructure/README.md#백엔드-변경-반영과-화면api-버전-불일치)에 따라
 설정·대기 작업을 확인한 뒤 업데이트하세요. 큐를 켜면 기존 예약 작업이 실행될 수 있으며, 갱신 후에는 검색 준비 상태도 확인해야 합니다.
 

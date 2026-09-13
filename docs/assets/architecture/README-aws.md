@@ -6,6 +6,10 @@
 **실제 Vercel 프로젝트·AWS 자원·배포 파이프라인·보안 설정을 구축하거나 검증했다는 의미가 아닙니다.**
 기존 [로컬 구성 기록](README.md#로컬-구성-기록)은 그대로 보존합니다.
 
+후속 작업에서 [운영 Compose·Nginx·Vercel 미들웨어](../../deployment-aws-vercel.md)를 준비했습니다.
+아래 그림은 여전히 **실제 클라우드 배포 전 목표 구성**입니다. 서버 설정 구현 범위는 위 배포 안내가 최신이며,
+ECR 게시·SSM 자동 배포·실제 네트워크/TLS 검증은 아직 별도입니다. 확인된 계정 리전은 시드니입니다.
+
 ![GovBiz Vercel 프론트엔드와 AWS 백엔드 초기 배포 예정안](govbiz-aws-architecture.png)
 
 ## 파일
@@ -46,7 +50,7 @@
 Elasticsearch·Qdrant·Redis·RabbitMQ는 이 안에서 직접 운영하는 컨테이너입니다.
 ElastiCache·Amazon MQ·OpenSearch 등 관리형 서비스로 전환한 것으로 표시하지 않습니다.
 
-## 배포 흐름 — 신규 구현 예정
+## 배포 흐름 — 설정 준비, 클라우드 실행 전
 
 ### 프론트엔드
 
@@ -54,7 +58,7 @@ ElastiCache·Amazon MQ·OpenSearch 등 관리형 서비스로 전환한 것으�
 2. Vercel에서 React·Vite 빌드와 정적 파일 배포를 수행합니다. 프론트엔드 이미지를 ECR/EC2로 배포하지 않습니다.
 3. 고정된 운영 `*.vercel.app` 주소를 정하고 `VITE_CORE_API_BASE_URL="/"`로 같은 origin의 `/api`를 사용하도록 구성합니다.
    현재 URL 조합 코드가 마지막 `/`를 제거하므로 각 API의 `/api/...` 경로가 그대로 유지되는 것을 배포 테스트로 확인합니다.
-4. external rewrites를 `/api/:path*` → `https://<distribution>.cloudfront.net/api/:path*`로 구성합니다.
+4. 서버 전용 routing middleware의 external rewrite로 `/api/:path*` → `https://<distribution>.cloudfront.net/api/:path*`를 중계합니다.
    SPA 화면 라우팅이 API 경로를 가로채지 않게 하고, 외부 rewrite 캐시를 명시적으로 끕니다.
 5. 운영 배포 브랜치, 미리보기 환경, CI 검증 후 운영 반영 정책을 별도로 구성·검증합니다.
 
