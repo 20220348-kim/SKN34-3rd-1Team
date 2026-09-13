@@ -121,6 +121,10 @@ class ApplicationDocumentEditor {
                     val paragraph = requireNotNull(targets[id])
                     require(hwpExample(file, paragraph).isBlank())
                     val old = paragraph.normalString
+                    val location = locations.single { it.id == id }
+                    require(old.isNotBlank() || location.cell != null || locations.none {
+                        it.cell != null && it.id.substringBefore("-p") == id.substringBefore("-p")
+                    }) { "Blank paragraphs outside a table are not answer cells" }
                     if (paragraph.text == null) paragraph.createText()
                     // insertString uses UTF-16 incorrectly for supplementary characters; reject instead of corrupting them.
                     val replacement = answerRange(old)
@@ -247,7 +251,14 @@ class ApplicationDocumentEditor {
     private data class HwpLocation(val id: String, val paragraph: Paragraph, val cell: Cell?, val table: ControlTable?, val tableId: String)
     private data class HwpChoice(val id: String, val caption: String, val group: String, val context: String, val value: PropertyNormal)
 
-    private fun hwpTargets(file: HWPFile) = hwpLocations(file).filter { it.paragraph.controlList.isNullOrEmpty() }.map { it.id to it.paragraph }
+    private fun hwpTargets(file: HWPFile): List<Pair<String, Paragraph>> {
+        val locations = hwpLocations(file)
+        val tableSections = locations.filter { it.cell != null }.map { it.id.substringBefore("-p") }.toSet()
+        return locations.filter {
+            it.paragraph.controlList.isNullOrEmpty() &&
+                (it.cell != null || it.paragraph.normalString.isNotBlank() || it.id.substringBefore("-p") !in tableSections)
+        }.map { it.id to it.paragraph }
+    }
 
     private fun hwpLocations(file: HWPFile): List<HwpLocation> {
         require(!file.fileHeader.hasPassword() && !file.fileHeader.isDistribution)

@@ -9,5 +9,5 @@ data class ApplicationDocumentDbRow(
     var fileBytes: ByteArray = byteArrayOf(),
     var sourceSha256: String = "",
     var placementsJson: String = "[]",
-    var generatorVersion: Int = 4,
+    var generatorVersion: Int = 5,
 )
