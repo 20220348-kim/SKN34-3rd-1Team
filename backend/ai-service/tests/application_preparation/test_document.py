@@ -94,6 +94,39 @@ def test_agent_transmits_example_metadata_and_returns_cleanup_without_rewriting(
     assert result["placements"] == output["placements"]
 
 
+@pytest.mark.parametrize("mutation", ["valid", "omitted", "overlap", "duplicate", "invented"])
+def test_every_blue_paragraph_is_classified_including_unanswered_sections(mutation):
+    request = request_data()
+    request["targets"] += [
+        {"id": "unanswered", "text": "차별화 전략 등에 대하여 작성", "context": "미응답 사업계획 칸", "exampleText": "차별화 전략 등에 대하여 작성"},
+        {"id": "title", "text": "사업계획서", "context": "문서 제목", "exampleText": "사업계획서"},
+    ]
+    output = selection_data()
+    output["clearExampleTargetIds"] = ["unanswered"]
+    output["preserveExampleTargetIds"] = ["title"]
+    if mutation == "omitted":
+        output["clearExampleTargetIds"] = []
+    elif mutation == "overlap":
+        output["preserveExampleTargetIds"].append("unanswered")
+    elif mutation == "duplicate":
+        output["preserveExampleTargetIds"] *= 2
+    elif mutation == "invented":
+        output["preserveExampleTargetIds"].append("unknown")
+    if mutation == "valid":
+        validate_document(DocumentRequest.model_validate(request), DocumentSelection.model_validate(output))
+    else:
+        with pytest.raises(ValueError, match="EXAMPLE_CLASSIFICATION_COVERAGE"):
+            validate_document(DocumentRequest.model_validate(request), DocumentSelection.model_validate(output))
+
+
+def test_cleanup_only_request_when_core_already_placed_all_checkbox_answers():
+    request = request_data()
+    request["facts"] = []
+    request["targets"][0]["exampleText"] = "구현 방법을 작성"
+    output = DocumentSelection(placements=[], unmappedFactIds=[], clearExampleTargetIds=[request["targets"][0]["id"]])
+    validate_document(DocumentRequest.model_validate(request), output)
+
+
 @pytest.mark.parametrize("validation", [True, False])
 def test_document_diagnostics_log_stage_and_fixed_reason_without_private_text(caplog, validation):
     output = DocumentSelection(placements=[], unmappedFactIds=[])

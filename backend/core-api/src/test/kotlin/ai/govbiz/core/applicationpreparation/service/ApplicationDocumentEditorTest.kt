@@ -63,12 +63,15 @@ class ApplicationDocumentEditorTest {
         }
         paragraph("업체명: 예시 회사", 5)
         paragraph("파란 제목", 0)
+        paragraph("차별화 전략 등에 대하여 작성", 0)
         val original = ByteArrayOutputStream().also { HWPWriter.toStream(file, it) }.toByteArray()
         val target = editor.inspect(original, "HWP").targets.single { it.text.startsWith("업체명:") }
         assertEquals("예시 회사", target.exampleText)
         val placement = listOf(ApplicationDocumentPlacement("company:name", target.id))
         assertThrows(ApplicationDocumentException::class.java) { editor.fill(original, "HWP", facts, placement) }
-        val result = editor.fill(original, "HWP", facts, placement, listOf(target.id))
+        val unanswered = editor.inspect(original, "HWP").targets.single { it.text == "차별화 전략 등에 대하여 작성" }
+        val result = editor.fill(original, "HWP", facts, placement, listOf(target.id, unanswered.id))
+        assertTrue(editor.inspect(result, "HWP").targets.single { it.id == unanswered.id }.text.isBlank())
         val reopened = HWPReader.fromInputStream(result.inputStream())
         val filled = reopened.bodyText.sectionList[0].getParagraph(1)
         assertEquals("업체명: 새봄 & 연구소", filled.normalString)
@@ -81,7 +84,7 @@ class ApplicationDocumentEditorTest {
     @Test
     fun replacesHwpxExampleRunsPreservingBlackLabelsBlueTitlesAndOtherEntries() {
         val header = """<hh:head xmlns:hh="urn:header"><hh:charProperties itemCnt="2"><hh:charPr id="0" textColor="#000000"/><hh:charPr id="1" textColor="#0000FF"/></hh:charProperties></hh:head>"""
-        val section = """<hp:sec xmlns:hp="urn:paragraph"><hp:p><hp:run charPrIDRef="0"><hp:t>업체명:</hp:t></hp:run><hp:run charPrIDRef="1"><hp:t>예시 회사</hp:t></hp:run><hp:linesegarray/></hp:p><hp:p><hp:run charPrIDRef="1"><hp:t>파란 제목</hp:t></hp:run></hp:p></hp:sec>"""
+        val section = """<hp:sec xmlns:hp="urn:paragraph"><hp:p><hp:run charPrIDRef="0"><hp:t>업체명:</hp:t></hp:run><hp:run charPrIDRef="1"><hp:t>예시 회사</hp:t></hp:run><hp:linesegarray/></hp:p><hp:p><hp:run charPrIDRef="1"><hp:t>파란 제목</hp:t></hp:run></hp:p><hp:p><hp:run charPrIDRef="1"><hp:t>구현 방법을 작성</hp:t></hp:run></hp:p></hp:sec>"""
         val original = ByteArrayOutputStream().also { out -> ZipOutputStream(out).use { zip ->
             mapOf("Contents/header.xml" to header, "Contents/section0.xml" to section, "unrelated.txt" to "preserve").forEach { (name, text) -> zip.putNextEntry(ZipEntry(name)); zip.write(text.toByteArray()); zip.closeEntry() }
         } }.toByteArray()
@@ -89,11 +92,13 @@ class ApplicationDocumentEditorTest {
         assertEquals("예시 회사", target.exampleText)
         val placements = listOf(ApplicationDocumentPlacement("company:name", target.id))
         assertThrows(ApplicationDocumentException::class.java) { editor.fill(original, "HWPX", facts, placements) }
-        val result = editor.fill(original, "HWPX", facts, placements, listOf(target.id))
+        val unanswered = editor.inspect(original, "HWPX").targets.last()
+        val result = editor.fill(original, "HWPX", facts, placements, listOf(target.id, unanswered.id))
         val targets = editor.inspect(result, "HWPX").targets
         assertEquals("업체명: 새봄 & 연구소", targets.first().text)
         assertEquals("", targets.first().exampleText)
         assertEquals("파란 제목", targets[1].exampleText)
+        assertTrue(targets.single { it.id == unanswered.id }.text.isBlank())
         assertArrayEquals(entries(original)["unrelated.txt"], entries(result)["unrelated.txt"])
         assertFalse(entries(result).getValue("Contents/section0.xml").toString(Charsets.UTF_8).contains("linesegarray"))
         assertThrows(ApplicationDocumentException::class.java) { editor.fill(result, "HWPX", facts, placements, listOf(target.id)) }

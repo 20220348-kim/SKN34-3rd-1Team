@@ -13,7 +13,7 @@ import tools.jackson.databind.ObjectMapper
 
 @Repository
 class ApplicationDocumentRepository(private val mapper: ApplicationDocumentMapper, private val inputs: ApplicationPreparationInputMapper, private val json: ObjectMapper) {
-    fun findRevision(ownerId: Long, preparationId: Long, revision: Long) = mapper.findRevision(ownerId, preparationId, revision, 3)?.toDomain()
+    fun findRevision(ownerId: Long, preparationId: Long, revision: Long) = mapper.findRevision(ownerId, preparationId, revision, 4)?.toDomain()
     fun findOwned(ownerId: Long, preparationId: Long, fileId: Long) = mapper.findOwned(ownerId, preparationId, fileId)?.toDomain()
 
     @Transactional

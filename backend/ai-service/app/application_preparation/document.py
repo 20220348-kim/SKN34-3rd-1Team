@@ -13,9 +13,17 @@ For HWP/HWPX targets, choose the blank answer paragraph/cell using its structura
 nearby labels and context. Check the row AND column: a label cell next to an answer cell
 is not an answer location. exampleText identifies blue text candidates, not automatic
 deletion instructions. Classify candidate text using its meaning and surrounding cells.
-Return clearExampleTargetIds for example answers and writing hints that must be removed
-from answer cells, including separate example paragraphs in those cells. Do not clear
-blue titles, substantive labels, or unrelated content, and never remove pages or tables.
+Classify EVERY target with nonblank exampleText, even when no supplied fact or placement
+belongs to its cell or section. Return each candidate exactly once in either
+clearExampleTargetIds or preserveExampleTargetIds. Never leave a candidate unclassified.
+Clear sample answers and writing hints throughout all answer cells, including unanswered
+cells and separate paragraphs. For example, hints asking to describe market problems,
+competitive advantages, technical feasibility, implementation, or revenue are removable
+even when those questions have no answer. Leave these cells empty rather than retaining hints.
+Preserve blue titles, substantive field labels, mandatory submission/legal instructions,
+and unrelated content. Never remove pages or tables. When a paragraph mixes removable
+blue text with essential blue text, preserve it rather than deleting essential content.
+An empty facts list means classify examples only; return no placements or unmapped facts.
 Only the blue text in selected paragraphs is removed; black labels are preserved.
 Every placement in a target with exampleText requires that target in clearExampleTargetIds.
 If its blue text must be preserved, choose another valid blank answer target or mark unmapped.
@@ -55,7 +63,7 @@ class DocumentTarget(Contract):
 
 class DocumentRequest(Contract):
     contractVersion: str = Field(pattern="^application-document-v1$")
-    facts: list[DocumentFact] = Field(min_length=1, max_length=200)
+    facts: list[DocumentFact] = Field(max_length=200)
     targets: list[DocumentTarget] = Field(min_length=1, max_length=3000)
     pageImages: list[str] = Field(max_length=50)
 
@@ -91,6 +99,7 @@ class DocumentSelection(Contract):
     placements: list[DocumentPlacement] = Field(max_length=200)
     unmappedFactIds: list[str] = Field(max_length=200)
     clearExampleTargetIds: list[str] = Field(default_factory=list, max_length=3000)
+    preserveExampleTargetIds: list[str] = Field(default_factory=list, max_length=3000)
 
 
 class DocumentValidationError(ValueError):
@@ -113,6 +122,10 @@ def validate_document(request: DocumentRequest, output: DocumentSelection) -> No
     cleanup = output.clearExampleTargetIds
     if len(cleanup) != len(set(cleanup)) or not set(cleanup) <= examples or (request.pageImages and cleanup):
         raise DocumentValidationError("EXAMPLE_CLEANUP_TARGET")
+    preserved = output.preserveExampleTargetIds
+    if (len(preserved) != len(set(preserved)) or set(cleanup) & set(preserved)
+            or set(cleanup) | set(preserved) != examples):
+        raise DocumentValidationError("EXAMPLE_CLASSIFICATION_COVERAGE")
     for p in output.placements:
         if p.targetId in examples and p.targetId not in cleanup:
             raise DocumentValidationError("EXAMPLE_CLEANUP_MISSING")

@@ -516,18 +516,27 @@ class ApplicationPreparationApiIntegrationTest {
             .andExpect(status().isConflict())
     }
 
-    @Test
-    fun generatesDownloadsAndRegeneratesOriginalHwpxWithSessionOwnershipAndStoredFiles() {
-        val original = requireNotNull(javaClass.getResourceAsStream("/combinationreview/general.hwpx")).readBytes()
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(booleans = [false, true])
+    fun generatesDownloadsAndRegeneratesOriginalHwpxWithSessionOwnershipAndStoredFiles(blueExamples: Boolean) {
+        val blueForm = java.io.ByteArrayOutputStream().also { out -> java.util.zip.ZipOutputStream(out).use { zip ->
+            mapOf(
+                "Contents/header.xml" to """<hh:head xmlns:hh="urn:header"><hh:charProperties itemCnt="2"><hh:charPr id="0" textColor="#000000"/><hh:charPr id="1" textColor="#0000FF"/></hh:charProperties></hh:head>""",
+                "Contents/section0.xml" to """<hp:sec xmlns:hp="urn:paragraph"><hp:p><hp:run charPrIDRef="0"><hp:t/></hp:run></hp:p><hp:p><hp:run charPrIDRef="1"><hp:t>구현 방법을 작성</hp:t></hp:run></hp:p><hp:p><hp:run charPrIDRef="1"><hp:t>사업계획서</hp:t></hp:run></hp:p></hp:sec>""",
+            ).forEach { (name, text) -> zip.putNextEntry(java.util.zip.ZipEntry(name)); zip.write(text.toByteArray()); zip.closeEntry() }
+        } }.toByteArray()
+        val original = if (blueExamples) blueForm else requireNotNull(javaClass.getResourceAsStream("/combinationreview/general.hwpx")).readBytes()
         val target = documentEditor.inspect(original, "HWPX").targets.first { it.text.isBlank() }
         `when`(bizInfoAttachments.collect("BIZINFO", DISCOVERY_PROGRAM_ID)).thenReturn(SupportProgramAttachments("동적 지원사업", listOf(
             SupportProgramAttachment("https://www.bizinfo.go.kr/file", "신청양식.hwpx", "HWPX", original),
         ), emptyList()))
         `when`(documentParser.parse(original, "HWPX")).thenReturn(listOf(SupportProgramDocumentBlock(DISCOVERY_LOCATOR, DISCOVERY_BLOCK_TEXT)))
         val fallback = AiApplicationDocumentRequest(facts = emptyList(), targets = emptyList(), pageImages = emptyList())
-        `when`(ai.placeDocument(any(AiApplicationDocumentRequest::class.java) ?: fallback)).thenReturn(
-            AiApplicationDocumentPayload("application-document-v1", listOf(ApplicationDocumentPlacement("business-plan:business-overview", target.id)), emptyList()),
-        )
+        val inspected = documentEditor.inspect(original, "HWPX").targets
+        val cleanup = if (blueExamples) listOf(inspected.single { it.text == "구현 방법을 작성" }.id) else emptyList()
+        val preserved = if (blueExamples) listOf(inspected.single { it.text == "사업계획서" }.id) else inspected.filter { it.exampleText.isNotBlank() }.map { it.id }
+        val selection = AiApplicationDocumentPayload("application-document-v1", listOf(ApplicationDocumentPlacement("business-plan:business-overview", target.id)), emptyList(), cleanup, preserved)
+        `when`(ai.placeDocument(any(AiApplicationDocumentRequest::class.java) ?: fallback)).thenReturn(selection)
         val discovered = mvc.perform(post("$BASE/forms/discover").cookie(owner).header(HttpHeaders.ORIGIN, ORIGIN).contentType(MediaType.APPLICATION_JSON)
             .content("""{"sourceCode":"BIZINFO","sourceProgramId":"$DISCOVERY_PROGRAM_ID"}""")).andExpect(status().isOk()).andReturn().response
         val version = json.readTree(discovered.contentAsString).path("items").path(0).path("formVersionId").asString()
@@ -546,6 +555,13 @@ class ApplicationPreparationApiIntegrationTest {
             return json.readTree(response.contentAsString).path(0).path("id").asLong()
         }
         save(1, "새봄 & 연구소")
+        if (blueExamples) {
+            `when`(ai.placeDocument(any(AiApplicationDocumentRequest::class.java) ?: fallback))
+                .thenReturn(selection.copy(clearExampleTargetIds = emptyList()), selection)
+            mvc.perform(post("$BASE/$id/documents").cookie(owner).header(HttpHeaders.ORIGIN, ORIGIN).contentType(MediaType.APPLICATION_JSON)
+                .content("""{"expectedRevision":2}""")).andExpect(status().is4xxClientError())
+            mvc.perform(get("$BASE/$id/documents").cookie(owner)).andExpect(status().isOk()).andExpect(jsonPath("$.length()").value(0))
+        }
         val fileId = generate(2)
         mvc.perform(put("$BASE/$id/progress-stage").cookie(owner).header(HttpHeaders.ORIGIN, ORIGIN)
             .contentType(MediaType.APPLICATION_JSON).content("""{"expectedProgressRevision":1,"progressStage":"APPLIED"}"""))
@@ -553,11 +569,16 @@ class ApplicationPreparationApiIntegrationTest {
         mvc.perform(get("$BASE/$id/documents").cookie(owner)).andExpect(status().isOk())
             .andExpect(jsonPath("$[0].id").value(fileId))
         assertEquals(fileId, generate(2))
-        verify(ai, times(1)).placeDocument(any(AiApplicationDocumentRequest::class.java) ?: fallback)
+        verify(ai, times(if (blueExamples) 2 else 1)).placeDocument(any(AiApplicationDocumentRequest::class.java) ?: fallback)
         val downloaded = mvc.perform(get("$BASE/$id/documents/$fileId/download").cookie(owner)).andExpect(status().isOk())
             .andExpect(header().string(HttpHeaders.CACHE_CONTROL, "no-store"))
             .andExpect(content().contentType("application/hwp+zip")).andReturn().response.contentAsByteArray
         assertEquals("새봄 & 연구소", documentEditor.inspect(downloaded, "HWPX").targets.single { it.id == target.id }.text)
+        if (blueExamples) {
+            val reopened = documentEditor.inspect(downloaded, "HWPX").targets
+            assertEquals("", reopened.single { it.id == cleanup.single() }.text)
+            assertEquals("사업계획서", reopened.single { it.id == preserved.single() }.exampleText)
+        }
         mvc.perform(get("$BASE/$id/documents/$fileId/download").cookie(other)).andExpect(status().isNotFound())
         mvc.perform(get("$BASE/$id/documents/$fileId/download")).andExpect(status().isUnauthorized())
         save(2, "수정한 사업")

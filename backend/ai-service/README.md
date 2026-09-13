@@ -702,6 +702,8 @@ Agent 확장 원칙은 [AI Agent 모듈 구조](docs/agent-structure.md)를 참�
 Core가 보내는 확인 답변, 원본 문단·셀의 ID/문맥 또는 PDF 페이지 이미지를 단일 typed Agent가 대조합니다.
 결과는 `placements(factId, targetId, box)`, `unmappedFactIds`, `clearExampleTargetIds`이며 답변 문안을 변경하거나 파일을 만들지 않습니다.
 HWP/HWPX의 `exampleText`는 파란 글씨 후보입니다. 행·열 문맥과 의미로 기입란의 예시·작성 힌트를 구분하여 삭제 대상 ID를 선택하고, 제목·항목명은 보존합니다. 예시 후보가 있는 기입 대상은 명시적인 삭제 선택 없이는 거절합니다. 삭제 ID는 중복 없이 실제 예시 후보에 한정하며 PDF 삭제 요청은 거절합니다.
+
+HWP/HWPX의 모든 파란 문구 후보는 답변 유무와 관계없이 `clearExampleTargetIds`(예시·작성 힌트 삭제) 또는 `preserveExampleTargetIds`(제목·항목명·필수 안내 보존)에 정확히 한 번 포함되어야 합니다. AI Service와 Core API 양쪽에서 누락·중복·교집합·알 수 없는 ID를 거절합니다. 체크박스 답변을 Core가 모두 처리한 경우에도 예시 후보가 있으면 빈 facts로 분류를 요청합니다. 파일 편집 후 삭제 대상으로 선택한 문단에 파란 문구가 남았는지 다시 검사합니다. 의미 분류의 정확도와 실제 한글 조판 품질은 별도 검수가 필요하며, PDF의 기존 문구 삭제는 지원하지 않습니다.
 HWP/HWPX는 구조 ID, PDF는 페이지 영상의 왼쪽 위 기준 정규화 좌표를 사용합니다.
 모든 사실은 정확히 한 번 포함해야 하며 미지원 ID, 중복/누락, PDF 영역 겹침·경계 초과를 거절합니다.
 미매핑 항목은 Core에서 파일 생성 오류로 처리합니다. 실제 파일 쓰기와 소유자별 보관은 Core 책임입니다.

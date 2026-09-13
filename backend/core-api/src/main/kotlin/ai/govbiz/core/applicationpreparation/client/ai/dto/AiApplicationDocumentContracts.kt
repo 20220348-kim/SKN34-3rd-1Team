@@ -15,4 +15,5 @@ data class AiApplicationDocumentPayload(
     val placements: List<ApplicationDocumentPlacement>,
     val unmappedFactIds: List<String>,
     val clearExampleTargetIds: List<String> = emptyList(),
+    val preserveExampleTargetIds: List<String> = emptyList(),
 )
