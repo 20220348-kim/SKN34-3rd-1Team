@@ -99,7 +99,16 @@ class SupportProgramDocumentParserTest {
         ZipOutputStream(output).use { it.putNextEntry(ZipEntry(name)); it.write(bytes); it.closeEntry() }
     }.toByteArray()
 
-    private fun hwp(vararg paragraphs: String): ByteArray = ByteArrayOutputStream().also { output ->
+    @Test
+    fun preservesHwpCheckboxCaptionWithItsQuestionContext() {
+        val blocks = mapper.parse(hwp("신청 안내를 읽고 해당하는 분야 하나를 선택하여 참가신청서를 작성합니다.", "아이디어 분야 택1", caption = "디지털 테크"), "HWP")
+        val control = blocks.single { it.locator.contains("form controls") }
+        assertTrue(control.text.contains("아이디어 분야 택1"))
+        assertTrue(control.text.contains("디지털 테크"))
+        assertFalse(control.text.contains("Value:int"))
+    }
+
+    private fun hwp(vararg paragraphs: String, caption: String? = null): ByteArray = ByteArrayOutputStream().also { output ->
         POIFSFileSystem().use { fileSystem ->
             val header = ByteArray(256)
             "HWP Document File".toByteArray(Charsets.US_ASCII).copyInto(header)
@@ -113,6 +122,11 @@ class SupportProgramDocumentParserTest {
                 val text = paragraph.toByteArray(Charsets.UTF_16LE)
                 val recordHeader = 0x43 or (text.size shl 20)
                 section.write(ByteBuffer.allocate(4).order(ByteOrder.LITTLE_ENDIAN).putInt(recordHeader).array())
+                section.write(text)
+            }
+            if (caption != null) {
+                val text = "Caption:wstring:${caption.length}:$caption Value:int:0".toByteArray(Charsets.UTF_16LE)
+                section.write(ByteBuffer.allocate(4).order(ByteOrder.LITTLE_ENDIAN).putInt(91 or (text.size shl 20)).array())
                 section.write(text)
             }
             fileSystem.root.createDirectory("BodyText")

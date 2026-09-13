@@ -130,9 +130,14 @@ class AiApplicationPreparationFacade(private val client: AiApplicationPreparatio
                             "blank=${field.evidenceQuote.isBlank()} utf16Length=${field.evidenceQuote.length} codePoints=$quoteCodePoints " +
                                 "limit=300 sourceUtf16Length=${block.text.length} exactSourceSubstring=${block.text.contains(field.evidenceQuote)}",
                         )
+                        validateDiscovery(
+                            field.options.size != 1 && field.options.size <= 30 && field.options.distinct().size == field.options.size &&
+                                field.options.all { it.isNotBlank() && it == it.trim() && it.codePointCount(0, it.length) <= 100 && field.evidenceQuote.contains(it) },
+                            "$fieldPath.options", "INVALID_CHOICE_OPTIONS", "count=${field.options.size}",
+                        )
                         ExtractedApplicationFormField(
                             field.fieldKey, label, guidance, field.required,
-                            field.evidenceBlockId, field.evidenceQuote,
+                            field.evidenceBlockId, field.evidenceQuote, field.options,
                         )
                     },
                 )

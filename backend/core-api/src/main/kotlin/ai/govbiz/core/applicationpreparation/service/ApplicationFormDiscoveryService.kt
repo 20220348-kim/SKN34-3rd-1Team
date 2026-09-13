@@ -2,6 +2,7 @@ package ai.govbiz.core.applicationpreparation.service
 
 import ai.govbiz.core._common.exception.AiServiceCallException
 import ai.govbiz.core.account.domain.Account
+import ai.govbiz.core.applicationpreparation.client.ai.exception.AiApplicationFormValidationException
 import ai.govbiz.core.applicationpreparation.domain.ApplicationFormDiscoveryBlock
 import ai.govbiz.core.applicationpreparation.domain.ApplicationFormDiscoveryDocument
 import ai.govbiz.core.applicationpreparation.domain.ApplicationFormDiscoveryInput
@@ -176,7 +177,7 @@ class ApplicationFormDiscoveryService(
                                 locator,
                                 section.description,
                                 section.fields.map { field ->
-                                    ApplicationFormFieldDefinition(field.key, field.label, field.guidance, field.required)
+                                    ApplicationFormFieldDefinition(field.key, field.label, field.guidance, field.required, field.options)
                                 },
                             )
                         },
@@ -188,6 +189,8 @@ class ApplicationFormDiscoveryService(
             snapshots.save(forms, sourceFingerprint, SupportProgramDocumentParser.VERSION, configuration)
             val storedForms = forms.map { form -> requireNotNull(snapshots.findByVersion(form.formVersionId)) }
             ApplicationFormDiscoveryResult(storedForms, warnings.distinct(), false)
+        } catch (error: AiApplicationFormValidationException) {
+            throw ApplicationFormDiscoveryException(Reason.AI_INVALID_RESPONSE, error)
         } catch (error: ApplicationFormDiscoveryException) {
             throw error
         } catch (error: SupportProgramDocumentException) {

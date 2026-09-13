@@ -28,8 +28,8 @@ Frontend는 `/app/application-preparations`의 목록·삭제, `/new`의 지연 
 상세와 질문·사실 확인을 연결합니다. AI 제안은 저장하지 않고 사용자가 선택·수정한 전체 문항 입력만 revision을 올려 저장합니다.
 초안 생성·직접 수정·사용자 확인은 후속 사용자 기능입니다.
 
-Frontend는 최근 20개 분석 작업을 공고명·제공처·요청 시각·상태가 구분된 카드로 표시하고, 선택한 활성 작업을 3초마다 확인합니다.
-재시도·이력 조회는 새 분석을 만들지 않습니다.
+Frontend는 현재 공고의 활성 분석 작업을 3초마다 확인하며, 조회 재시도는 새 분석을 만들지 않습니다.
+AI Service의 명시적 근거 검증 실패(`422 / APPLICATION_FORM_AI_INVALID_RESPONSE`)는 Client의 전용 예외 → DiscoveryService의 업무 오류 → JobService의 FAILED 저장으로 연결됩니다. 공고 재선택 후 새 요청은 허용하되 자동 재호출하지 않으며, 통신 유실·시간 초과는 UNKNOWN으로 차단합니다.
 관리자 큐 운영 조회는 `QueueOperationsController → QueueOperationsService → Repository/MyBatis/MySQL + QueueOperationsClient/RabbitMQ`
 로 생성·메일 발송·중복 검토·문서 분석·카카오 연결 해제의 다섯 큐 보관 상태·브로커 관측치를 읽습니다. 메시지 소비/재발행/DB 작업 상태 수정은 없습니다.
 [실행권·만료·결과 불명·관리자 지표·운영 한계](rabbitmq-application-form-discovery.md)를 참고하세요.
@@ -764,3 +764,5 @@ FAILED/INTERRUPTED 역시 정상 근거 부족과 구분한다.
 결과의 사업 순서·참여 상태·인용은 해당 Run의 스냅샷으로 표시한다. 여섯 단계의 판단 범위·질문·기관 확인·수집 한계와
 자동 수집/사람 미검수 상태를 표시한다. 여섯 단계는 반응형 2·3열 선택 보드에서 판단 상태를 먼저 비교하고 선택한 한 단계의 상세만 아래에서 확인한다. 원본은 세션을 포함한 GET으로 내려받는다. 5-2의 비로그인 선택 유지·작업 이어보기,
 신청서 작성 도우미, 실제 OpenAI 품질 평가는 포함하지 않는다.
+
+HWP 체크박스의 FORM_OBJECT Caption은 주변 문항과 함께 별도 근거 블록으로 보존한다. 공식 신청 문항의 단일 선택지는 AI Service가 원문 인용에 포함된 `options`로 추출하고, Core API가 다시 검증한 뒤 양식 스냅샷과 공개 응답에 보존한다. Frontend는 선택지를 라디오 버튼으로 표시한다. 기존 스냅샷에서 `options`가 없으면 빈 목록으로 읽으며, 선택형 문항의 선택지를 확인하지 못한 경우 공식 원문 확인을 안내한다.

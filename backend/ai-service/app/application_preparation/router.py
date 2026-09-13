@@ -32,6 +32,7 @@ async def discover(payload: DiscoverFormsRequest, service: Annotated[Application
     except ApplicationPreparationError as error:
         timed_out = str(error) == "APPLICATION_PREPARATION_TIMEOUT"
         cause = error.__cause__
+        validation_failed = isinstance(cause, FormDiscoveryValidationError)
         logger.warning(
             "application_form_discovery_failed failure_kind=%s error_type=%s validation_reason=%s validation_path=%s "
             "code_point_count=%s item_count=%s forbidden_character_count=%s document_count=%d block_count=%d",
@@ -46,8 +47,9 @@ async def discover(payload: DiscoverFormsRequest, service: Annotated[Application
             sum(len(document.blocks) for document in payload.documents),
         )
         raise HTTPException(
-            status_code=status.HTTP_504_GATEWAY_TIMEOUT if timed_out else status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail={"code": str(error)},
+            status_code=(status.HTTP_422_UNPROCESSABLE_CONTENT if validation_failed
+                         else status.HTTP_504_GATEWAY_TIMEOUT if timed_out else status.HTTP_503_SERVICE_UNAVAILABLE),
+            detail={"code": "APPLICATION_FORM_AI_INVALID_RESPONSE" if validation_failed else str(error)},
         ) from error
 
 
