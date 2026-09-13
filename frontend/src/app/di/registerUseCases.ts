@@ -60,6 +60,7 @@ import { SearchSupportProgramsUseCase } from '../../domain/usecases/SearchSuppor
 import { RequestPasswordResetUseCase } from '../../domain/usecases/RequestPasswordResetUseCase'
 import { ResetPasswordUseCase } from '../../domain/usecases/ResetPasswordUseCase'
 import { SendSignupEmailCodeUseCase } from '../../domain/usecases/SendSignupEmailCodeUseCase'
+import { AskAssistantUseCase } from '../../domain/usecases/AskAssistantUseCase'
 import { VerifySignupEmailCodeUseCase } from '../../domain/usecases/VerifySignupEmailCodeUseCase'
 import { SignUpUseCase } from '../../domain/usecases/SignUpUseCase'
 import { InterpretSupportProgramConversationUseCase } from '../../domain/usecases/InterpretSupportProgramConversationUseCase'
@@ -181,6 +182,9 @@ export function registerUseCases(container: AppContainer) {
     ).singleton(),
     resetPasswordUseCase: asFunction(
       ({ accountRepository }: Pick<AppCradle, 'accountRepository'>) => new ResetPasswordUseCase(accountRepository),
+    ).singleton(),
+    askAssistantUseCase: asFunction(
+      ({ assistantRepository }: Pick<AppCradle, 'assistantRepository'>) => new AskAssistantUseCase(assistantRepository),
     ).singleton(),
     sendSignupEmailCodeUseCase: asFunction(
       ({ accountRepository }: Pick<AppCradle, 'accountRepository'>) => new SendSignupEmailCodeUseCase(accountRepository),

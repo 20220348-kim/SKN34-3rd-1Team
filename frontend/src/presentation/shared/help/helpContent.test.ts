@@ -48,6 +48,8 @@ describe('도움말 항목', () => {
     const preparing = findHelpEntry('feature-status-preparing')
     expect(preparing?.limitation).not.toBeNull()
     expect(preparing?.body.some((paragraph) => paragraph.includes('저장되지 않습니다'))).toBe(true)
+    // 관심 공고함은 정식 기능이므로 준비 중이라고 안내하지 않는다.
+    expect(preparing?.body.some((paragraph) => paragraph.includes('관심 공고함은 아직'))).toBe(false)
   })
 })
 
@@ -73,7 +75,8 @@ describe('화면별 추천 질문', () => {
   })
 
   it('아는 화면이 없어도 화면과 무관한 항목은 남고 개수 제한을 지킨다', () => {
-    expect(helpEntriesForRoute(appPaths.proposals).map((entry) => entry.id)).toEqual(['feature-status-preparing'])
+    expect(helpEntriesForRoute(appPaths.adminAccounts).map((entry) => entry.id)).toEqual(['feature-status-preparing'])
+    expect(helpEntriesForRoute(appPaths.proposals).map((entry) => entry.id)).toEqual(['proposal-box', 'feature-status-preparing'])
     expect(helpEntriesForRoute(appPaths.chat, 2)).toHaveLength(2)
   })
 

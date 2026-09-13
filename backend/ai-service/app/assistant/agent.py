@@ -22,7 +22,10 @@ logger = logging.getLogger(__name__)
 class AssistantAgent:
     """한 번의 structured LLM 호출로 도우미 자유 질문의 의도를 고르고 그 의도의 필드를 채운다."""
 
-    def __init__(self, *, model: Model, model_timeout_seconds: float, run_timeout_seconds: float) -> None:
+    def __init__(
+        self, *, model: Model, model_timeout_seconds: float, run_timeout_seconds: float,
+        reasoning_effort: str = "low",
+    ) -> None:
         self._run_timeout_seconds = run_timeout_seconds
         self._agent: Agent[None] = Agent(
             name="GovBiz Assistant",
@@ -30,7 +33,7 @@ class AssistantAgent:
             model=model,
             output_type=AssistantAnswerOutput,
             model_settings=ModelSettings(
-                max_tokens=1_200, reasoning=Reasoning(effort="none"), store=False,
+                max_tokens=1_200, reasoning=Reasoning(effort=reasoning_effort), store=False,
                 timeout=model_timeout_seconds,
                 # Keep the per-request HTTP deadline aligned without mutating the shared client.
                 extra_args={"timeout": model_timeout_seconds},

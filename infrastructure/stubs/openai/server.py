@@ -53,6 +53,31 @@ def conversation_output(payload: dict) -> dict | None:
             "updates": updates, "clarificationQuestion": question}
 
 
+def assistant_output(payload: dict) -> dict:
+    """도우미 자유 질문의 의도를 문구로 고른다. 실제 모델처럼 도움말 항목 안에서만 인용한다."""
+    message = payload["message"]
+    entries = payload.get("helpEntries", [])
+    empty = {"answer": None, "citations": [], "clarificationQuestion": None, "searchQuery": None, "accountTopic": None}
+    if "관심 공고" in message or "관심공고" in message:
+        return {**empty, "intent": "ACCOUNT_STATE", "accountTopic": "SAVED_PROGRAMS"}
+    if "제안" in message:
+        return {**empty, "intent": "ACCOUNT_STATE", "accountTopic": "RECEIVED_PROPOSALS"}
+    if "내 기업" in message or "기업 등록됐" in message:
+        return {**empty, "intent": "ACCOUNT_STATE", "accountTopic": "COMPANY_PROFILE"}
+    if "이 공고" in message:
+        return {**empty, "intent": "PROGRAM_QUESTION"}
+    if "찾아" in message or "검색해" in message:
+        query = message.replace("찾아줘", "").replace("찾아 줘", "").replace("검색해줘", "").replace("검색해 줘", "").strip()
+        return {**empty, "intent": "SEARCH", "searchQuery": query or message}
+    if "날씨" in message:
+        return {**empty, "intent": "OUT_OF_SCOPE", "answer": "날씨는 이 도우미가 답할 수 있는 범위가 아닙니다. 지원사업 검색과 화면 사용법을 물어봐 주세요."}
+    for entry in entries:
+        keyword = entry["question"].replace("?", "").split()[0]
+        if keyword and keyword in message:
+            return {**empty, "intent": "PRODUCT_HELP", "answer": entry["summary"], "citations": [entry["id"]]}
+    return {**empty, "intent": "UNCLEAR", "clarificationQuestion": "어떤 화면의 사용법이 궁금하신가요, 아니면 공고를 찾으시나요?"}
+
+
 def application_preparation_output(payload: dict) -> dict | None:
     """신청 문서 입력의 한 가지 연결 smoke만 제공하며 자연어 품질을 대신하지 않는다."""
     if payload.get("userMessage") != "업체명은 새봄테크입니다.":
@@ -133,6 +158,9 @@ class Handler(BaseHTTPRequestHandler):
                 content = user["content"]
                 text = content if isinstance(content, str) else "".join(part.get("text", "") for part in content)
                 payload = json.loads(text)
+            if payload.get("schemaVersion") == "govbiz-assistant-v1":
+                self.respond_model_output(request, assistant_output(payload))
+                return
             if payload.get("schemaVersion") == "govbiz-support-program-conversation-v1":
                 output = conversation_output(payload)
                 if output is None:

@@ -300,6 +300,7 @@ Controller의 `SupportProgramRequestAdmissionService.execute`가 공개 요청 �
 | `POST /api/v1/support-programs/search` | 이번 검색에만 기업 조건을 반영한 자연어 검색(비로그인 2개·로그인 최대 5개) |
 | `POST /api/v1/support-programs/search/results` | 로그인 후 기존 검색 결과와 조건 복원(검색·모델 재호출 없음) |
 | `POST /api/v1/support-programs/conversation/interpret` | 현재 발화로 조건 변경 초안을 만들며 사용자 확인 전에는 검색하지 않음 |
+| `POST /api/v1/assistant/messages` | 도우미 자유 질문 한 건의 의도 분류·답변. 비로그인 허용, 세션이 있으면 관심 공고함·받은 제안함·기업 상태로 답함. 프런트 `VITE_ASSISTANT_AI_ENABLED=true`일 때만 호출됨 |
 | `GET /api/v1/support-programs/detail` | 제공처 코드와 원본 ID로 현재 공고 상세 조회 |
 | `POST /api/v1/support-programs/detail/answers` | 특정 공고의 공식 원문 근거 질문·답변 |
 | `POST /api/v1/sample-items/prepare` | 계층 연결 학습용 예제 |
@@ -344,6 +345,18 @@ Controller의 `SupportProgramRequestAdmissionService.execute`가 공개 요청 �
 현재는 한 번 읽은 공개 스냅샷을 Service에서 필터링·정렬·페이지 분할합니다. 응답에는 총건수와 전체 스냅샷의
 지역·분야 선택지도 함께 포함하며, 목록에 AI 추천 이유·점수·자격 검토를 붙이지 않습니다. 목록 요청의 페이지 크기는
 최대 50입니다. 요청·응답·정렬 및 확장 시 고려사항은 [직접 조건 검색 계약](../../docs/support-program-catalog.md)에 있습니다.
+
+### 도우미 자유 질문
+
+`AssistantMessageController → AssistantMessageService → AiAssistantClient` 흐름으로 내부
+`/internal/v1/assistant/answers`를 한 번 호출합니다. 요청은 질문(최대 500자), 최근 대화 6개, 현재 화면 경로와 공고 선택 여부,
+프런트 도움말 항목 전량(1~40개)입니다. 도움말의 원본은 프런트 `helpContent.ts`이므로 Core는 사본을 두지 않고 요청에 실린 항목만 인용으로 인정합니다.
+Core는 보내기 전에 사업자등록번호·전화·이메일·주민등록번호를 가리고, 요청량·동시 실행 한도는 검색·원문 질문과 같은 Bean을 공유합니다.
+응답 의도는 `PRODUCT_HELP`(답+인용 1~3개, 첫 인용 항목의 이동 버튼)·`ACCOUNT_STATE`(`accountTopic`별로 Core가 관심 공고함·받은 제안함·기업을 읽어 답)·
+`SEARCH`(`searchQuery`와 검색 화면 이동)·`PROGRAM_QUESTION`(원문 질문 화면 안내)·`OUT_OF_SCOPE`(기권 답)·`UNCLEAR`(확인 질문)입니다.
+의도별 필드 조합·인용 id·스키마 버전이 어긋나면 답을 고치지 않고 502 `AI_SERVICE_INVALID_RESPONSE`로 끝냅니다.
+이동 버튼의 경로는 Core 상수(`/app/chat`·`/app/saved-programs`·`/app/proposals`·`/app/profile`)와 요청에 실린 도움말 행동 경로만 씁니다.
+대화 전문은 저장하지 않습니다.
 
 ### 후속 대화 조건 해석
 

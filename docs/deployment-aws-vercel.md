@@ -123,6 +123,7 @@ Vercel **Production** 환경변수:
 | 이름 | 값 |
 |---|---|
 | `VITE_CORE_API_BASE_URL` | `/` (브라우저 공개 값) |
+| `VITE_ASSISTANT_AI_ENABLED` | 도우미 자유 질문 AI 호출 스위치. `true`일 때만 모델을 호출하며 비우면 꺼짐 |
 | `VITE_KAKAO_CHANNEL_ID` | 도우미 "담당자에게 문의"가 여는 카카오톡 채널 공개 ID(`_`로 시작, 브라우저 공개 값). 비우면 문의 항목 없음 |
 | `GOVBIZ_FRONTEND_ORIGIN` | 실제 `https://<project>.vercel.app`, 끝 / 없음 |
 | `GOVBIZ_API_ORIGIN` | 실제 `https://<distribution>.cloudfront.net`, 끝 / 및 `/api` 없음 |
