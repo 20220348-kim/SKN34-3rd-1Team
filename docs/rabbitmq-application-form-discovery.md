@@ -2,7 +2,7 @@
 
 [문서 목록](README.md) · [호출 흐름](architecture.md) · [Compose 실행](../infrastructure/README.md)
 
-후속 [리포트 메일 발송 큐](rabbitmq-daily-report-delivery.md) 추가로 관리자 조회는 네 기능을 반환한다.
+후속 [리포트 메일 발송 큐](rabbitmq-daily-report-delivery.md)와 [카카오 연결 해제 큐](rabbitmq-account-oauth-unlink.md) 추가로 관리자 조회는 다섯 기능을 반환한다.
 아래 세 큐 구성·테스트 수치는 V26 구현 당시 기록이며, 문서 분석의 동기 개발 경로는 그대로 유지한다.
 
 ## 목적과 범위

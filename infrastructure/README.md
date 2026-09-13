@@ -67,7 +67,11 @@ Core의 V26과 최신 Frontend를 함께 갱신해야 하며, 큐를 켜면 기�
 리포트 메일 발송도 `DAILY_REPORT_DELIVERY_QUEUE_ENABLED=true`로 별도 큐·소비자를 사용합니다. V27은 기존 리포트에
 발송 대기 컬럼을 추가합니다. false이면 기존 스케줄러 직접 SMTP 경로를 유지합니다. 큐와 메일이 켜져 있으면 기존 발송
 대기가 정기 예약 스위치와 별개로 실행될 수 있습니다. [발송 큐 설정·전환·검증](../docs/rabbitmq-daily-report-delivery.md)을 참고하세요.
-관리자 `GET /api/v1/admin/queues`로 네 큐의 DB 상태·대기 메시지·소비자·DLQ를 읽기 전용으로 확인합니다.
+카카오 탈퇴 작업도 V28 DB Outbox와 `ACCOUNT_OAUTH_UNLINK_QUEUE_ENABLED=true`의 별도 큐로 처리합니다.
+`ACCOUNT_OAUTH_UNLINK_ENABLED=false`는 작업 실행을 멈추지만 DB 작업·재가입 차단은 유지합니다.
+큐 off는 같은 DB 작업의 직접 실행입니다. 어드민 키 누락·UNKNOWN은 운영 확인이 필요합니다.
+[전환·재가입 차단·운영자 확인](../docs/rabbitmq-account-oauth-unlink.md)을 참고하세요.
+관리자 `GET /api/v1/admin/queues`로 다섯 큐의 DB 상태·대기 메시지·소비자·DLQ를 읽기 전용으로 확인합니다.
 [작업 API·운영 지표 의미·복구 주의사항](../docs/rabbitmq-application-form-discovery.md)을 참고하세요.
 
 Redis는 8.2.9로 고정하고 `redis-data` 볼륨에 AOF(`appendfsync everysec`)를 기록합니다. Core 재시작과
@@ -383,9 +387,9 @@ Windows에서는 WSL 등 Bash 환경에서 실행합니다. 루트 `.gitattribut
 11. 익명 검색 토큰을 로그인 후 복원하고 Core 재시작 뒤에도 동일 결과·소유권이 유지되는지 확인합니다.
     Redis 중지 중에는 복원/익명 결과 저장이 503이고 MySQL 카탈로그는 200인지 확인하며,
     같은 AOF 볼륨으로 Redis를 재생성한 뒤 기존 결과가 그대로 복원되는지도 확인합니다.
-    RabbitMQ의 quorum 주 큐/DLQ와 소비자 1개 연결도 확인합니다. 검증용 브로커 중단 중 카탈로그가 200을 유지하고,
+    카카오 연결 해제를 포함한 다섯 RabbitMQ 기능의 quorum 주 큐/DLQ와 각 소비자 1개 연결도 확인합니다. 검증용 브로커 중단 중 카탈로그가 200을 유지하고,
     같은 브로커 볼륨으로 재생성 후 Core 재시작 없이 소비자가 재연결되는지 확인합니다.
-    정기 생성·SMTP는 강제로 끈 상태이며 실제 작업·중복·재발행은 별도의 MySQL·RabbitMQ Testcontainers 테스트에서 검증합니다.
+    정기 생성·SMTP는 강제로 끄고 카카오·Google 자격증명도 비웁니다. 실제 작업·중복·재발행은 별도의 MySQL·RabbitMQ Testcontainers 테스트에서 검증합니다.
 12. Elasticsearch를 중지하면 자연어 검색이 503이고 MySQL 목록은 유지되는지 확인합니다. 정기 복구의
     `indexReady=false` 기록과 같은 ES 볼륨으로 컨테이너를 재생성한 후 검색 준비·검색 결과 복구도 확인합니다.
 

@@ -162,13 +162,13 @@ class AccountRepository(
             OAuthLink(provider = OAuthProvider.valueOf(row.provider), subject = row.subject)
         }
 
-    /**
-     * 계정의 소셜 로그인 연결을 지웁니다. 삭제 표시한 계정 행은 남아 FK CASCADE가 동작하지 않으므로, 같은 공급자 계정으로
-     * 다시 가입할 수 있게 탈퇴할 때 직접 지웁니다.
-     */
+    /** 카카오 identity는 외부 연결 해제 성공 전까지 재가입을 차단하도록 유지한다. */
     @Transactional
-    fun deleteOAuthIdentities(accountId: Long): Int =
-        oauthIdentityMapper.deleteIdentitiesByAccountId(accountId)
+    fun deleteNonKakaoIdentities(accountId: Long): Int =
+        oauthIdentityMapper.deleteNonKakaoIdentities(accountId)
+
+    fun hasPendingOAuthUnlink(provider: OAuthProvider, subject: String): Boolean =
+        oauthIdentityMapper.hasPendingUnlink(provider.name, subject)
 
     private fun AccountDbRow.toAccount(): Account =
         Account(

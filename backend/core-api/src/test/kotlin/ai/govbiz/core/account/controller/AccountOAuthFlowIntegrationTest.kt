@@ -8,6 +8,7 @@ import ai.govbiz.core.account.domain.OAuthProfile
 import ai.govbiz.core.account.domain.OAuthProvider
 import ai.govbiz.core.account.helper.OAuthStateCookieHelper
 import ai.govbiz.core.account.helper.SessionCookieHelper
+import ai.govbiz.core.account.service.AccountOAuthUnlinkService
 import jakarta.servlet.http.Cookie
 import java.net.URI
 import org.hamcrest.Matchers.contains
@@ -51,6 +52,7 @@ import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
         "app.bizinfo.sync.enabled=false",
         "app.support-program-index.enabled=false",
         "app.account.cookie-secure=false",
+        "app.account.oauth.unlink.enabled=false",
     ],
 )
 @AutoConfigureMockMvc
@@ -62,6 +64,8 @@ class AccountOAuthFlowIntegrationTest {
 
     @Autowired
     private lateinit var jdbcTemplate: JdbcTemplate
+
+    @Autowired private lateinit var unlinkService: AccountOAuthUnlinkService
 
     @MockitoBean
     private lateinit var googleClient: GoogleOAuthClient
@@ -151,7 +155,7 @@ class AccountOAuthFlowIntegrationTest {
     }
 
     @Test
-    fun deletingASocialAccountRemovesItsLinkUnlinksKakaoAfterCommitAndAllowsSigningUpAgain() {
+    fun deletingASocialAccountBlocksRejoiningUntilDurableUnlinkSucceeds() {
         stubProfile(kakaoClient, OAuthProfile(OAuthProvider.KAKAO, KAKAO_SUBJECT, "leaver@kakao.com"))
         val session = sessionOf(completeSignIn("kakao"))
 
@@ -165,12 +169,23 @@ class AccountOAuthFlowIntegrationTest {
                 .content("{}"),
         ).andExpect(status().isNoContent())
 
+        verify(kakaoClient, never()).unlink(KAKAO_SUBJECT)
+        val blocked = completeSignIn("kakao")
+        assertEquals("http://127.0.0.1:5173/login?oauthError=unlink-pending&next=%2Fapp%2Fchat", blocked.response.getHeader(HttpHeaders.LOCATION))
+        assertNull(blocked.response.getCookie(SessionCookieHelper.COOKIE_NAME))
+        assertEquals(1, count("SELECT COUNT(*) FROM account_oauth_identity"))
+        val jobId = requireNotNull(jdbcTemplate.queryForObject("SELECT id FROM account_oauth_unlink_job", Long::class.java))
+        doReturn(true).`when`(kakaoClient).unlink(KAKAO_SUBJECT)
+        unlinkService.execute(jobId)
         verify(kakaoClient).unlink(KAKAO_SUBJECT)
         assertEquals(0, count("SELECT COUNT(*) FROM account_oauth_identity"))
 
         val again = completeSignIn("kakao")
         assertNotNull(again.response.getCookie(SessionCookieHelper.COOKIE_NAME))
         assertEquals(2, count("SELECT COUNT(*) FROM account"))
+        assertEquals(1, count("SELECT COUNT(*) FROM account_oauth_identity WHERE subject = '$KAKAO_SUBJECT'"))
+        unlinkService.execute(jobId)
+        verify(kakaoClient).unlink(KAKAO_SUBJECT)
         assertEquals(1, count("SELECT COUNT(*) FROM account_oauth_identity WHERE subject = '$KAKAO_SUBJECT'"))
     }
 

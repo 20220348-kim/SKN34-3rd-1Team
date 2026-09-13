@@ -142,6 +142,16 @@ class KakaoOAuthClientTest {
         assertFalse(client.unlink(SUBJECT.toString()))
     }
 
+    @Test
+    fun doesNotConfirmUnlinkWithAnEmptyMismatchedOrNonNumericResponseId() {
+        for (body in listOf("{}", "{\"id\":999}", "{\"id\":\"$SUBJECT\"}", "null")) {
+            client = clientWith(OAuthClientTestHelper.properties())
+            server.expect(requestTo(UNLINK_URL)).andRespond(withSuccess(body, MediaType.APPLICATION_JSON))
+            val failure = assertThrows(OAuthClientException::class.java) { client.unlink(SUBJECT.toString()) }
+            assertEquals(OAuthClientException.Failure.INVALID_RESPONSE, failure.failure)
+        }
+    }
+
     private fun clientWith(properties: ai.govbiz.core.account.config.AccountOAuthProperties): KakaoOAuthClient {
         val builder = RestClient.builder()
         server = MockRestServiceServer.bindTo(builder).build()

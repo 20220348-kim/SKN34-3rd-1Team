@@ -29,6 +29,7 @@ export const loginMessages = {
     failed: '소셜 로그인을 처리하지 못했습니다. 잠시 후 다시 시도해 주세요.',
     'email-required': '인증된 이메일을 받지 못해 가입할 수 없습니다. 이메일 제공에 동의했는지 확인해 주세요.',
     'account-exists': '이미 이 이메일로 가입된 계정이 있습니다. 처음 가입한 방법으로 로그인해 주세요.',
+    'unlink-pending': '이전 탈퇴의 카카오 연결 해제가 아직 확인되지 않아 재가입할 수 없습니다. 잠시 후 다시 시도하고, 계속되면 관리자에게 문의해 주세요.',
     suspended: '정지된 계정입니다. 운영자에게 문의해 주세요.',
     'rate-limited': '로그인 시도가 많아 잠시 막혔습니다. 잠시 후 다시 시도해 주세요.',
   } satisfies Record<OAuthErrorCode, string>,
