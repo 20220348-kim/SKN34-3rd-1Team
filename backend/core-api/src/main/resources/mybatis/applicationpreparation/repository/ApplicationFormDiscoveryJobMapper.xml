@@ -7,12 +7,26 @@
         <result column="request_key" property="requestKey" />
         <result column="source_code" property="sourceCode" />
         <result column="source_program_id" property="sourceProgramId" />
+        <result column="program_title" property="programTitle" />
+        <result column="program_source_url" property="programSourceUrl" />
         <result column="status" property="status" />
         <result column="result_json" property="resultJson" />
         <result column="failure_code" property="failureCode" />
         <result column="created_at" property="createdAt" />
     </resultMap>
-    <sql id="summary">id, owner_account_id, request_key, source_code, source_program_id, status, failure_code, created_at</sql>
+    <sql id="summary">
+        id, owner_account_id, request_key, source_code, source_program_id,
+        COALESCE(
+            (SELECT p.title FROM support_program p
+             WHERE p.source_code = application_form_discovery_job.source_code
+               AND p.source_program_id = application_form_discovery_job.source_program_id),
+            '공고 정보를 확인하지 못한 작업'
+        ) AS program_title,
+        (SELECT p.source_url FROM support_program p
+         WHERE p.source_code = application_form_discovery_job.source_code
+           AND p.source_program_id = application_form_discovery_job.source_program_id) AS program_source_url,
+        status, failure_code, created_at
+    </sql>
     <select id="lockActiveAccount" resultType="long">
         SELECT id FROM account WHERE id = #{ownerId} AND deleted_at IS NULL AND suspended_at IS NULL FOR UPDATE
     </select>

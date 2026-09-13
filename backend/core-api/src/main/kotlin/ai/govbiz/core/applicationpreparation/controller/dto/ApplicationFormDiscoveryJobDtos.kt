@@ -17,6 +17,8 @@ data class ApplicationFormDiscoveryJobResponse(
     val id: Long,
     val sourceCode: String,
     val sourceProgramId: String,
+    val programTitle: String,
+    val programSourceUrl: String?,
     val status: String,
     val result: DiscoveredApplicationFormsResponse?,
     val failureCode: String?,
@@ -24,7 +26,7 @@ data class ApplicationFormDiscoveryJobResponse(
 ) {
     companion object {
         fun from(job: ApplicationFormDiscoveryJob) = ApplicationFormDiscoveryJobResponse(
-            job.id, job.sourceCode, job.sourceProgramId, job.status.name,
+            job.id, job.sourceCode, job.sourceProgramId, job.programTitle, job.programSourceUrl, job.status.name,
             job.result?.let(DiscoveredApplicationFormsResponse::from), job.failureCode,
             job.createdAt.atZone(ZoneId.of("Asia/Seoul")).toOffsetDateTime(),
         )

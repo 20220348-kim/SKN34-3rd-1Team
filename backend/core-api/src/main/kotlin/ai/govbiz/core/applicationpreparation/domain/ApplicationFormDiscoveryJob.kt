@@ -10,6 +10,8 @@ data class ApplicationFormDiscoveryJob(
     val requestKey: String,
     val sourceCode: String,
     val sourceProgramId: String,
+    val programTitle: String,
+    val programSourceUrl: String?,
     val status: ApplicationFormDiscoveryJobStatus,
     val result: ApplicationFormDiscoveryResult?,
     val failureCode: String?,

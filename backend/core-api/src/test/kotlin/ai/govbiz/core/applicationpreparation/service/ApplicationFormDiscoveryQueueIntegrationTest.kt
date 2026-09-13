@@ -89,6 +89,23 @@ class ApplicationFormDiscoveryQueueIntegrationTest {
         admin.purgeQueue(ApplicationFormDiscoveryRabbitConfig.QUEUE)
         admin.purgeQueue(ApplicationFormDiscoveryRabbitConfig.DEAD_QUEUE)
         jdbc.update("DELETE FROM application_form_discovery_job")
+        jdbc.update(
+            """INSERT IGNORE INTO support_program
+                (source_code, source_program_id, title, organization, summary, categories, regions,
+                 target_description, application_period_raw, application_start_date, application_end_date, source_url)
+                VALUES (?, ?, ?, '테스트 기관', '테스트 공고 요약', JSON_ARRAY(), JSON_ARRAY(),
+                        '테스트 지원 대상', '상시', NULL, NULL, ?)""".trimIndent(),
+            form.sourceCode,
+            form.sourceProgramId,
+            form.programTitle,
+            form.sourceUrl,
+        )
+        jdbc.update(
+            "UPDATE support_program SET title = ? WHERE source_code = ? AND source_program_id = ?",
+            form.programTitle,
+            form.sourceCode,
+            form.sourceProgramId,
+        )
         account = newAccount()
         doAnswer { invocation ->
             invocation.getArgument<() -> Unit>(2).invoke()
@@ -107,13 +124,20 @@ class ApplicationFormDiscoveryQueueIntegrationTest {
         repeat(2) {
             mvc.perform(post(BASE).cookie(cookie).header("Origin", "http://localhost:5173").contentType(MediaType.APPLICATION_JSON).content(body))
                 .andExpect(status().isAccepted).andExpect(header().string("Cache-Control", "no-store"))
+                .andExpect(jsonPath("$.programTitle").value(form.programTitle))
+                .andExpect(jsonPath("$.programSourceUrl").value(form.sourceUrl))
                 .andExpect(jsonPath("$.status").value("QUEUED")).andExpect(jsonPath("$.result").isEmpty)
         }
         val job = jobs.listOwned(account.id).single()
+        assertEquals(form.programTitle, job.programTitle)
+        assertEquals(form.sourceUrl, job.programSourceUrl)
         assertNull(job.result)
         verify(discovery, never()).discoverQueued(anyString(), anyString(), any<() -> Unit>() ?: {})
         mvc.perform(get("$BASE/${job.id}").cookie(cookie(newAccount()))).andExpect(status().isNotFound)
         mvc.perform(get(BASE).cookie(cookie(newAccount()))).andExpect(jsonPath("$.length()").value(0))
+        mvc.perform(get(BASE).cookie(cookie)).andExpect(status().isOk)
+            .andExpect(jsonPath("$[0].programTitle").value(form.programTitle))
+            .andExpect(jsonPath("$[0].programSourceUrl").value(form.sourceUrl))
         mvc.perform(post(BASE).cookie(cookie).header("Origin", "http://localhost:5173").contentType(MediaType.APPLICATION_JSON)
             .content(body.replace(key, "invalid-key"))).andExpect(status().isBadRequest)
         mvc.perform(post("/api/v1/application-preparations/forms/discover").cookie(cookie).header("Origin", "http://localhost:5173")

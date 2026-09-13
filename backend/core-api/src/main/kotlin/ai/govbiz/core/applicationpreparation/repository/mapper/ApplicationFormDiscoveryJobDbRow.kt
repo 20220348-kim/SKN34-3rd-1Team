@@ -8,6 +8,8 @@ data class ApplicationFormDiscoveryJobDbRow(
     var requestKey: String = "",
     var sourceCode: String = "",
     var sourceProgramId: String = "",
+    var programTitle: String = "",
+    var programSourceUrl: String? = null,
     var status: String = "QUEUED",
     var resultJson: String? = null,
     var failureCode: String? = null,

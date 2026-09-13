@@ -62,6 +62,7 @@ const repository = { discoveryJobs: vi.fn(), discoveryJob: vi.fn(), forms: vi.fn
 
 function completedDiscovery(result: { items: ApplicationForm[]; warnings: string[]; cached: boolean }) {
   return { id: 77, sourceCode: result.items[0].sourceCode, sourceProgramId: result.items[0].sourceProgramId,
+    programTitle: result.items[0].programTitle, programSourceUrl: result.items[0].sourceUrl,
     status: 'SUCCEEDED' as const, result, failureCode: null, createdAt: detail.createdAt }
 }
 
@@ -394,6 +395,31 @@ describe('application preparation creation and detail', () => {
     expect(screen.queryByRole('button', { name: '신청 문서 작성 시작' })).toBeNull()
   })
 
+  it('links to the selected official notice when its attachment cannot be analyzed', async () => {
+    const program = {
+      ...structuredClone(supportPrograms[0]),
+      sourceCode: 'BIZINFO',
+      id: 'PBLN_126422',
+      sourceUrl: 'https://www.bizinfo.go.kr/official-scanned-notice',
+    }
+    browsePrograms.mockResolvedValueOnce({
+      programs: [program], total: 1, page: 1, pageSize: 10, totalPages: 1,
+      regions: [], categories: [], startupStages: [], applicantTypes: [], founderAges: [],
+    })
+    repository.discover.mockRejectedValueOnce(new ApplicationPreparationError(422, 'APPLICATION_FORM_SOURCE_UNSUPPORTED'))
+    mount('/app/application-preparations/new')
+
+    fireEvent.click(screen.getByRole('button', { name: '공고 검색' }))
+    const results = await screen.findByRole('list', { name: '신청 문서 공고 검색 결과' })
+    fireEvent.click(within(results).getByRole('button', { name: '선택' }))
+    const selected = screen.getByRole('heading', { name: '선택한 공고' }).closest('section')!
+    fireEvent.click(within(selected).getByRole('button', { name: '신청 문서 찾기' }))
+
+    expect((await screen.findByRole('alert')).textContent).toContain('공식 PDF/HWP/HWPX 첨부를 확보하고 읽을 수 있는 공고만')
+    expect(screen.getByRole('button', { name: '다시 시도' })).toBeTruthy()
+    expect(screen.getByRole('link', { name: /공고 원문 열기/ }).getAttribute('href')).toBe(program.sourceUrl)
+  })
+
   it('discovers the selected notice and lets the user choose among its official forms', async () => {
     repository.discover.mockResolvedValueOnce(completedDiscovery({ items: [structuredClone(firstForm), structuredClone(secondForm)], warnings: ['원문 대조 필요'], cached: false }))
     mount('/app/application-preparations/new?sourceCode=BIZINFO&sourceProgramId=PBLN_1')
@@ -417,7 +443,7 @@ describe('application preparation creation and detail', () => {
     repository.create.mockReturnValueOnce(creation.promise)
     mount('/app/application-preparations/new?sourceCode=BIZINFO&sourceProgramId=PBLN_1')
     fireEvent.click(screen.getByRole('button', { name: '신청 문서 찾기' }))
-    await screen.findByText(firstForm.programTitle)
+    await screen.findByLabelText('작성할 공식 첨부')
     fireEvent.change(screen.getByLabelText('작성할 지원 분야'), { target: { value: 'MARKETING' } })
 
     const submit = screen.getByRole('button', { name: '신청 문서 작성 시작' })
@@ -511,8 +537,33 @@ describe('application preparation creation and detail', () => {
     repository.discoveryJobs.mockResolvedValueOnce([{ ...completed, result: null }])
     repository.discoveryJob.mockResolvedValueOnce(completed)
     mount('/app/application-preparations/new')
+    const history = await screen.findByRole('list', { name: '최근 공식 문서 분석 작업 목록' })
+    const historyItem = await within(history).findByRole('listitem')
+    expect(within(historyItem).getByText(firstForm.programTitle)).toBeTruthy()
+    expect(within(historyItem).getByText('기업마당')).toBeTruthy()
+    expect(within(historyItem).queryByText(firstForm.sourceProgramId)).toBeNull()
+    expect(historyItem.className).toContain('rounded-xl')
     fireEvent.click(await screen.findByRole('button', { name: '상태·결과 보기' }))
     expect(await screen.findByLabelText('작성할 공식 첨부')).toBeTruthy()
+    expect(repository.discover).not.toHaveBeenCalled()
+  })
+
+  it('opens the official notice from a failed history card after reload', async () => {
+    const failed = {
+      ...completedDiscovery({ items: [firstForm], warnings: [], cached: false }),
+      status: 'FAILED' as const,
+      result: null,
+      failureCode: 'APPLICATION_FORM_SOURCE_UNSUPPORTED',
+    }
+    repository.discoveryJobs.mockResolvedValueOnce([failed])
+    repository.discoveryJob.mockResolvedValueOnce(failed)
+    mount('/app/application-preparations/new')
+
+    const history = await screen.findByRole('list', { name: '최근 공식 문서 분석 작업 목록' })
+    fireEvent.click(await within(history).findByRole('button', { name: '상태·결과 보기' }))
+
+    expect((await screen.findByRole('alert')).textContent).toContain('공식 PDF/HWP/HWPX 첨부를 확보하고 읽을 수 있는 공고만')
+    expect(screen.getByRole('link', { name: /공고 원문 열기/ }).getAttribute('href')).toBe(firstForm.sourceUrl)
     expect(repository.discover).not.toHaveBeenCalled()
   })
 
