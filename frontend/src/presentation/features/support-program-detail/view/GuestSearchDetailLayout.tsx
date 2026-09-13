@@ -20,7 +20,7 @@ export function GuestSearchDetailLayout() {
 
   return (
     <GuestSearchLayout showConversationPanel={false} searchTabs={<SearchModeTabs isFilter={isFilter} onSelect={select} controlsPanels={false} />} onNewChat={() => select(false)}>
-      <div className="min-h-0 flex-1 overflow-y-auto">
+      <div className="flex-1">
         <Outlet />
       </div>
     </GuestSearchLayout>

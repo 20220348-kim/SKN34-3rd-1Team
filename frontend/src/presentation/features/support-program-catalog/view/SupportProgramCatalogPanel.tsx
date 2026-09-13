@@ -23,7 +23,7 @@ export function SupportProgramCatalogPanel() {
   const returnTo = `${pathname}?${writeCatalogFilters(filters)}`
   const pageStart = Math.max(1, Math.min(filters.page - 2, (catalog.data?.totalPages ?? 1) - 4))
   return (
-    <main className="min-h-0 flex-1 overflow-y-auto overscroll-contain bg-white text-app-ink">
+    <main className="flex-1 bg-white text-app-ink">
       <div className="mx-auto grid w-full max-w-6xl gap-6 px-6 pt-6 pb-12 max-chat:gap-5 max-chat:px-4 max-chat:pt-4">
         <header>
           <p className="m-0 text-xs font-bold text-brand-primary">필터로 빠르게 찾기</p>

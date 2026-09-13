@@ -88,6 +88,15 @@
   select {
     font: inherit;
   }
+
+  /*
+   * Tailwind v4 기본값은 button 커서가 default라 cursor-pointer를 붙인 버튼만 손 모양이 됩니다.
+   * 탭·링크 모양 버튼도 누를 수 있는 것이므로 비활성이 아닌 모든 버튼을 손 모양으로 통일합니다.
+   */
+  button:not(:disabled),
+  [role='button']:not([aria-disabled='true']) {
+    cursor: pointer;
+  }
 }
 
 /*
