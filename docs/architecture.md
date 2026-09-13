@@ -114,6 +114,8 @@ Frontend는 확인 후 삭제 요청을 보내고 성공 시에만 목록·메�
 `DailyReportRepository → MyBatis Mapper → XML → MySQL`에서 수신 설정·일별 입력과 결과·생성 시도 예산을 보존합니다.
 수동 미리보기는 기존 동기 호출을 유지합니다. 정기 스케줄러는 리포트·예산·작업 Outbox를 함께 저장하고,
 `DailyReportOutboxScheduler → DailyReportQueueClient → RabbitMQ → DailyReportGenerationConsumer → DailyReportService`로 생성합니다.
+`DailyReportScheduler`는 `DailyReportConfig`가 정기 실행 활성 시에만 만드는 `dailyReportTaskScheduler`를 사용합니다.
+공고 수집용 기본 스케줄러와 다른 단일 스레드이며 시작 지연 1분·완료 후 5분 간격은 유지합니다.
 Core 내부 전용 소비자가 기존 검색·근거 답변을 재사용하며 DB 선점으로 중복 실행을 차단합니다. 별도 Worker 서버는 아닙니다.
 메일은 이후 스케줄러 주기에서 V27 리포트 행의 발송 Outbox에 예약합니다.
 `DailyReportDeliveryOutboxScheduler → DailyReportDeliveryQueueClient → RabbitMQ → DailyReportDeliveryConsumer → DailyReportService → DailyReportMailClient → SMTP`

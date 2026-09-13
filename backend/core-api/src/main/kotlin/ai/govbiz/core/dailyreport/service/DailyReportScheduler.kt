@@ -29,7 +29,7 @@ class DailyReportScheduler(
     private val log = LoggerFactory.getLogger(javaClass)
 
     /** 오전 발송시각 이후 재시작한 서버도 같은 날 이어서 처리하되, DB 일별 예산과 발송 예약을 공유한다. */
-    @Scheduled(fixedDelayString = "PT5M", initialDelayString = "PT1M")
+    @Scheduled(fixedDelayString = "PT5M", initialDelayString = "PT1M", scheduler = "dailyReportTaskScheduler")
     fun run() {
         repository.expireStaleWork()
         if (!queue.enabled) {
