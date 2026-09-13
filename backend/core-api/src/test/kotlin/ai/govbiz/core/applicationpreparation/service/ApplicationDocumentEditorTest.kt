@@ -145,6 +145,52 @@ class ApplicationDocumentEditorTest {
     }
 
     @Test
+    fun rejectsBlankParagraphsOutsideHwpTablesIncludingAfterExampleCleanup() {
+        val file = HWPReader.fromInputStream(requireNotNull(javaClass.getResourceAsStream("/applicationpreparation/checkbox-form.hwp")))
+        val section = file.bodyText.sectionList[0]
+        val outsideIndex = section.toList().size
+        section.addNewParagraph().apply {
+            createText(); text.addString(" ")
+            createCharShape(); charShape.addParaCharShape(0, 0)
+        }
+        val blueId = file.docInfo.charShapeList.size.toLong()
+        file.docInfo.charShapeList.add(file.docInfo.charShapeList[0].clone().also { it.charColor.value = 0xff0000L })
+        section.addNewParagraph().apply {
+            createText(); text.addString("제안 배경을 작성")
+            createCharShape(); charShape.addParaCharShape(0, blueId)
+        }
+        val original = ByteArrayOutputStream().also { HWPWriter.toStream(file, it) }.toByteArray()
+        val outsideId = "s0-p$outsideIndex"
+        val exampleId = "s0-p${outsideIndex + 1}"
+        val targets = editor.inspect(original, "HWP").targets
+        assertFalse(targets.any { it.id == outsideId })
+        assertTrue(targets.any { it.text.isBlank() && "-t" in it.id })
+        assertThrows(ApplicationDocumentException::class.java) {
+            editor.fill(original, "HWP", facts, listOf(ApplicationDocumentPlacement("company:name", outsideId)))
+        }
+        assertThrows(ApplicationDocumentException::class.java) {
+            editor.fill(original, "HWP", facts, listOf(ApplicationDocumentPlacement("company:name", exampleId)), listOf(exampleId))
+        }
+        val answerCell = targets.first { it.text.isBlank() && "-t" in it.id }
+        val filled = editor.fill(original, "HWP", facts, listOf(ApplicationDocumentPlacement("company:name", answerCell.id)))
+        assertEquals(facts.single().value, editor.inspect(filled, "HWP").targets.single { it.id == answerCell.id }.text.trim())
+        assertTrue(HWPReader.fromInputStream(filled.inputStream()).bodyText.sectionList[0].getParagraph(outsideIndex).normalString.isBlank())
+    }
+
+    @Test
+    fun retainsBlankAnswerParagraphsInHwpWithoutTables() {
+        val file = BlankFileMaker.make()
+        file.bodyText.sectionList[0].addNewParagraph().apply {
+            createText(); text.addString(" ")
+            createCharShape(); charShape.addParaCharShape(0, 0)
+        }
+        val original = ByteArrayOutputStream().also { HWPWriter.toStream(file, it) }.toByteArray()
+        val target = editor.inspect(original, "HWP").targets.first { it.text.isBlank() }
+        val filled = editor.fill(original, "HWP", facts, listOf(ApplicationDocumentPlacement("company:name", target.id)))
+        assertEquals(facts.single().value, editor.inspect(filled, "HWP").targets.single { it.id == target.id }.text.trim())
+    }
+
+    @Test
     fun createsEditableKoreanPdfFieldsAndCanEditAndRenderThemAgain() {
         val original = PDDocument().use { doc -> doc.addPage(PDPage()); ByteArrayOutputStream().also { doc.save(it) }.toByteArray() }
         val inspection = editor.inspect(original, "PDF")

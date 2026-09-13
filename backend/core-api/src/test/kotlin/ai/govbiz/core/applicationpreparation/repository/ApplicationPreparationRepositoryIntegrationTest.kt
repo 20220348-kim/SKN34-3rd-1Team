@@ -210,11 +210,12 @@ class ApplicationPreparationRepositoryIntegrationTest {
     fun regeneratesLegacyFilesWithoutLosingTheirOwnedDownloads() {
         val preparation = repository.create(ownerId, draft())
         val legacy = documents.save(ownerId, preparation.id, 1, "이전.hwp", "application/x-hwp", byteArrayOf(1), "a".repeat(64), emptyList())
-        jdbc.update("UPDATE application_document_file SET generator_version = 3 WHERE id = ?", legacy.id)
+        jdbc.update("UPDATE application_document_file SET generator_version = 4 WHERE id = ?", legacy.id)
         assertNull(documents.findRevision(ownerId, preparation.id, 1))
         val current = documents.save(ownerId, preparation.id, 1, "수정.hwp", "application/x-hwp", byteArrayOf(2), "a".repeat(64), emptyList(), listOf("s0-p1"))
         assertTrue(current.id != legacy.id)
         assertEquals(current.id, documents.findRevision(ownerId, preparation.id, 1)!!.id)
+        assertEquals(5, jdbc.queryForObject("SELECT generator_version FROM application_document_file WHERE id = ?", Int::class.java, current.id))
         assertEquals(legacy.id, documents.findOwned(ownerId, preparation.id, legacy.id)!!.id)
         assertEquals("s0-p1", jdbc.queryForObject("SELECT JSON_UNQUOTE(JSON_EXTRACT(placements_json, '$.clearExampleTargetIds[0]')) FROM application_document_file WHERE id = ?", String::class.java, current.id))
     }
