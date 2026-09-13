@@ -26,6 +26,28 @@
 이미 큐에 예약된 계정은 다음 배치 조회에서 제외하므로 앞 계정들의 발송 대기가 뒤 계정 예약을 계속 막지 않는다.
 모든 RabbitMQ·SMTP 호출은 DB transaction 밖에서 수행한다.
 
+## 예약 스케줄러 격리
+
+기존에는 기업마당·K-Startup·충남 공고 수집과 `DailyReportScheduler`가 기본 `taskScheduler`의
+단일 스레드를 공유했다. 발송 소비자를 큐로 분리해도 긴 공고 수집 중에는 리포트 예약 자체가 대기할 수 있었다.
+
+- `DailyReportConfig`에서 `dailyReportTaskScheduler`를 만들고 `DailyReportScheduler`에 명시적으로 지정한다.
+- 전용 스레드 1개(`daily-report-schedule-` 접두사)를 사용한다. 시작 지연 1분과 **이전 실행 완료 후 5분** 간격은 유지한다.
+- `DAILY_REPORT_ENABLED=true`일 때만 생성한다. 큐만 켜고 정기 예약을 끈 환경에서는 생성하지 않는다.
+- 발송 큐 on/off와 무관하게 예약 스케줄러를 분리한다. 발송 큐 off에서는 기존 직접 SMTP가 이 전용 스레드에서 실행된다.
+- 생성·발송 Outbox 게시 스케줄러와 RabbitMQ 소비자의 별도 실행 경로는 변경하지 않는다.
+
+이는 실행 스레드 대기 원인의 격리다. 같은 DB·AI 자원의 경합, 리포트 배치 자체의 처리 시간이나
+발송 큐 off에서 다음 계정이 SMTP를 기다리는 동작까지 제거하지 않는다. 다중 서버의 예약 중복은 기존 DB 제약으로 처리하며,
+새 분산 락·큐·스키마·환경변수는 추가하지 않는다.
+
+`DailyReportPropertiesTest`에서 비활성 시 Bean 부재, 발송 큐 on/off의 단일 스레드 및 실행 간격,
+공고 수집 스레드를 막은 동안 리포트용 스레드가 실행되는 것을 검증한다. 기존 `DailyReportSchedulerTest`는
+시간·일일 예산·자정 경계·직접 SMTP/발송 큐 분기 검증을 유지한다. 외부 메일·유료 AI는 호출하지 않는다.
+
+2026-09-13 격리 보완 검증: 관련 테스트 14건 및 JDK 21 `./gradlew clean build --no-daemon`의
+전체 1,290건(실패·오류·건너뜀 0, 18분 50초)이 통과했다. 기존 개발 컨테이너 재배포는 포함하지 않는다.
+
 ## 저장 구조와 상태
 
 [V27](../backend/core-api/src/main/resources/db/migration/V27__add_daily_report_delivery_outbox.sql)은 기존 `daily_report`에

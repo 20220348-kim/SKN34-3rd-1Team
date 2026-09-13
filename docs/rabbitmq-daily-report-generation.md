@@ -29,7 +29,7 @@ Core 안의 전용 RabbitMQ 소비자가 순서대로 생성합니다. 정기 �
 ## 실제 호출 흐름
 
 ```text
-DailyReportScheduler (5분 간격, 발송 시작 시간·수신 설정 확인)
+DailyReportScheduler (전용 단일 스레드, 완료 후 5분 간격, 발송 시작 시간·수신 설정 확인)
   → DailyReportService.enqueueScheduled
   → DailyReportRepository → MyBatis Mapper → XML → MySQL
       같은 transaction: 날짜별 리포트 예약 + 일일 시도 예산 + generation_job(QUEUED)
@@ -53,6 +53,7 @@ RabbitMQ → DailyReportGenerationConsumer (Core 내부, active consumer 1개 / 
 
 완료 직후 즉시 메일을 보내는 구조가 아닙니다. 정상적으로는 다음 5분 주기에서 발송 예약하며, 계정 처리 상한 등에 따라
 더 늦어질 수 있습니다. 외부 HTTP·RabbitMQ·SMTP 호출은 DB transaction 안에 넣지 않습니다.
+예약 스레드는 공고 수집과 별도로 실행되며, 활성 조건과 격리 검증은 [예약 스케줄러 격리](rabbitmq-daily-report-delivery.md#예약-스케줄러-격리)를 참고하세요.
 
 ## 코드를 읽는 순서와 파일별 책임
 

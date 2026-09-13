@@ -1,14 +1,21 @@
 package ai.govbiz.core.dailyreport.config
 
+import ai.govbiz.core.dailyreport.service.DailyReportScheduler
+import ai.govbiz.core.supportprogram.service.sync.config.SupportProgramIndexSyncConfig
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNotSame
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Test
 import org.springframework.core.io.ClassPathResource
 import org.springframework.boot.test.context.runner.ApplicationContextRunner
+import org.springframework.scheduling.annotation.Scheduled
+import org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler
 import java.util.Properties
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 
 class DailyReportPropertiesTest {
     @Test
@@ -56,6 +63,67 @@ class DailyReportPropertiesTest {
         ApplicationContextRunner().withUserConfiguration(DailyReportConfig::class.java)
             .withPropertyValues("app.daily-report.enabled=true", "app.daily-report.queue.enabled=false")
             .run { context -> assertTrue(context.startupFailure != null) }
+    }
+
+    @Test
+    fun disabledScheduledReportsDoNotCreateAReservationSchedulerEvenWithQueuesEnabled() {
+        listOf(emptyArray<String>(), arrayOf("app.daily-report.enabled=false")).forEach { values ->
+            ApplicationContextRunner().withUserConfiguration(DailyReportConfig::class.java)
+                .withPropertyValues(*values, "app.daily-report.queue.enabled=true", "app.daily-report.queue.delivery-enabled=true")
+                .run { context ->
+                    assertNull(context.startupFailure)
+                    assertFalse(context.containsBean("dailyReportTaskScheduler"))
+                }
+        }
+    }
+
+    @Test
+    fun reservationUsesADedicatedSingleThreadWithTheExistingCadenceInBothDeliveryModes() {
+        val scheduled = DailyReportScheduler::class.java.getMethod("run").getAnnotation(Scheduled::class.java)
+        assertEquals("dailyReportTaskScheduler", scheduled.scheduler)
+        assertEquals("PT1M", scheduled.initialDelayString)
+        assertEquals("PT5M", scheduled.fixedDelayString)
+        listOf(false, true).forEach { deliveryEnabled ->
+            ApplicationContextRunner().withUserConfiguration(DailyReportConfig::class.java)
+                .withPropertyValues("app.daily-report.enabled=true", "app.daily-report.queue.enabled=true",
+                    "app.daily-report.queue.delivery-enabled=$deliveryEnabled")
+                .run { context ->
+                    assertNull(context.startupFailure)
+                    val scheduler = context.getBean(scheduled.scheduler, ThreadPoolTaskScheduler::class.java)
+                    assertEquals(1, scheduler.scheduledThreadPoolExecutor.corePoolSize)
+                    assertEquals("daily-report-schedule-", scheduler.threadNamePrefix)
+                }
+        }
+    }
+
+    @Test
+    fun blockedCatalogSchedulerDoesNotPreventTheReportSchedulerFromRunning() {
+        ApplicationContextRunner().withUserConfiguration(DailyReportConfig::class.java, SupportProgramIndexSyncConfig::class.java)
+            .withPropertyValues("app.daily-report.enabled=true", "app.daily-report.queue.enabled=true",
+                "app.support-program-index.enabled=false", "app.support-program-index.initial-delay=PT15S",
+                "app.support-program-index.fixed-delay=PT1M")
+            .run { context ->
+                assertNull(context.startupFailure)
+                val catalog = context.getBean("taskScheduler", ThreadPoolTaskScheduler::class.java)
+                val qualifier = DailyReportScheduler::class.java.getMethod("run").getAnnotation(Scheduled::class.java).scheduler
+                val reports = context.getBean(qualifier, ThreadPoolTaskScheduler::class.java)
+                assertNotSame(catalog, reports)
+                val catalogStarted = CountDownLatch(1)
+                val releaseCatalog = CountDownLatch(1)
+                val catalogWork = catalog.submit {
+                    catalogStarted.countDown()
+                    check(releaseCatalog.await(10, TimeUnit.SECONDS)) { "test did not release catalog task" }
+                }
+                try {
+                    assertTrue(catalogStarted.await(5, TimeUnit.SECONDS))
+                    val reportWork = reports.submit<String> { Thread.currentThread().name }
+                    assertTrue(reportWork.get(5, TimeUnit.SECONDS).startsWith("daily-report-schedule-"))
+                    assertFalse(catalogWork.isDone, "report task must complete while catalog task is still blocked")
+                } finally {
+                    releaseCatalog.countDown()
+                    catalogWork.get(5, TimeUnit.SECONDS)
+                }
+            }
     }
 
     @Test

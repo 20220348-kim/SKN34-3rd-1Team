@@ -59,6 +59,8 @@ V20에 맞추고 미적용 대화용 V19를 한 번만 out-of-order로 적용하
 정기 생성은 `V23`의 `daily_report_generation_job`에 리포트·예산과 함께 예약한 뒤 RabbitMQ로 전달합니다.
 `DailyReportOutboxScheduler → DailyReportQueueClient → RabbitMQ → DailyReportGenerationConsumer → DailyReportService`이며,
 Core 내부 소비자 1개가 기존 AI 경로를 재사용합니다. 웹 미리보기는 기존 동기 계약을 유지합니다.
+정기 예약은 `dailyReportTaskScheduler`의 전용 단일 스레드에서 시작 1분 후, 이전 실행 완료 후 5분 간격으로 수행합니다.
+공고 수집용 기본 스케줄러와 분리하며 `DAILY_REPORT_ENABLED=false`이면 예약 스케줄러 Bean도 생성하지 않습니다.
 V27부터 발송 큐를 켜면 `DailyReportScheduler → Repository`가 기존 리포트 행에 발송 대기를 저장하고,
 `DailyReportDeliveryOutboxScheduler → DailyReportDeliveryQueueClient → RabbitMQ → DailyReportDeliveryConsumer → DailyReportService → DailyReportMailClient`
 에서 SMTP를 실행합니다. `DAILY_REPORT_DELIVERY_QUEUE_ENABLED`는 직접 실행 false / Compose true이며,
