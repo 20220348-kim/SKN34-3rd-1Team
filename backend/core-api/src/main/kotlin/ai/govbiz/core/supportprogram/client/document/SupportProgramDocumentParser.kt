@@ -4,6 +4,12 @@ import ai.govbiz.core.supportprogram.client.document.SupportProgramDocumentExcep
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.util.zip.ZipInputStream
+import java.util.zip.Inflater
+import java.util.zip.InflaterInputStream
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
+import org.apache.poi.poifs.filesystem.POIFSFileSystem
+import org.apache.poi.poifs.filesystem.DirectoryNode
 import javax.xml.XMLConstants
 import javax.xml.parsers.DocumentBuilderFactory
 import org.apache.pdfbox.Loader
@@ -95,6 +101,69 @@ class SupportProgramDocumentParser {
                 buffer.append(paragraph)
             }
             flush(handler.paragraphs.size)
+            addAll(hwpFormControls(bytes))
+        }
+    }
+
+    /** Tika omits HWP FORM_OBJECT captions. Keep their nearby text as source context. */
+    private fun hwpFormControls(bytes: ByteArray): List<SupportProgramDocumentBlock> = buildList {
+        POIFSFileSystem(ByteArrayInputStream(bytes)).use { file ->
+            val header = file.createDocumentInputStream("FileHeader").use { it.readNBytes(40) }
+            if (header.size < 40) fail(Reason.INVALID)
+            val compressed = header[36].toInt() and 1 != 0
+            val body = file.root.getEntry("BodyText") as DirectoryNode
+            var expanded = 0
+            body.entries.asSequence().filter { it.name.matches(Regex("Section[0-9]+")) }.sortedBy { it.name.removePrefix("Section").toInt() }.forEach { entry ->
+                val raw = body.createDocumentInputStream(entry.name).use { it.readNBytes(MAX_DOCUMENT_CHARACTERS * 4 + 1) }
+                val inflater = Inflater(true)
+                val data = try {
+                    if (compressed) InflaterInputStream(ByteArrayInputStream(raw), inflater).use { it.readNBytes(MAX_DOCUMENT_CHARACTERS * 4 + 1) } else raw
+                } finally { inflater.end() }
+                expanded += data.size
+                if (expanded > MAX_DOCUMENT_CHARACTERS * 4) fail(Reason.TOO_LARGE)
+                val records = ByteBuffer.wrap(data).order(ByteOrder.LITTLE_ENDIAN)
+                var context = ""
+                var captions = mutableListOf<String>()
+                var record = 0
+                fun flush() {
+                    if (captions.isNotEmpty()) add(SupportProgramDocumentBlock("HWP ${entry.name} form controls near record $record", (context + "\n" + captions.joinToString("\n")).trim()))
+                    captions = mutableListOf()
+                }
+                while (records.remaining() >= 4) {
+                    record++
+                    val recordHeader = records.int
+                    val tag = recordHeader and 1023
+                    var size = recordHeader ushr 20
+                    if (size == 4095) {
+                        if (records.remaining() < 4) fail(Reason.INVALID)
+                        size = records.int
+                    }
+                    if (size < 0 || size > records.remaining()) fail(Reason.INVALID)
+                    val payload = ByteArray(size).also { records.get(it) }
+                    if (tag == 67) {
+                        val text = payload.toString(Charsets.UTF_16LE)
+                            .replace(Regex("[\u0001-\u0009\u000b\u000c\u000e-\u0017].{6}[\u0001-\u0017]"), "")
+                            .replace(Regex("[\\p{C}]"), " ").trim()
+                        if (text.isNotEmpty()) {
+                            flush()
+                            context = (context + " " + text).takeLast(700)
+                        }
+                    } else if (tag == 91) {
+                        val text = payload.toString(Charsets.UTF_16LE)
+                        val match = Regex("Caption:wstring:([0-9]+):").find(text)
+                        if (match != null) {
+                            val length = match.groupValues[1].toIntOrNull() ?: fail(Reason.INVALID)
+                            val start = match.range.last + 1
+                            if (length > 100 || start + length > text.length) fail(Reason.INVALID)
+                            val caption = text.substring(start, start + length).trim()
+                            if (caption.isNotEmpty()) captions.add(caption)
+                            if (captions.size > 30) fail(Reason.TOO_LARGE)
+                        }
+                    }
+                }
+                if (records.hasRemaining()) fail(Reason.INVALID)
+                flush()
+            }
         }
     }
 
@@ -206,7 +275,7 @@ class SupportProgramDocumentParser {
     private class HwpTextLimitException : SAXException()
 
     companion object {
-        const val VERSION = "pdfbox-3.0.8-tika-4.0.0-hwp-v1-hwpx-direct-paragraph-v1"
+        const val VERSION = "pdfbox-3.0.8-tika-4.0.0-hwp-form-controls-v2-hwpx-direct-paragraph-v1"
         const val MAX_DOCUMENT_CHARACTERS = 120_000
         private const val HP = "http://www.hancom.co.kr/hwpml/2011/paragraph"
     }

@@ -65,7 +65,13 @@ def discovery_request_data():
 
 
 def discovery_response_data():
-    return json.loads((FIXTURES / "discovery-contract-response.json").read_text(encoding="utf-8"))
+    data = json.loads((FIXTURES / "discovery-contract-response.json").read_text(encoding="utf-8"))
+    data["promptVersion"] = DISCOVERY_PROMPT_VERSION
+    for form in data["forms"]:
+        for section in form["sections"]:
+            for field in section["fields"]:
+                field.setdefault("options", [])
+    return data
 
 
 def discovery_selection_data():
@@ -280,8 +286,8 @@ def test_discovery_failure_log_keeps_only_safe_path_and_counts(caplog):
     with TestClient(app) as client:
         response = client.post("/internal/v1/application-preparations/discovery", json=discovery_request_data())
 
-    assert response.status_code == 503
-    assert response.json() == {"detail": {"code": "APPLICATION_PREPARATION_FAILED"}}
+    assert response.status_code == 422
+    assert response.json() == {"detail": {"code": "APPLICATION_FORM_AI_INVALID_RESPONSE"}}
     assert "validation_reason=FORBIDDEN_DISPLAY_CHARACTER" in caplog.text
     assert "validation_path=forms[0].sections[0].fields[0].guidance" in caplog.text
     assert "code_point_count=9" in caplog.text
@@ -290,3 +296,48 @@ def test_discovery_failure_log_keeps_only_safe_path_and_counts(caplog):
     assert "block_count=1" in caplog.text
     assert private_guidance not in caplog.text
     assert discovery_request_data()["documents"][0]["blocks"][0]["text"] not in caplog.text
+
+
+@pytest.mark.parametrize("error, expected_status", [(TimeoutError("lost response"), 504), (RuntimeError("execution unknown"), 503)])
+def test_discovery_execution_errors_are_not_reported_as_confirmed_validation_failures(error, expected_status):
+    app = create_app(settings=Settings(openai_api_key="unused", openai_model="test-model", llm_model_timeout_seconds=2, llm_run_timeout_seconds=3))
+    app.state.container.application_preparation_service = ApplicationPreparationService(
+        SimpleNamespace(discover=AsyncMock(side_effect=error)), "test-model",
+    )
+    with TestClient(app) as client:
+        response = client.post("/internal/v1/application-preparations/discovery", json=discovery_request_data())
+    assert response.status_code == expected_status
+    assert response.json()["detail"]["code"] != "APPLICATION_FORM_AI_INVALID_RESPONSE"
+
+
+def test_discovery_evidence_mismatch_returns_confirmed_validation_failure():
+    output = discovery_selection_data()
+    output["forms"][0]["sections"][0]["fields"][0]["evidenceQuote"] = "원문에 없는 근거"
+    app = create_app(settings=Settings(openai_api_key="unused", openai_model="test-model", llm_model_timeout_seconds=2, llm_run_timeout_seconds=3))
+    app.state.container.application_preparation_service = ApplicationPreparationService(
+        SimpleNamespace(discover=AsyncMock(return_value=FormDiscoverySelection.model_validate(output))), "test-model",
+    )
+    with TestClient(app) as client:
+        response = client.post("/internal/v1/application-preparations/discovery", json=discovery_request_data())
+    assert response.status_code == 422
+    assert response.json() == {"detail": {"code": "APPLICATION_FORM_AI_INVALID_RESPONSE"}}
+
+
+@pytest.mark.parametrize("options,valid", [(["기술", "생활"], True), (["기술", "임의 분야"], False), (["기술", "기술"], False)])
+def test_discovery_choices_must_be_present_in_the_exact_field_quote(options, valid):
+    from app.application_preparation.models import validate_discovery, FormDiscoveryValidationError
+    request = discovery_request_data()
+    output = discovery_selection_data()
+    field = output["forms"][0]["sections"][0]["fields"][0]
+    quote = "사업 개요 분야 (택1): 기술, 생활"
+    block = next(block for block in request["documents"][0]["blocks"] if block["blockId"] == field["evidenceBlockId"])
+    block["text"] += " " + quote
+    field.update(options=options, evidenceQuote=quote)
+    request = DiscoverFormsRequest.model_validate(request)
+    output = FormDiscoverySelection.model_validate(output)
+    if valid:
+        validate_discovery(request, output)
+        assert output.forms[0].sections[0].fields[0].options == options
+    else:
+        with pytest.raises(FormDiscoveryValidationError):
+            validate_discovery(request, output)

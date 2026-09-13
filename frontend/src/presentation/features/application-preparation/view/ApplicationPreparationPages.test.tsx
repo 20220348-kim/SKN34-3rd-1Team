@@ -101,7 +101,7 @@ beforeEach(() => {
       sections: firstForm.sections.map((section) => section.key === 'company-overview' ? {
         ...section,
         status: 'INPUT_CONFIRMED' as const,
-        facts: [{ id: 9, fieldKey: 'company-name', status: 'PROVIDED' as const, value: '새봄테크 연구소', sourceText: '업체명은 새봄테크입니다.', inputRevision: 4, updatedAt: detail.updatedAt }],
+        facts: [{ id: 9, fieldKey: 'company-name', status: 'PROVIDED' as const, value: '새봄테크 연구소', sourceText: '업체명: 업체명은 새봄테크입니다.', inputRevision: 4, updatedAt: detail.updatedAt }],
       } : section),
     },
   })
@@ -477,26 +477,117 @@ describe('application preparation creation and detail', () => {
     expect(repository.interpret).not.toHaveBeenCalled()
   })
 
-  it('keeps AI suggestions unconfirmed until the user reviews and saves them', async () => {
+  it('saves multiple question answers once without AI and retains another document draft', async () => {
+    const form = structuredClone(detail)
+    form.form.sections[0].fields.push({ key: 'contact', label: '담당자', guidance: '담당자를 입력하세요.', required: false })
+    repository.get.mockResolvedValue(form)
+    const saved = structuredClone(form)
+    saved.inputRevision = 4
+    saved.form.sections[0].facts = [
+      { id: 1, fieldKey: 'company-name', status: 'PROVIDED', value: '새봄', sourceText: '업체명: 새봄', inputRevision: 4, updatedAt: detail.updatedAt },
+      { id: 2, fieldKey: 'contact', status: 'UNKNOWN', value: null, sourceText: '담당자: 미정', inputRevision: 4, updatedAt: detail.updatedAt },
+    ]
+    repository.replaceInputs.mockResolvedValue(saved)
     mount('/app/application-preparations/12')
-    const section = (await screen.findByRole('heading', { name: '공식 작성 항목' }))
-      .parentElement!.querySelector('li') as HTMLElement
-    const answer = within(section).getByLabelText('AI가 사실 항목을 구분할 수 있도록 답변하기')
-    fireEvent.change(answer, { target: { value: '업체명은 새봄테크입니다.' } })
-    fireEvent.click(within(section).getByRole('button', { name: 'AI로 답변 확인' }))
+    await screen.findByRole('region', { name: '기업 개요 작성' })
+    fireEvent.change(screen.getByLabelText('답변 입력'), { target: { value: '새봄' } })
+    fireEvent.click(screen.getByRole('button', { name: '다음 질문' }))
+    fireEvent.change(screen.getByLabelText('답변 입력'), { target: { value: '미정' } })
+    fireEvent.click(screen.getByRole('button', { name: '다음 항목' }))
+    fireEvent.change(screen.getByLabelText('답변 입력'), { target: { value: '다른 문서의 초안' } })
+    fireEvent.click(screen.getByRole('button', { name: '이전 항목' }))
+    fireEvent.click(screen.getByRole('button', { name: '문서 답변 저장' }))
+    await screen.findByText('저장된 답변 2개')
+    expect(repository.interpret).not.toHaveBeenCalled()
+    expect(repository.replaceInputs).toHaveBeenCalledTimes(1)
+    expect(repository.replaceInputs).toHaveBeenCalledWith(12, 'company-overview', { expectedRevision: 3, facts: [
+      { fieldKey: 'company-name', status: 'PROVIDED', value: '새봄', sourceText: '업체명: 새봄' },
+      { fieldKey: 'contact', status: 'UNKNOWN', value: null, sourceText: '담당자: 미정' },
+    ] }, expect.any(AbortSignal))
+    fireEvent.click(screen.getByRole('button', { name: '다음 항목' }))
+    expect((screen.getByLabelText('답변 입력') as HTMLTextAreaElement).value).toBe('다른 문서의 초안')
+  })
 
-    expect(await within(section).findByText('확인 전 AI 제안')).toBeTruthy()
+  it('keeps unsaved answers when document saving fails', async () => {
+    repository.replaceInputs.mockRejectedValue(new Error('저장 연결 실패'))
+    mount('/app/application-preparations/12')
+    await screen.findByRole('region', { name: '기업 개요 작성' })
+    fireEvent.change(screen.getByLabelText('답변 입력'), { target: { value: '보존할 답변' } })
+    fireEvent.click(screen.getByRole('button', { name: '문서 답변 저장' }))
+    await screen.findByRole('alert')
+    expect((screen.getByLabelText('답변 입력') as HTMLTextAreaElement).value).toBe('보존할 답변')
+    expect(screen.queryByText(/저장된 답변/)).toBeNull()
+  })
+
+  it('offers official single choices and keeps the selected answer when navigating', async () => {
+    const choices = structuredClone(detail)
+    choices.form.sections[0].fields[0] = { key: 'idea-field', label: '아이디어 분야 (택1)', guidance: '한 분야를 선택하세요.', required: true, options: ['기술', '생활'] }
+    repository.get.mockResolvedValue(choices)
+    mount('/app/application-preparations/12')
+    const first = await screen.findByRole('radio', { name: '기술' })
+    expect(screen.queryByRole('textbox')).toBeNull()
+    fireEvent.click(first)
+    fireEvent.click(screen.getByRole('radio', { name: '생활' }))
+    expect((first as HTMLInputElement).checked).toBe(false)
+    fireEvent.click(screen.getByRole('button', { name: '다음 항목' }))
+    fireEvent.click(screen.getByRole('button', { name: '이전 항목' }))
+    expect((screen.getByRole('radio', { name: '생활' }) as HTMLInputElement).checked).toBe(true)
+    expect(screen.queryByRole('button', { name: 'AI로 답변 확인' })).toBeNull()
+    expect(repository.interpret).not.toHaveBeenCalled()
+  })
+
+  it('explains missing official choices without inventing options', async () => {
+    const choices = structuredClone(detail)
+    choices.form.sections[0].fields[0].label = '아이디어 분야 (택1)'
+    repository.get.mockResolvedValue(choices)
+    mount('/app/application-preparations/12')
+    expect(await screen.findByText(/공식 선택지를 확인하지 못했습니다/)).toBeTruthy()
+    expect(screen.queryByRole('radio')).toBeNull()
+    expect(screen.getByRole('textbox')).toBeTruthy()
+  })
+
+  it('asks one of sixteen fields at a time and retains each answer without calling AI on navigation', async () => {
+    const manyFields = structuredClone(detail)
+    manyFields.form.sections[0].fields = Array.from({ length: 16 }, (_, index) => ({ key: `field-${index}`, label: `입력내용${index + 1}`, guidance: `안내문${index + 1}`, required: true }))
+    repository.get.mockResolvedValue(manyFields)
+    mount('/app/application-preparations/12')
+    await screen.findByText('질문 1 / 16 · 답변 0개')
+    expect(screen.getByText('안내문1')).toBeTruthy()
+    expect(screen.queryByText('안내문2')).toBeNull()
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: '첫 번째 답변' } })
+    fireEvent.click(screen.getByRole('button', { name: '다음 질문' }))
+    expect(screen.getByText('질문 2 / 16 · 답변 1개')).toBeTruthy()
+    expect(screen.getByText('안내문2')).toBeTruthy()
+    expect((screen.getByRole('textbox') as HTMLTextAreaElement).value).toBe('')
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: '두 번째 답변' } })
+    fireEvent.click(screen.getByRole('button', { name: '이전 질문' }))
+    expect((screen.getByRole('textbox') as HTMLTextAreaElement).value).toBe('첫 번째 답변')
+    for (let index = 0; index < 15; index++) fireEvent.click(screen.getByRole('button', { name: '다음 질문' }))
+    expect(screen.getByText('질문 16 / 16 · 답변 2개')).toBeTruthy()
+    expect((screen.getByRole('button', { name: '다음 질문' }) as HTMLButtonElement).disabled).toBe(true)
+    expect(repository.interpret).not.toHaveBeenCalled()
     expect(repository.replaceInputs).not.toHaveBeenCalled()
-    const value = within(section).getByLabelText('업체명 확인 값')
-    fireEvent.change(value, { target: { value: '새봄테크 연구소' } })
-    fireEvent.click(within(section).getByRole('button', { name: '선택한 사실 확인하고 저장' }))
+  })
 
-    expect(repository.replaceInputs).toHaveBeenCalledWith(12, 'company-overview', {
-      expectedRevision: 3,
-      facts: [{ fieldKey: 'company-name', status: 'PROVIDED', value: '새봄테크 연구소', sourceText: '업체명은 새봄테크입니다.' }],
-    }, expect.any(AbortSignal))
-    expect(await screen.findByText('새봄테크 연구소')).toBeTruthy()
-    expect(screen.getByText('4')).toBeTruthy()
+  it('opens one section at a time and preserves answers across navigation', async () => {
+    mount('/app/application-preparations/12')
+    const first = await screen.findByRole('region', { name: '기업 개요 작성' })
+    expect(screen.queryByRole('region', { name: '바우처 활용 계획 작성' })).toBeNull()
+    expect((screen.getByRole('button', { name: '이전 항목' }) as HTMLButtonElement).disabled).toBe(true)
+    fireEvent.change(within(first).getByRole('textbox'), { target: { value: '업체명은 새봄테크입니다.' } })
+    fireEvent.click(screen.getByRole('button', { name: '다음 항목' }))
+    expect(screen.queryByRole('region', { name: '기업 개요 작성' })).toBeNull()
+    const second = screen.getByRole('region', { name: '바우처 활용 계획 작성' })
+    fireEvent.change(within(second).getByRole('textbox'), { target: { value: '새로운 과제입니다.' } })
+    expect((screen.getByRole('button', { name: '다음 항목' }) as HTMLButtonElement).disabled).toBe(true)
+    const list = screen.getByRole('navigation', { name: '신청 문서 작성 항목 목록' })
+    fireEvent.click(within(list).getByRole('button', { name: /1. 기업 개요/ }))
+    expect((screen.getByLabelText('답변 입력') as HTMLTextAreaElement).value).toBe('업체명은 새봄테크입니다.')
+    expect(within(list).getByRole('button', { name: /1. 기업 개요/ }).getAttribute('aria-current')).toBe('step')
+    fireEvent.click(screen.getByRole('button', { name: '다음 항목' }))
+    expect((screen.getByLabelText('답변 입력') as HTMLTextAreaElement).value).toBe('새로운 과제입니다.')
+    expect(repository.interpret).not.toHaveBeenCalled()
+    expect(repository.replaceInputs).not.toHaveBeenCalled()
   })
 
   it('rejects a malformed detail id without making a request', () => {
@@ -545,6 +636,31 @@ describe('application preparation creation and detail', () => {
     expect(screen.getByLabelText('작성할 공식 첨부')).toBeTruthy()
     expect(repository.discover).toHaveBeenCalledTimes(1)
     expect(repository.discoveryJob).toHaveBeenCalledTimes(2)
+  })
+
+  it('allows an explicit new request after reselecting a program whose evidence validation failed', async () => {
+    browsePrograms.mockResolvedValueOnce({
+      programs: [{ ...structuredClone(supportPrograms[0]), sourceCode: 'BIZINFO', id: 'PBLN_1' }],
+      total: 1, page: 1, pageSize: 10, totalPages: 1,
+      regions: [], categories: [], startupStages: [], applicantTypes: [], founderAges: [],
+    })
+    repository.discover.mockResolvedValueOnce({
+      ...completedDiscovery({ items: [firstForm], warnings: [], cached: false }),
+      status: 'FAILED', result: null, failureCode: 'APPLICATION_FORM_AI_INVALID_RESPONSE',
+    })
+    mount('/app/application-preparations/new')
+    fireEvent.click(screen.getByRole('button', { name: '공고 검색' }))
+    fireEvent.click(await screen.findByRole('button', { name: '선택' }))
+    fireEvent.click(screen.getByRole('button', { name: '신청 문서 찾기' }))
+    expect((await screen.findByRole('alert')).textContent).toContain('공고를 다시 선택하면 새 분석을 요청할 수 있습니다.')
+    expect(repository.discover).toHaveBeenCalledTimes(1)
+    fireEvent.click(screen.getByRole('button', { name: '선택 취소' }))
+    fireEvent.click(screen.getByRole('button', { name: '선택' }))
+    expect(repository.discover).toHaveBeenCalledTimes(1)
+    fireEvent.click(screen.getByRole('button', { name: '신청 문서 찾기' }))
+    await screen.findByLabelText('작성할 공식 첨부')
+    expect(repository.discover).toHaveBeenCalledTimes(2)
+    expect(repository.discover.mock.calls[0][3]).not.toBe(repository.discover.mock.calls[1][3])
   })
 
 

@@ -78,7 +78,7 @@ class ApplicationFormDiscoveryContractIntegrationTest {
         val issued = sessions.issue(account.id, false)
         accounts.createSession(account.id, issued.session)
         owner = Cookie(SessionCookieHelper.COOKIE_NAME, issued.sessionToken)
-        listOf(DISCOVERY_PROGRAM_ID, NO_FORM_PROGRAM_ID, INVALID_AI_PROGRAM_ID).forEach { sourceProgramId ->
+        listOf(DISCOVERY_PROGRAM_ID, NO_FORM_PROGRAM_ID, INVALID_AI_PROGRAM_ID, REJECTED_AI_PROGRAM_ID).forEach { sourceProgramId ->
             val program = program(sourceProgramId)
             `when`(details.get("BIZINFO", sourceProgramId)).thenReturn(program)
             `when`(attachments.collect("BIZINFO", sourceProgramId)).thenReturn(
@@ -113,12 +113,15 @@ class ApplicationFormDiscoveryContractIntegrationTest {
             .andExpect(jsonPath("$.items[0].sections[0].fields[0].key").value("business-overview"))
         assertEquals(1, jdbc.queryForObject("SELECT COUNT(*) FROM application_form_snapshot", Int::class.java))
         assertNull(aiContractFailure.get())
+        jdbc.update("UPDATE application_form_snapshot SET manifest_json = JSON_SET(manifest_json, '$.sections[0].fields[0].options', JSON_ARRAY('기술', '생활'))")
 
         mvc.perform(post("$BASE/forms/discover").cookie(owner).header(HttpHeaders.ORIGIN, ORIGIN)
             .contentType(MediaType.APPLICATION_JSON)
             .content("""{"sourceCode":"BIZINFO","sourceProgramId":"$DISCOVERY_PROGRAM_ID"}"""))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.cached").value(true))
+            .andExpect(jsonPath("$.items[0].sections[0].fields[0].options[0]").value("기술"))
+            .andExpect(jsonPath("$.items[0].sections[0].fields[0].options[1]").value("생활"))
             .andExpect(jsonPath("$.items.length()").value(1))
 
         assertEquals(1, aiDiscoveryCalls.get())
@@ -136,6 +139,17 @@ class ApplicationFormDiscoveryContractIntegrationTest {
 
         assertEquals(0, jdbc.queryForObject("SELECT COUNT(*) FROM application_form_snapshot", Int::class.java))
         assertNull(aiContractFailure.get())
+    }
+
+    @Test
+    fun confirmedAiEvidenceRejectionReachesThePublicContractWithoutSavingAForm() {
+        mvc.perform(post("$BASE/forms/discover").cookie(owner).header(HttpHeaders.ORIGIN, ORIGIN)
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("""{"sourceCode":"BIZINFO","sourceProgramId":"$REJECTED_AI_PROGRAM_ID"}"""))
+            .andExpect(status().isUnprocessableContent())
+            .andExpect(jsonPath("$.code").value("APPLICATION_FORM_AI_INVALID_RESPONSE"))
+        assertEquals(1, aiDiscoveryCalls.get())
+        assertEquals(0, jdbc.queryForObject("SELECT COUNT(*) FROM application_form_snapshot", Int::class.java))
     }
 
     @Test
@@ -187,6 +201,7 @@ class ApplicationFormDiscoveryContractIntegrationTest {
         const val DISCOVERY_PROGRAM_ID = "PBLN_123456"
         const val NO_FORM_PROGRAM_ID = "PBLN_123457"
         const val INVALID_AI_PROGRAM_ID = "PBLN_123458"
+        const val REJECTED_AI_PROGRAM_ID = "PBLN_123459"
         const val PROMPT_VERSION = "sha256:15eae460de872e14ef6e6a99db4bd5952acc293466adb9492dc34fa51a971c8d"
         val json = JsonMapper.builder().build()
         val aiDiscoveryCalls = AtomicInteger()
@@ -208,6 +223,8 @@ class ApplicationFormDiscoveryContractIntegrationTest {
                     } else {
                         respond(exchange, resource("discovery-contract-response.json"))
                     }
+                } else if (sourceProgramId == REJECTED_AI_PROGRAM_ID) {
+                    respond(exchange, """{"detail":{"code":"APPLICATION_FORM_AI_INVALID_RESPONSE"}}""", 422)
                 } else if (sourceProgramId == NO_FORM_PROGRAM_ID) {
                     respond(
                         exchange,

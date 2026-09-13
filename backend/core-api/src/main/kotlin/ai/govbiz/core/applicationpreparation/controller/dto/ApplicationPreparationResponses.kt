@@ -70,9 +70,9 @@ data class ApplicationFormSectionResponse(
     }
 }
 
-data class ApplicationFormFieldResponse(val key: String, val label: String, val guidance: String, val required: Boolean) {
+data class ApplicationFormFieldResponse(val key: String, val label: String, val guidance: String, val required: Boolean, val options: List<String> = emptyList()) {
     companion object {
-        fun from(field: ApplicationFormFieldDefinition) = ApplicationFormFieldResponse(field.key, field.label, field.guidance, field.required)
+        fun from(field: ApplicationFormFieldDefinition) = ApplicationFormFieldResponse(field.key, field.label, field.guidance, field.required, field.options)
     }
 }
 

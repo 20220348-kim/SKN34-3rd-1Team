@@ -118,6 +118,7 @@ class DiscoveredFormField(Contract):
     label: str = Field(min_length=1, max_length=100)
     guidance: str = Field(min_length=1, max_length=500)
     required: bool
+    options: list[str] = Field(default_factory=list, max_length=30)
     evidenceBlockId: str = Field(pattern=r"^D[0-7]-B[0-9]{1,3}$")
     evidenceQuote: str = Field(min_length=1, max_length=300)
 
@@ -246,6 +247,11 @@ def validate_discovery(request: DiscoverFormsRequest, output: FormDiscoverySelec
                         code_point_count=len(field.evidenceQuote),
                     )
                 field.evidenceQuote = canonical_quote
+                if len(field.options) != len(set(field.options)) or len(field.options) == 1:
+                    raise FormDiscoveryValidationError("INVALID_CHOICE_OPTIONS", path=f"{field_path}.options")
+                for option in field.options:
+                    if not option or len(option) > 100 or option != option.strip() or option not in canonical_quote:
+                        raise FormDiscoveryValidationError("CHOICE_OPTION_NOT_IN_SOURCE", path=f"{field_path}.options")
 
 
 def validate_selection(request: InterpretRequest, output: InterpretationSelection) -> None:

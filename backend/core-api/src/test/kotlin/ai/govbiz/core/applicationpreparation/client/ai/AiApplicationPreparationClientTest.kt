@@ -3,6 +3,7 @@ package ai.govbiz.core.applicationpreparation.client.ai
 import ai.govbiz.core._common.exception.AiServiceCallException
 import ai.govbiz.core._common.exception.AiServiceFailure
 import ai.govbiz.core.applicationpreparation.client.ai.dto.AiApplicationFormDiscoveryRequest
+import ai.govbiz.core.applicationpreparation.client.ai.exception.AiApplicationFormValidationException
 import ai.govbiz.core.applicationpreparation.domain.ApplicationFormDiscoveryBlock
 import ai.govbiz.core.applicationpreparation.domain.ApplicationFormDiscoveryDocument
 import ai.govbiz.core.applicationpreparation.domain.ApplicationFormDiscoveryInput
@@ -21,12 +22,14 @@ import org.springframework.boot.test.context.TestConfiguration
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Import
 import org.springframework.http.HttpMethod
+import org.springframework.http.HttpStatus
 import org.springframework.http.MediaType
 import org.springframework.test.web.client.MockRestServiceServer
 import org.springframework.test.web.client.match.MockRestRequestMatchers.content
 import org.springframework.test.web.client.match.MockRestRequestMatchers.method
 import org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo
 import org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess
+import org.springframework.test.web.client.response.MockRestResponseCreators.withStatus
 import org.springframework.web.client.RestClient
 import tools.jackson.databind.ObjectMapper
 
@@ -37,6 +40,28 @@ class AiApplicationPreparationClientTest {
     @Autowired private lateinit var client: AiApplicationPreparationClient
     @Autowired private lateinit var server: MockRestServiceServer
     @Autowired private lateinit var json: ObjectMapper
+
+    @Test
+    fun distinguishesConfirmedValidationFailureFromUnknownExecutionErrors() {
+        val request = json.readValue(resource("discovery-contract-request.json"), AiApplicationFormDiscoveryRequest::class.java)
+        server.expect(requestTo("http://ai.test/internal/v1/application-preparations/discovery"))
+            .andRespond(withStatus(HttpStatus.UNPROCESSABLE_CONTENT).contentType(MediaType.APPLICATION_JSON)
+                .body("""{"detail":{"code":"APPLICATION_FORM_AI_INVALID_RESPONSE"}}"""))
+        assertThrows(AiApplicationFormValidationException::class.java) { client.discover(request) }
+        server.verify()
+        server.reset()
+        for ((status, body, expected) in listOf(
+            Triple(HttpStatus.UNPROCESSABLE_CONTENT, """{"detail":{"code":"REQUEST_VALIDATION_FAILED"}}""", AiServiceFailure.UNAVAILABLE),
+            Triple(HttpStatus.SERVICE_UNAVAILABLE, """{"detail":{"code":"APPLICATION_PREPARATION_FAILED"}}""", AiServiceFailure.INVALID_RESPONSE),
+            Triple(HttpStatus.GATEWAY_TIMEOUT, "{}", AiServiceFailure.TIMEOUT),
+        )) {
+            server.expect(requestTo("http://ai.test/internal/v1/application-preparations/discovery"))
+                .andRespond(withStatus(status).contentType(MediaType.APPLICATION_JSON).body(body))
+            assertEquals(expected, assertThrows(AiServiceCallException::class.java) { client.discover(request) }.failure)
+            server.verify()
+            server.reset()
+        }
+    }
 
     @Test
     fun decodesAndValidatesTheSharedDiscoveryContractIncludingCanonicalSourceWhitespace() {

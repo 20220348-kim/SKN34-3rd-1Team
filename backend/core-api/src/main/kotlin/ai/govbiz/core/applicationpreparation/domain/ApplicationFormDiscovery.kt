@@ -31,6 +31,7 @@ data class ExtractedApplicationFormField(
     val required: Boolean,
     val evidenceBlockId: String,
     val evidenceQuote: String,
+    val options: List<String> = emptyList(),
 )
 
 data class ExtractedApplicationFormSection(

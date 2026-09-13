@@ -214,7 +214,21 @@ class AiApplicationPreparationFacadeTest {
         emptyList(),
     )
 
-    private fun discoveryPayload(guidance: String, quote: String) = AiApplicationFormDiscoveryPayload(
+    @Test
+    fun preservesOfficialChoicesAndRejectsInventedChoices() {
+        val quote = "분야 택1: 기술, 생활"
+        val configuration = ApplicationFormDiscoveryConfiguration(AI_APPLICATION_FORM_DISCOVERY_CONTRACT_VERSION, "test-model", "sha256:${"b".repeat(64)}")
+        `when`(client.discover(any(AiApplicationFormDiscoveryRequest::class.java) ?: fallbackDiscovery())).thenReturn(
+            discoveryPayload("하나 선택", quote, listOf("기술", "생활")),
+        )
+        assertEquals(listOf("기술", "생활"), facade.discover(discoveryInput(quote), configuration).single().sections.single().fields.single().options)
+        `when`(client.discover(any(AiApplicationFormDiscoveryRequest::class.java) ?: fallbackDiscovery())).thenReturn(
+            discoveryPayload("하나 선택", quote, listOf("기술", "없는 분야")),
+        )
+        assertThrows(AiServiceCallException::class.java) { facade.discover(discoveryInput(quote), configuration) }
+    }
+
+    private fun discoveryPayload(guidance: String, quote: String, options: List<String> = emptyList()) = AiApplicationFormDiscoveryPayload(
         AI_APPLICATION_FORM_DISCOVERY_CONTRACT_VERSION,
         "test-model",
         "sha256:${"b".repeat(64)}",
@@ -230,6 +244,7 @@ class AiApplicationPreparationFacadeTest {
                     false,
                     "D0-B0",
                     quote,
+                    options,
                 )),
             ),
         ))),

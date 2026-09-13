@@ -82,76 +82,114 @@ function SectionInputEditor({ section, vm }: {
   section: ApplicationFormSection
   vm: ReturnType<typeof useApplicationPreparationEditorViewModel>
 }) {
-  const state = vm.interpretations[section.key]
+  const [questionIndex, setQuestionIndex] = useState(0)
+  const field = section.fields[questionIndex]
+  const options = field?.options ?? []
+  const missingOptions = options.length === 0 && /택\s*1|하나.{0,10}선택|중.{0,10}선택/.test(`${field?.label} ${field?.guidance}`)
+  const messageKey = field ? `${section.key}:${field.key}` : section.key
+  const answeredCount = section.fields.filter((value) => vm.sectionMessages[`${section.key}:${value.key}`]?.trim() || section.facts.some((fact) => fact.fieldKey === value.key)).length
   const busy = vm.busySection?.key === section.key
   const status = sectionStatus[section.status]
   const labels = new Map(section.fields.map((field) => [field.key, field.label]))
-  return <li className={s.sectionItem}>
+  return <section className={s.sectionItem} aria-label={`${section.title} 작성`}>
     <div className={s.sectionHeading}>
-      <strong>{section.title}</strong>
-      <span className={status.className} aria-label={`작성 상태: ${status.label}`}>{status.label}</span>
+      <h3 className="text-lg font-bold">{section.title}</h3>
+      <span className={status.className} >{status.label}</span>
     </div>
-    <p className={s.muted}>{section.description}</p>
-    <ul className={s.fieldList} aria-label={`${section.title} 필수 입력`}>
-      {section.fields.map((field) => <li className={s.notice} key={field.key}>
-        <strong>{field.label}{field.required ? ' · 필수' : ''}</strong>
-        <p className={s.muted}>{field.guidance}</p>
-      </li>)}
-    </ul>
-    {section.facts.length > 0 && <div>
+    {field && <div className="rounded-2xl rounded-tl-sm bg-emerald-50 p-4 text-sm leading-6 text-emerald-950" aria-live="polite">
+      <p className="mb-2 text-xs font-semibold">질문 {questionIndex + 1} / {section.fields.length} · 답변 {answeredCount}개</p>
+      <h4 className="font-bold">{field.label}을(를) 알려주세요.{field.required ? ' (필수)' : ' (선택)'}</h4>
+      <p className="mt-2">{field.guidance}</p>
+    </div>}
+    {section.facts.some((fact) => fact.fieldKey === field?.key) && <div>
       <h3 className={s.label}>사용자가 확인한 사실</h3>
       <ul className={s.fieldList}>
-        {section.facts.map((fact) => <li className={s.factItem} key={fact.id}>
+        {section.facts.filter((fact) => fact.fieldKey === field?.key).map((fact) => <li className={s.factItem} key={fact.id}>
           <strong>{labels.get(fact.fieldKey) ?? fact.fieldKey}</strong>
           <p>{fact.status === 'UNKNOWN' ? '미정으로 확인함' : fact.value}</p>
         </li>)}
       </ul>
     </div>}
-    <label className={s.label} htmlFor={`section-answer-${section.key}`}>AI가 사실 항목을 구분할 수 있도록 답변하기</label>
-    <textarea
+    <label className={s.label} htmlFor={`section-answer-${section.key}`}>답변 입력</label>
+    {options.length > 0 ? <fieldset className="space-y-2" disabled={vm.busySection !== null}>
+      <legend className={s.label}>공식 선택지 중 하나를 선택하세요</legend>
+      {options.map((option) => <label className="flex cursor-pointer items-center gap-3 rounded-xl border border-slate-200 p-3 text-sm has-[:checked]:border-emerald-700 has-[:checked]:bg-emerald-50" key={option}>
+        <input type="radio" name={`choice-${messageKey}`} value={option} checked={vm.sectionMessages[messageKey] === option} onChange={() => vm.setSectionMessage(messageKey, option)} />
+        {option}
+      </label>)}
+    </fieldset> : <textarea
       className={s.textarea}
       disabled={vm.busySection !== null}
       id={`section-answer-${section.key}`}
-      maxLength={4000}
-      value={vm.sectionMessages[section.key] ?? ''}
-      onChange={(event) => vm.setSectionMessage(section.key, event.target.value)}
+      maxLength={2000}
+      value={vm.sectionMessages[messageKey] ?? ''}
+      onChange={(event) => vm.setSectionMessage(messageKey, event.target.value)}
       placeholder="확인된 사실만 적어 주세요. 모르는 값은 미정이라고 밝혀 주세요."
-    />
-    <div className={s.moreActions}>
-      <button className={s.button} disabled={vm.busySection !== null || !(vm.sectionMessages[section.key] ?? '').trim()} type="button" onClick={() => { void vm.interpretSection(section) }}>
-        {busy && vm.busySection?.action === 'interpret' ? 'AI가 답변 확인 중…' : 'AI로 답변 확인'}
-      </button>
-      {busy && <p className={s.status} role="status" aria-live="polite">답변에서 사실과 미정 항목을 구분하고 있습니다.</p>}
+    />}
+    {missingOptions && <p className={s.warning}>공식 선택지를 확인하지 못했습니다. 아래 공식 공고에서 첨부 양식의 선택지를 확인한 뒤 입력해 주세요. <a className="underline" href={vm.preparation!.form.sourceUrl} target="_blank" rel="noreferrer">공식 공고 열기</a></p>}
+    <div className="flex items-center justify-between gap-3" aria-label="입력 질문 이동">
+      <button className={s.button} type="button" disabled={questionIndex === 0} onClick={() => setQuestionIndex((index) => index - 1)}>이전 질문</button>
+      <button className={s.primary} type="button" disabled={questionIndex >= section.fields.length - 1} onClick={() => setQuestionIndex((index) => index + 1)}>다음 질문</button>
     </div>
-    {state && <section className={s.notice} aria-label={`${section.title} AI 제안`}>
-      <h3 className={s.label}>확인 전 AI 제안</h3>
-      <p className={s.muted}>자동 저장되지 않습니다. 값과 근거를 확인하고 필요한 항목만 선택해 저장하세요.</p>
-      {state.result.suggestions.length === 0 && <p className={s.muted}>이번 답변에서 저장할 사실을 찾지 못했습니다.</p>}
-      <div className="flex flex-col gap-3">
-        {state.result.suggestions.map((suggestion) => <div className={s.suggestion} key={suggestion.fieldKey}>
-          <label className={s.checkboxLabel}>
-            <input checked={state.selected[suggestion.fieldKey] ?? false} type="checkbox" onChange={() => vm.toggleSuggestion(section.key, suggestion.fieldKey)} />
-            <span>{labels.get(suggestion.fieldKey) ?? suggestion.fieldKey}</span>
-          </label>
-          {suggestion.status === 'UNKNOWN'
-            ? <p className={s.muted}>미정으로 저장할 제안입니다.</p>
-            : <input
-              aria-label={`${labels.get(suggestion.fieldKey) ?? suggestion.fieldKey} 확인 값`}
-              className={s.input}
-              maxLength={2000}
-              value={state.values[suggestion.fieldKey] ?? ''}
-              onChange={(event) => vm.setSuggestionValue(section.key, suggestion.fieldKey, event.target.value)}
-            />}
-          <blockquote className={s.quote}>사용자 답변 근거: “{suggestion.evidenceQuote}”</blockquote>
-        </div>)}
-      </div>
-      {state.result.nextQuestion && <p className={s.warning}><strong>다음 질문:</strong> {state.result.nextQuestion}</p>}
-      {state.result.suggestions.length > 0 && <button className={s.primary} disabled={vm.busySection !== null} type="button" onClick={() => { void vm.saveSuggestions(section) }}>
-        {busy && vm.busySection?.action === 'save' ? '확인 사실 저장 중…' : '선택한 사실 확인하고 저장'}
-      </button>}
-    </section>}
+    <p className={s.muted}>답변은 질문을 이동해도 유지됩니다. 모르는 내용은 미정이라고 적거나 건너뛰세요. 입력을 마치면 문서 답변 저장을 눌러주세요.</p>
+    <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4">
+      <p className="mb-3 text-sm text-emerald-950">이 문서에 입력한 답변을 한 번에 저장합니다. 입력한 내용 그대로 저장됩니다.</p>
+      <button className={s.primary} type="button" disabled={vm.busySection !== null || !section.fields.some((value) => vm.sectionMessages[`${section.key}:${value.key}`]?.trim())} onClick={() => { void vm.saveDocumentAnswers(section) }}>
+        {busy && vm.busySection?.action === 'save' ? '문서 답변 저장 중…' : '문서 답변 저장'}
+      </button>
+      {section.facts.length > 0 && <p className="mt-2 text-sm text-emerald-800" role="status">저장된 답변 {section.facts.length}개</p>}
+    </div>
     <p className={s.locator}>공식 양식 위치: {section.locator}</p>
-  </li>
+  </section>
+}
+
+function SectionWritingWorkspace({ vm }: { vm: ReturnType<typeof useApplicationPreparationEditorViewModel> }) {
+  const sections = vm.preparation!.form.sections
+  const [selectedKey, setSelectedKey] = useState(() => sections.find((section) => section.status !== 'INPUT_CONFIRMED')?.key ?? sections[0]?.key)
+  const activeIndex = Math.max(0, sections.findIndex((section) => section.key === selectedKey))
+  const activeSection = sections[activeIndex]
+  const confirmedCount = sections.filter((section) => section.status === 'INPUT_CONFIRMED').length
+  const headingRef = useRef<HTMLParagraphElement>(null)
+  function selectSection(index: number) {
+    setSelectedKey(sections[index].key)
+    headingRef.current?.focus()
+  }
+  return <section className={s.card} aria-labelledby="official-sections-title">
+    <div className="flex flex-wrap items-center justify-between gap-2">
+      <h2 className={s.cardTitle} id="official-sections-title">공식 작성 항목</h2>
+      <p className="text-sm font-semibold text-emerald-800" role="status">사실 확인 {confirmedCount} / {sections.length}개 항목</p>
+    </div>
+    <p className={s.muted}>한 번에 한 항목씩 작성하세요. 목록에서 원하는 항목으로 이동해도 입력한 답변은 유지됩니다.</p>
+    <div className="grid items-start gap-5 lg:grid-cols-[minmax(12rem,0.8fr)_minmax(0,2fr)]">
+      <nav aria-label="신청 문서 작성 항목 목록" className="min-w-0 rounded-xl bg-slate-50 p-2 lg:sticky lg:top-4">
+        <ol className="flex max-h-64 flex-col gap-2 overflow-y-auto lg:max-h-[65vh]">
+          {sections.map((section, index) => {
+            const pending = Boolean(section.fields.some((field) => vm.sectionMessages[`${section.key}:${field.key}`]?.trim()))
+            const status = pending ? { label: '저장 전 답변', className: s.inProgress } : sectionStatus[section.status]
+            return <li key={section.key}>
+              <button type="button" aria-current={index === activeIndex ? 'step' : undefined}
+                className={`flex w-full flex-col gap-2 rounded-xl border p-3 text-left focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#087f46] ${index === activeIndex ? 'border-emerald-700 bg-white shadow-sm' : 'border-transparent hover:bg-white'}`}
+                onClick={() => selectSection(index)}>
+                <span className="text-sm font-bold">{index + 1}. {section.title}</span>
+                <span className={`${status.className} self-start`} aria-label={`작성 상태: ${status.label}`}>{status.label}</span>
+              </button>
+            </li>
+          })}
+        </ol>
+      </nav>
+      {activeSection && <div className="min-w-0 space-y-3">
+        <p ref={headingRef} tabIndex={-1} className="text-sm font-semibold text-emerald-800 focus:outline-none" aria-live="polite">{activeIndex + 1} / {sections.length} · {activeSection.title}</p>
+        <SectionInputEditor key={activeSection.key} section={activeSection} vm={vm} />
+        <p className={s.muted}>저장 전 답변은 이 화면에서 항목을 이동할 때 유지됩니다. 화면을 나가기 전에는 문서 답변 저장을 눌러주세요.</p>
+        <div className="flex items-center justify-between gap-3">
+          <button className={s.button} type="button" disabled={activeIndex === 0} onClick={() => selectSection(activeIndex - 1)}>이전 항목</button>
+          <button className={s.primary} type="button" disabled={activeIndex === sections.length - 1} onClick={() => selectSection(activeIndex + 1)}>다음 항목</button>
+        </div>
+        {activeIndex === sections.length - 1 && <p className={s.notice}>마지막 항목입니다. 목록에서 저장 전 답변이나 아직 확인하지 않은 항목을 살펴보세요.</p>}
+      </div>}
+    </div>
+    <p className={s.notice}>저장한 답변은 공식 기관에 자동 제출되지 않습니다. 제출 전 공식 양식과 작성 내용을 확인해 주세요.</p>
+  </section>
 }
 
 export function ApplicationPreparationListPage() {
@@ -288,13 +326,15 @@ function ApplicationPreparationEditor({ id, initialSourceCode, initialSourceProg
               <p className={s.muted}>{catalogSourceLabels[vm.selectedProgram.sourceCode as keyof typeof catalogSourceLabels] ?? vm.selectedProgram.sourceName} · {vm.selectedProgram.organization} · {programStatusLabels[vm.selectedProgram.status]}</p>
               <p className={s.muted}>{vm.selectedProgram.applicationPeriod}</p>
             </div>
-            <button className={s.button} disabled={vm.discovering || vm.submitting} type="button" onClick={vm.clearProgramSelection}>선택 취소</button>
             <button className={s.primary} disabled={vm.discovering || vm.submitting} type="button" onClick={() => { void vm.discoverForms() }}>
               {vm.discovering ? '공식 첨부 분석 중…' : '신청 문서 찾기'}
             </button>
           </div>
           {vm.discovering && <p className={s.status} role="status" aria-live="polite">공식 페이지의 PDF/HWP/HWPX 첨부를 수집하고 작성 문항을 찾고 있습니다.</p>}
-          <p className={s.muted}>선택만으로 분석하지 않습니다. 버튼을 누르면 공식 첨부의 작성 문항을 찾습니다.</p>
+          <div className="flex flex-wrap items-end justify-between gap-3">
+            <p className={`${s.muted} min-w-0 flex-1`}>선택만으로 분석하지 않습니다. 버튼을 누르면 공식 첨부의 작성 문항을 찾습니다.</p>
+            <button className={`${s.button} ml-auto shrink-0`} disabled={vm.discovering || vm.submitting} type="button" onClick={vm.clearProgramSelection}>선택 취소</button>
+          </div>
         </section>}
 
         <section className={s.card}>
@@ -467,17 +507,7 @@ function ApplicationPreparationEditor({ id, initialSourceCode, initialSourceProg
             <div><dt>신청 준비 번호</dt><dd>{detail.id}</dd></div>
           </dl>
         </section>
-        <section className={s.card} aria-labelledby="official-sections-title">
-          <h2 className={s.cardTitle} id="official-sections-title">공식 작성 항목</h2>
-          <ol className={s.sectionList}>
-            {detail.form.sections.map((section, index) => <SectionInputEditor
-              key={section.key}
-              section={{ ...section, title: `${index + 1}. ${section.title}` }}
-              vm={vm}
-            />)}
-          </ol>
-          <p className={s.notice}>AI 제안은 사용자가 확인해 저장하기 전까지 입력 사실이 아닙니다. 초안 생성·직접 편집·최종 확인은 다음 단계에서 제공합니다.</p>
-        </section>
+        <SectionWritingWorkspace key={detail.id} vm={vm} />
       </>}
     </main>
   </>

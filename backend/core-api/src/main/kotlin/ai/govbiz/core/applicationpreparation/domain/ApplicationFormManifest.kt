@@ -86,8 +86,10 @@ data class ApplicationFormFieldDefinition(
     val label: String,
     val guidance: String,
     val required: Boolean,
+    val options: List<String> = emptyList(),
 ) {
     init {
+        require(options.size != 1 && options.size <= 30 && options.distinct().size == options.size && options.all { it.isSafeText(100) }) { "invalid application form choices" }
         require(FIELD_KEY_PATTERN.matches(key)) { "invalid application form field key" }
         require(label.isSafeText(100) && guidance.isSafeText(500)) { "invalid application form field text" }
     }

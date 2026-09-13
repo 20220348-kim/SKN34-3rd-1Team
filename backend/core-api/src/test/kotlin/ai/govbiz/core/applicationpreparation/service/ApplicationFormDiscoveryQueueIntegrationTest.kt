@@ -163,6 +163,26 @@ class ApplicationFormDiscoveryQueueIntegrationTest {
     }
 
     @Test
+    fun confirmedValidationFailureReleasesTheProgramWithoutAutomaticallyRepeatingAi() {
+        doAnswer { invocation ->
+            invocation.getArgument<() -> Unit>(2).invoke()
+            throw ApplicationFormDiscoveryException(ApplicationFormDiscoveryException.Reason.AI_INVALID_RESPONSE)
+        }.`when`(discovery).discoverQueued(anyString(), anyString(), any<() -> Unit>() ?: {})
+        val job = enqueue()
+        service.executeQueued(job.id)
+        service.executeQueued(job.id)
+        assertEquals("FAILED", state(job.id))
+        assertEquals("APPLICATION_FORM_AI_INVALID_RESPONSE", jobs.findOwned(account.id, job.id)?.failureCode)
+        verify(discovery, times(1)).discoverQueued(anyString(), anyString(), any<() -> Unit>() ?: {})
+        val retry = enqueue()
+        assertNotEquals(job.id, retry.id)
+        assertEquals("QUEUED", state(retry.id))
+        mvc.perform(get("$BASE/${job.id}").cookie(cookie(account))).andExpect(status().isOk)
+            .andExpect(jsonPath("$.status").value("FAILED"))
+            .andExpect(jsonPath("$.failureCode").value("APPLICATION_FORM_AI_INVALID_RESPONSE"))
+    }
+
+    @Test
     fun ambiguousPaidCallRemainsUnknownAndBlocksAutomaticOrNewExecution() {
         doAnswer { invocation ->
             invocation.getArgument<() -> Unit>(2).invoke()

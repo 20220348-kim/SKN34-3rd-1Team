@@ -112,7 +112,7 @@ describe('review screens and execution safety', () => {
     act(() => mounted.store.dispatch(signedOut()))
     await act(async () => { await vi.advanceTimersByTimeAsync(9000) })
     expect(repository.run).toHaveBeenCalledTimes(1)
-    expect(screen.queryByRole('heading', { name: /실행 #30/ })).toBeNull()
+    expect(screen.queryByRole('region', { name: '실행 30 결과' })).toBeNull()
   })
   it('pauses failed polling until the user checks the saved run again', async () => {
     vi.useFakeTimers()
@@ -123,7 +123,7 @@ describe('review screens and execution safety', () => {
     expect(repository.run).toHaveBeenCalledTimes(1)
     expect(screen.getByText(/상태 자동 조회가 중단/)).toBeTruthy()
     await act(async () => { fireEvent.click(screen.getByRole('link', { name: /#30 · 입력 버전/ })) })
-    expect(screen.getByRole('heading', { name: /실행 #30 · 분석 완료/ })).toBeTruthy()
+    expect(screen.getByRole('region', { name: '실행 30 결과' })).toBeTruthy()
     expect(repository.start).not.toHaveBeenCalled()
   })
   it('blocks a new analysis for an unknown outcome without polling or resubmitting', async () => {
@@ -330,7 +330,7 @@ describe('review screens and execution safety', () => {
     mount(); await screen.findByText('새 분석 실행')
     fireEvent.click(screen.getByText('새 분석 실행'))
     fireEvent.click(await screen.findByText('실패 실행 #30 확인'))
-    await screen.findByText('실행 #30 · 기술 실패')
+    await screen.findByText(/분석이 정상 완료되지 않았습니다/)
     expect(screen.queryByText('공식 근거 부족')).toBeNull()
   })
   it('shows auth expiry and clears personal view', async () => {
@@ -358,11 +358,28 @@ describe('review screens and execution safety', () => {
     act(() => { store.dispatch(signedIn({ email: 'b@example.com', role: 'USER', tier: 'MEMBER', emailVerified: false, hasPassword: true, company: null })) })
     await act(async () => finish(runFixture))
     expect(Object.keys(sessionStorage).length).toBe(0)
-    expect(screen.queryByText('실행 #30 · 분석 완료')).toBeNull()
+    expect(screen.queryByRole('region', { name: '실행 30 결과' })).toBeNull()
     expect(repository.start.mock.calls[0][2].aborted).toBe(true)
     act(() => { store.dispatch(signedOut()) })
   })
-  it('uses the run snapshot order, six stages and source index', async () => {
+  it.each([
+    ['sha256:f0e60686c3d79629d9523b65583a801f0780b83e00a3bbcde043ae895e601bcb', '사업 0(가 공고)과 사업 1(나 공고)의 제한입니다. 사업 10은 원문 제목입니다.', '사업 1(가 공고)과 사업 2(나 공고)의 제한입니다. 사업 10은 원문 제목입니다.'],
+    ['sha256:f0e60686c3d79629d9523b65583a801f0780b83e00a3bbcde043ae895e601bcb', '사업 1과 사업 2의 제한입니다.', '사업 1과 사업 2의 제한입니다.'],
+    ['sha256:new-prompt', '사업 1과 사업 2의 제한입니다.', '사업 1과 사업 2의 제한입니다.'],
+  ])('displays legacy summary numbering without rewriting citations (%s, %s)', async (promptVersion, summary, expected) => {
+    const run = structuredClone(runFixture)
+    run.configuration = { ...run.configuration!, promptVersion }
+    run.analysis!.summary = summary
+    const citation = run.analysis!.pairs[0].stages[0].citations[0]
+    citation.quote = '사업 0과 사업 1은 원문에 적힌 표현입니다.'
+    repository.run.mockResolvedValue(run)
+    mount('/app/combination-reviews/12/runs/30')
+    const region = await screen.findByRole('region', { name: '두 사업의 중복 지원 검토 요약' })
+    expect(within(region).getByText(expected)).toBeTruthy()
+    expect(screen.getByText(citation.quote)).toBeTruthy()
+    expect(repository.start).not.toHaveBeenCalled()
+  })
+  it('labels the review summary and shows warnings, six stages and sources without execution metadata', async () => {
     repository.runs.mockResolvedValue({ items: [runFixture], nextBeforeId: null })
     const view = mount()
     const scrollTo = vi.fn()
@@ -370,12 +387,21 @@ describe('review screens and execution safety', () => {
     await screen.findByText('새 분석 실행')
     const resultLink = await screen.findByRole('link', { name: /#30 · 입력 버전/ })
     expect(resultLink.getAttribute('href')).toBe('/app/combination-reviews/12/runs/30')
-    expect(screen.queryByRole('heading', { name: /실행 #30 · 분석 완료/ })).toBeNull()
+    expect(screen.queryByRole('region', { name: '실행 30 결과' })).toBeNull()
     fireEvent.click(resultLink)
-    await screen.findByText('실행 #30 · 분석 완료')
+    await screen.findByRole('region', { name: '실행 30 결과' })
     expect(scrollTo).toHaveBeenCalledWith({ top: 0, left: 0, behavior: 'auto' })
     expect(screen.getByText(/과거 입력 버전의 결과/)).toBeTruthy()
     expect(screen.queryByText(/BIZINFO:PBLN_/)).toBeNull()
+    expect(screen.getByText(/공식 원문 기준의 AI 분석이며/)).toBeTruthy()
+    expect(screen.queryByText(/당시 제목:/)).toBeNull()
+    expect(screen.queryByText(/실행별 추가 설명:/)).toBeNull()
+    expect(screen.queryByText('실행 당시 사업 순서·참여 상태')).toBeNull()
+    expect(screen.queryByText(/프롬프트/)).toBeNull()
+    const summary = screen.getByRole('region', { name: '두 사업의 중복 지원 검토 요약' })
+    expect(within(summary).getByRole('heading', { name: '두 사업의 중복 지원 검토 요약' })).toBeTruthy()
+    expect(within(summary).getByText('선택한 두 사업을 함께 신청하거나 지원받을 때의 제한 사항을 요약한 내용입니다.')).toBeTruthy()
+    expect(within(summary).getByText(runFixture.analysis!.summary)).toBeTruthy()
     expect(screen.getAllByRole('tab')).toHaveLength(6)
     expect(screen.getByText(/PDF 3쪽, 문단 2/)).toBeTruthy()
     expect(screen.getByRole('tab', { name: '1단계 · 신청 · 사용자 정보 부족' }).getAttribute('aria-selected')).toBe('true')
@@ -387,7 +413,7 @@ describe('review screens and execution safety', () => {
   it('loads the selected result automatically after the application StrictMode remount', async () => {
     mount('/app/combination-reviews/12/runs/30', true)
 
-    expect(await screen.findByRole('heading', { name: '실행 #30 · 분석 완료' })).toBeTruthy()
+    expect(await screen.findByRole('region', { name: '실행 30 결과' })).toBeTruthy()
     expect(screen.queryByRole('button', { name: '실행 결과 다시 불러오기' })).toBeNull()
     expect(repository.run).toHaveBeenCalledWith(12, 30, expect.any(AbortSignal))
   })
@@ -396,11 +422,11 @@ describe('review screens and execution safety', () => {
     repository.runs.mockResolvedValue({ items: [runFixture, olderRun], nextBeforeId: null })
     repository.run.mockImplementation(async (_reviewId, selectedRunId) => selectedRunId === 29 ? olderRun : runFixture)
     mount('/app/combination-reviews/12/runs/30')
-    await screen.findByRole('heading', { name: '실행 #30 · 분석 완료' })
+    await screen.findByRole('region', { name: '실행 30 결과' })
 
     fireEvent.change(screen.getByLabelText('실행 결과 선택'), { target: { value: '29' } })
 
-    expect(await screen.findByRole('heading', { name: '실행 #29 · 분석 완료' })).toBeTruthy()
+    expect(await screen.findByRole('region', { name: '실행 29 결과' })).toBeTruthy()
     expect(repository.run).toHaveBeenCalledWith(12, 29, expect.any(AbortSignal))
   })
   it('keeps UNKNOWN independent from other participation fields', async () => {

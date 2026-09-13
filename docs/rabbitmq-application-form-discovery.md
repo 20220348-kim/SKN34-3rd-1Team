@@ -76,6 +76,10 @@ V26 `application_form_discovery_job`에 아래 규칙을 적용한다.
 20분이 지난 작업의 늦은 성공은 UNKNOWN 등을 덮어쓰지 못한다. `UNKNOWN`을 단순 실패로 취급해 일괄 재시도하지 않는다.
 DB와 외부 AI를 원자적으로 묶을 수 없으므로 exactly-once 과금을 보장하지 않는다. 일별 비용 상한도 추가하지 않았다.
 
+AI Service가 응답 수신 후 근거 검증 실패를 `422 / APPLICATION_FORM_AI_INVALID_RESPONSE`로 확정한 경우에는 FAILED로 종료한다.
+기존의 포괄적인 503, 응답 유실, 시간 초과는 이 확정 실패로 간주하지 않는다. 이미 저장된 UNKNOWN을 일괄 해제하지 않으며,
+개별 작업의 AI 로그로 검증 실패가 확인된 경우에만 운영자가 해당 작업을 FAILED로 정정할 수 있다. 정정 자체는 AI를 재실행하지 않는다.
+
 ## 브로커 설정·장애
 
 - 주 exchange/queue: `govbiz.application-form-discovery.generation.v1`

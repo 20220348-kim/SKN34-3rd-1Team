@@ -8,6 +8,7 @@ import ai.govbiz.core.applicationpreparation.client.ai.dto.AiApplicationPreparat
 import ai.govbiz.core.applicationpreparation.client.ai.dto.AiApplicationPreparationInterpretRequest
 import ai.govbiz.core.applicationpreparation.client.ai.dto.AiApplicationFormDiscoveryPayload
 import ai.govbiz.core.applicationpreparation.client.ai.dto.AiApplicationFormDiscoveryRequest
+import ai.govbiz.core.applicationpreparation.client.ai.exception.AiApplicationFormValidationException
 import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.http.MediaType
 import org.springframework.http.client.ClientHttpResponse
@@ -55,6 +56,12 @@ class AiApplicationPreparationClient(
         executeAiServiceCall {
             client.post().uri("/internal/v1/application-preparations/discovery")
                 .contentType(MediaType.APPLICATION_JSON).body(request).retrieve()
+                .onStatus({ it.value() == 422 }, { _, response ->
+                    if (readErrorCode(response) == "APPLICATION_FORM_AI_INVALID_RESPONSE") {
+                        throw AiApplicationFormValidationException()
+                    }
+                    throw AiServiceCallException.unavailable(null)
+                })
                 .onStatus({ it.value() == 503 }, { _, response ->
                     if (readErrorCode(response) == "APPLICATION_PREPARATION_FAILED") {
                         throw AiServiceCallException.invalidResponse("Application form discovery response failed validation", null)

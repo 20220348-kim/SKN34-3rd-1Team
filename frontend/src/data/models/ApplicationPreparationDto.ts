@@ -10,6 +10,7 @@ const field = z.object({
   label: z.string().min(1).max(100),
   guidance: z.string().min(1).max(500),
   required: z.boolean(),
+  options: z.array(z.string().min(1).max(100)).max(30).refine((values) => values.length !== 1 && new Set(values).size === values.length).optional(),
 })
 const factStatus = z.enum(['PROVIDED', 'UNKNOWN'])
 const fact = z.object({

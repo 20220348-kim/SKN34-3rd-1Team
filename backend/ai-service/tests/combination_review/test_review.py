@@ -27,7 +27,9 @@ def request_data():
 
 
 def response_data():
-    return json.loads((FIXTURES / "contract-response.json").read_text(encoding="utf-8"))
+    data = json.loads((FIXTURES / "contract-response.json").read_text(encoding="utf-8"))
+    data["promptVersion"] = PROMPT_VERSION
+    return data
 
 
 def selection_data():

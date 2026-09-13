@@ -18,7 +18,7 @@ export type ApplicationFormSection = {
   facts: ApplicationPreparationFact[]
 }
 
-export type ApplicationFormField = { key: string; label: string; guidance: string; required: boolean }
+export type ApplicationFormField = { key: string; label: string; guidance: string; required: boolean; options?: string[] }
 export type ApplicationFactStatus = 'PROVIDED' | 'UNKNOWN'
 export type ApplicationPreparationFact = {
   id: number
