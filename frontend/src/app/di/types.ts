@@ -3,6 +3,7 @@ import type { BrowseSupportProgramsUseCase } from '../../domain/usecases/BrowseS
 
 import type { CoreApiHealth } from '../../data/api/coreApiHealth'
 import type { SessionHintStorage } from '../../data/storage/sessionHintStorage'
+import type { KakaoChannelChatUrl } from '../../data/config/kakaoChannel'
 import type { AccountRepository } from '../../domain/repositories/AccountRepository'
 import type { ApplicationPreparationRepository } from '../../domain/repositories/ApplicationPreparationRepository'
 import type { ApplicationPreparationUseCase } from '../../domain/usecases/ApplicationPreparationUseCase'
@@ -114,6 +115,7 @@ export type AppCradle = {
   startOAuthSignInUseCase: StartOAuthSignInUseCase
   completeOAuthSignInUseCase: CompleteOAuthSignInUseCase
   fetchCoreApiHealth: FetchCoreApiHealth
+  kakaoChannelChatUrl: KakaoChannelChatUrl
   getCurrentAccountUseCase: GetCurrentAccountUseCase
   getSupportProgramDetailUseCase: GetSupportProgramDetailUseCase
   getSupportProgramSearchReadinessUseCase: GetSupportProgramSearchReadinessUseCase

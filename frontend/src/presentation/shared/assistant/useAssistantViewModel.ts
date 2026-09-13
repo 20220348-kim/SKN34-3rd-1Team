@@ -3,12 +3,14 @@ import { useLocation } from 'react-router'
 
 import { appContainer } from '../../../app/appContainer'
 import type { BrowseSavedSupportProgramsUseCase } from '../../../domain/usecases/SavedSupportProgramUseCases'
+import type { KakaoChannelChatUrl } from '../../../data/config/kakaoChannel'
 import { useAuthSession } from '../auth/hooks/useAuthSession'
 import { findHelpEntry } from '../help/helpContent'
 import { useReceivedProposals } from '../partner-proposal/useReceivedProposals'
 import {
   type AssistantMessage,
   type AssistantQuickReply,
+  contactAnswer,
   findAssistantHelpTopic,
   freeTextFallback,
   greetingMessages,
@@ -73,11 +75,14 @@ function readLabelShown(): boolean {
  */
 export function useAssistantViewModel(
   browseSavedPrograms: SavedProgramsUseCase = appContainer.resolve('browseSavedSupportProgramsUseCase'),
+  kakaoChannelChatUrl: KakaoChannelChatUrl = appContainer.resolve('kakaoChannelChatUrl'),
 ) {
   const { pathname, search } = useLocation()
   const { isAuthenticated, hasCompany } = useAuthSession()
   const receivedProposals = useReceivedProposals()
-  const session = useMemo(() => ({ isAuthenticated, hasCompany }), [isAuthenticated, hasCompany])
+  // 채널 주소는 빌드 환경값이라 인스턴스 동안 고정입니다. 대화 규칙 함수에는 값으로 넘겨 환경을 직접 읽지 않게 합니다.
+  const contactUrl = useMemo(() => kakaoChannelChatUrl(), [kakaoChannelChatUrl])
+  const session = useMemo(() => ({ isAuthenticated, hasCompany, contactUrl }), [isAuthenticated, hasCompany, contactUrl])
   const [isOpen, setIsOpen] = useState(false)
   const [messages, setMessages] = useState<AssistantMessage[]>(() => readStored()?.messages ?? [])
   const [quickReplies, setQuickReplies] = useState<AssistantQuickReply[]>(() => readStored()?.quickReplies ?? [])
@@ -128,14 +133,6 @@ export function useAssistantViewModel(
     setQuickReplies(routeReplies())
   }, [routeReplies])
 
-  const clearConversation = useCallback(() => {
-    setMessages([])
-    setQuickReplies([])
-    writeStored(null)
-    setMessages(greetingMessages())
-    setQuickReplies(routeReplies())
-  }, [routeReplies])
-
   const returnTo = `${pathname}${search}`
 
   const pickQuickReply = useCallback(async (reply: AssistantQuickReply) => {
@@ -164,6 +161,11 @@ export function useAssistantViewModel(
       append([answer], answer.role === 'assistant' ? answer.followUps : [])
       return
     }
+    if (reply.kind === 'contact') {
+      const answer = contactAnswer(contactUrl)
+      append([answer], answer.role === 'assistant' ? answer.followUps : [])
+      return
+    }
     if (!isAuthenticated) {
       const answer = loginPromptAnswer(returnTo)
       append([answer], [otherQuestionReply])
@@ -185,7 +187,7 @@ export function useAssistantViewModel(
     } finally {
       setIsTyping(false)
     }
-  }, [append, browseSavedPrograms, isAuthenticated, pathname, receivedProposals, returnTo, routeReplies, session])
+  }, [append, browseSavedPrograms, contactUrl, isAuthenticated, pathname, receivedProposals, returnTo, routeReplies, session])
 
   /** C1은 자유 질문을 AI에 보내지 않고 추천 질문으로 돌려보냅니다. */
   const submitText = useCallback((text: string) => {
@@ -209,7 +211,6 @@ export function useAssistantViewModel(
     pickQuickReply: (reply: AssistantQuickReply) => { void pickQuickReply(reply) },
     submitText,
     startNewConversation,
-    clearConversation,
   }
 }
 
