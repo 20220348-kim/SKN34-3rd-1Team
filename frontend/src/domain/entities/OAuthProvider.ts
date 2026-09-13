@@ -11,6 +11,7 @@ export const oauthErrorCodes = [
   'failed',
   'email-required',
   'account-exists',
+  'unlink-pending',
   'suspended',
   'rate-limited',
 ] as const

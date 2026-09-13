@@ -12,7 +12,6 @@ import ai.govbiz.core.account.helper.OAuthStateCookieHelper
 import ai.govbiz.core.account.helper.OneTimeTokenHelper
 import ai.govbiz.core.account.helper.normalizeEmail
 import ai.govbiz.core.account.repository.AccountRepository
-import ai.govbiz.core.account.service.dto.AccountDeletedEvent
 import ai.govbiz.core.account.service.dto.OAuthCallback
 import ai.govbiz.core.account.service.dto.OAuthCompletionResult
 import ai.govbiz.core.account.service.dto.OAuthFailure
@@ -27,8 +26,6 @@ import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.dao.DuplicateKeyException
 import org.springframework.stereotype.Service
-import org.springframework.transaction.event.TransactionPhase
-import org.springframework.transaction.event.TransactionalEventListener
 
 /**
  * 카카오·Google 계정으로 가입하고 로그인합니다(OAuth 2.0 인가 코드 흐름 + OpenID Connect).
@@ -42,7 +39,7 @@ import org.springframework.transaction.event.TransactionalEventListener
 @Service
 class AccountOAuthService(
     googleClient: GoogleOAuthClient,
-    private val kakaoClient: KakaoOAuthClient,
+    kakaoClient: KakaoOAuthClient,
     private val repository: AccountRepository,
     private val sessionService: AccountSessionService,
     private val attemptGuard: AccountLoginAttemptGuard,
@@ -121,26 +118,9 @@ class AccountOAuthService(
         return OAuthCompletionResult.SignedIn(sessionService.toResult(issued, account), returnPath)
     }
 
-    /**
-     * 계정 삭제가 커밋된 뒤 카카오 연결을 끊습니다. 카카오는 서비스 탈퇴에 연결 끊기를 넣도록 요구합니다.
-     * 외부 호출이라 삭제 transaction 밖에서 하고, 실패해도 이미 끝난 탈퇴는 되돌리지 않고 경고만 남깁니다.
-     * Google은 토큰을 저장하지 않아 끊을 대상이 없습니다.
-     */
-    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
-    fun unlinkDeletedAccount(event: AccountDeletedEvent) {
-        for (link in event.oauthLinks.filter { it.provider == OAuthProvider.KAKAO }) {
-            try {
-                if (!kakaoClient.unlink(link.subject)) {
-                    log.warn("카카오 어드민 키가 없어 삭제된 계정 {}의 카카오 연결을 끊지 못했습니다", event.accountId)
-                }
-            } catch (exception: OAuthClientException) {
-                log.warn("삭제된 계정 {}의 카카오 연결 끊기에 실패했습니다: {}", event.accountId, exception.failure)
-            }
-        }
-    }
-
     private fun findOrCreateAccount(profile: OAuthProfile): Resolution {
         repository.findByOAuthIdentity(profile.provider, profile.subject)?.let { account -> return Resolution.Found(account) }
+        if (repository.hasPendingOAuthUnlink(profile.provider, profile.subject)) return Resolution.Rejected(OAuthFailure.UNLINK_PENDING)
 
         val email = profile.verifiedEmail?.let(::normalizeEmail)?.takeIf(::isStorableEmail)
             ?: return Resolution.Rejected(OAuthFailure.EMAIL_REQUIRED)
@@ -159,7 +139,10 @@ class AccountOAuthService(
         } catch (_: DuplicateKeyException) {
             // 같은 공급자 계정의 동시 콜백이면 먼저 만든 계정을 쓰고, 같은 이메일의 동시 가입이면 연결하지 않습니다.
             repository.findByOAuthIdentity(profile.provider, profile.subject)?.let(Resolution::Found)
-                ?: Resolution.Rejected(OAuthFailure.ACCOUNT_EXISTS)
+                ?: Resolution.Rejected(
+                    if (repository.hasPendingOAuthUnlink(profile.provider, profile.subject)) OAuthFailure.UNLINK_PENDING
+                    else OAuthFailure.ACCOUNT_EXISTS,
+                )
         }
     }
 

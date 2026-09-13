@@ -30,7 +30,7 @@ Frontend는 `/app/application-preparations`의 목록·삭제, `/new`의 지연 
 
 Frontend는 최근 20개 분석 작업을 조회하고 선택한 활성 작업을 3초마다 확인합니다. 재시도·이력 조회는 새 분석을 만들지 않습니다.
 관리자 큐 운영 조회는 `QueueOperationsController → QueueOperationsService → Repository/MyBatis/MySQL + QueueOperationsClient/RabbitMQ`
-로 생성·메일 발송·중복 검토·문서 분석의 네 큐 보관 상태·브로커 관측치를 읽습니다. 메시지 소비/재발행/DB 작업 상태 수정은 없습니다.
+로 생성·메일 발송·중복 검토·문서 분석·카카오 연결 해제의 다섯 큐 보관 상태·브로커 관측치를 읽습니다. 메시지 소비/재발행/DB 작업 상태 수정은 없습니다.
 [실행권·만료·결과 불명·관리자 지표·운영 한계](rabbitmq-application-form-discovery.md)를 참고하세요.
 
 중복 지원 검토의 현재 입력은 `기존 세션 Account 해석 → CombinationReviewController → CombinationReviewService
@@ -95,6 +95,13 @@ Core는 세션 account ID로 모든 SQL을 제한하고 `X-Chat-Account` 사전�
 `V19`의 복합 UNIQUE와 FK는 소유자별 ID를 보호하며 저장 transaction의 계정 행 잠금·expectedVersion 검사로
 중복 생성·동시 덮어쓰기를 막습니다. 동일 내용 재전송은 멱등이며 충돌은 409로 드러냅니다. 이 스냅샷은 회원이 저장한
 화면 데이터로 신뢰된 검색 결과나 서버 권한의 근거가 아닙니다. 탈퇴 이벤트의 대화 삭제는 탈퇴 transaction에 참여합니다.
+
+카카오 탈퇴 연결 해제는 `AccountProfileService → AccountOAuthUnlinkRepository → MyBatis → MySQL(V28)`로
+탈퇴와 작업 저장을 원자적으로 처리합니다. 공급자 identity는 성공 전까지 재가입 차단용으로 유지합니다.
+`AccountOAuthUnlinkScheduler → QueueClient → RabbitMQ → Consumer → AccountOAuthUnlinkService → KakaoOAuthClient`로
+외부 호출을 DB transaction 밖에서 실행하고, 결과 저장·이전 identity 해제만 짧은 transaction으로 묶습니다.
+큐 off는 같은 DB 작업을 스케줄러가 직접 처리합니다. UNKNOWN은 재실행하지 않으며 재가입 차단을 유지합니다.
+[설정·경합 방지·운영자 확인](rabbitmq-account-oauth-unlink.md)을 참고하세요.
 브라우저는 계정 변경 때 진행 요청·메모리를 폐기하고, 조회 중 새 입력·화면 이동이 발생하면 늦은 복원을 적용하지 않습니다.
 저장 실패는 현재 창의 내용을 유지한 채 안내하며 자동 fallback·강제 덮어쓰기를 하지 않습니다.
 기록별 삭제는 같은 계층을 따라 `DELETE /api/v1/me/chat-conversations/{id}`로 처리합니다. `V21`의 `deleted_at`을

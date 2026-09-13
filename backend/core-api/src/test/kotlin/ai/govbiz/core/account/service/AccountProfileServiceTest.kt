@@ -9,7 +9,9 @@ import ai.govbiz.core.account.helper.AccountTestHelper.NOW
 import ai.govbiz.core.account.helper.SessionTokenHelper
 import ai.govbiz.core.account.repository.AccountRepository
 import ai.govbiz.core.account.repository.CompanyRepository
+import ai.govbiz.core.account.repository.AccountOAuthUnlinkRepository
 import ai.govbiz.core.account.service.dto.AccountDeletedEvent
+import org.springframework.context.ApplicationEventPublisher
 import ai.govbiz.core.account.service.exception.AuthenticationRequiredException
 import ai.govbiz.core.account.service.exception.CurrentPasswordMismatchException
 import ai.govbiz.core.account.service.exception.LastAdminDeletionException
@@ -31,7 +33,6 @@ import org.mockito.Mockito.never
 import org.mockito.Mockito.verify
 import org.mockito.Mockito.verifyNoInteractions
 import org.mockito.junit.jupiter.MockitoExtension
-import org.springframework.context.ApplicationEventPublisher
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder
 
 @ExtendWith(MockitoExtension::class)
@@ -50,7 +51,9 @@ class AccountProfileServiceTest {
     private lateinit var proposalRepository: PartnerProposalRepository
 
     @Mock
-    private lateinit var eventPublisher: ApplicationEventPublisher
+    private lateinit var unlinkRepository: AccountOAuthUnlinkRepository
+
+    @Mock private lateinit var eventPublisher: ApplicationEventPublisher
 
     private val passwordEncoder = BCryptPasswordEncoder(4)
 
@@ -61,7 +64,7 @@ class AccountProfileServiceTest {
     @BeforeEach
     fun setUp() {
         service = AccountProfileService(
-            accountRepository, companyRepository, recruitmentRepository, proposalRepository, passwordEncoder, eventPublisher,
+            accountRepository, companyRepository, recruitmentRepository, proposalRepository, passwordEncoder, unlinkRepository, eventPublisher,
             AccountTestHelper.FIXED_CLOCK,
         )
     }
@@ -115,25 +118,26 @@ class AccountProfileServiceTest {
         verify(proposalRepository).withdrawAllPendingByProposer(7L, NOW)
         verify(recruitmentRepository).closeAllByAccountId(7L, NOW)
         verify(companyRepository).deleteByAccountId(7L)
-        verify(accountRepository).deleteOAuthIdentities(7L)
+        verify(accountRepository).deleteNonKakaoIdentities(7L)
         verify(accountRepository).deleteAllSessionsByAccountId(7L)
         verify(accountRepository).markDeleted(7L, NOW)
-        verify(eventPublisher).publishEvent(AccountDeletedEvent(7L, emptyList()) as Any)
+        verifyNoInteractions(unlinkRepository)
+        verify(eventPublisher).publishEvent(AccountDeletedEvent(7L) as Any)
     }
 
     @Test
-    fun deleteAccountReadsTheSocialLinksBeforeRemovingThemAndAnnouncesThemForUnlinking() {
+    fun deleteAccountRecordsKakaoWorkBeforeRemovingNonKakaoLinks() {
         stubCredential()
         val links = listOf(OAuthLink(OAuthProvider.KAKAO, "4012345678"))
         doReturn(links).`when`(accountRepository).findOAuthLinks(7L)
 
         service.deleteAccount(account, "password1")
 
-        val order = inOrder(accountRepository, eventPublisher)
+        val order = inOrder(accountRepository, unlinkRepository)
         order.verify(accountRepository).findOAuthLinks(7L)
-        order.verify(accountRepository).deleteOAuthIdentities(7L)
+        order.verify(unlinkRepository).enqueue(7L, "4012345678")
+        order.verify(accountRepository).deleteNonKakaoIdentities(7L)
         order.verify(accountRepository).markDeleted(7L, NOW)
-        order.verify(eventPublisher).publishEvent(AccountDeletedEvent(7L, links) as Any)
     }
 
     @Test

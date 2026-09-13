@@ -4,6 +4,8 @@ import ai.govbiz.core.account.domain.Account
 import ai.govbiz.core.account.helper.SessionTokenHelper
 import ai.govbiz.core.account.repository.AccountRepository
 import ai.govbiz.core.account.repository.CompanyRepository
+import ai.govbiz.core.account.domain.OAuthProvider
+import ai.govbiz.core.account.repository.AccountOAuthUnlinkRepository
 import ai.govbiz.core.account.service.dto.AccountDeletedEvent
 import ai.govbiz.core.account.service.dto.AccountDeletionPreview
 import ai.govbiz.core.account.service.exception.AuthenticationRequiredException
@@ -22,7 +24,7 @@ import org.springframework.transaction.annotation.Transactional
 
 /**
  * 로그인한 회원이 자기 계정을 관리합니다. 비밀번호 변경과 계정 삭제는 현재 비밀번호를 다시 확인합니다.
- * 삭제는 계정·기업·모집글·제안 네 Repository의 쓰기를 한 transaction으로 묶으며 그 경계는 이 Service가 소유합니다.
+ * 삭제는 계정·기업·모집글·제안 정리와 연결 해제 작업 저장을 한 transaction으로 묶으며 경계는 이 Service가 소유합니다.
  */
 @Service
 class AccountProfileService(
@@ -31,6 +33,7 @@ class AccountProfileService(
     private val recruitmentRepository: PartnerRecruitmentRepository,
     private val proposalRepository: PartnerProposalRepository,
     private val passwordEncoder: PasswordEncoder,
+    private val unlinkRepository: AccountOAuthUnlinkRepository,
     private val eventPublisher: ApplicationEventPublisher,
     @param:Qualifier("seoulClock") private val clock: Clock,
 ) {
@@ -58,9 +61,8 @@ class AccountProfileService(
     }
 
     /**
-     * 계정을 삭제 표시하고 기업 행·소셜 로그인 연결·모든 세션을 지웁니다. 내 모집글은 마감돼 받은 제안이 만료로 보이고, 내가 보낸
-     * 대기 제안은 철회됩니다. 이메일은 익명화되므로 같은 이메일로 다시 가입하면 새 계정이 됩니다. 공급자 쪽 연결 끊기는 외부
-     * 호출이라 이 transaction이 커밋된 뒤 [AccountOAuthService]가 [AccountDeletedEvent]를 받아 처리합니다.
+     * 탈퇴와 카카오 연결 해제 작업을 함께 저장한다. 카카오 identity는 성공 전까지 재가입 방지용으로 유지한다.
+     * 외부 연결 해제는 커밋 후 별도 워커가 수행하며, 회원·기업·세션 삭제 transaction에서 HTTP를 호출하지 않는다.
      */
     @Transactional
     fun deleteAccount(account: Account, currentPassword: String?) {
@@ -74,10 +76,12 @@ class AccountProfileService(
         proposalRepository.withdrawAllPendingByProposer(account.id, now)
         recruitmentRepository.closeAllByAccountId(account.id, now)
         companyRepository.deleteByAccountId(account.id)
-        accountRepository.deleteOAuthIdentities(account.id)
+        oauthLinks.filter { it.provider == OAuthProvider.KAKAO }.forEach { unlinkRepository.enqueue(account.id, it.subject) }
+        accountRepository.deleteNonKakaoIdentities(account.id)
         accountRepository.deleteAllSessionsByAccountId(account.id)
         accountRepository.markDeleted(account.id, now)
-        eventPublisher.publishEvent(AccountDeletedEvent(account.id, oauthLinks))
+        // 대화 기록 등 로컬 정리는 기존 동기 이벤트로 같은 transaction 안에서 처리한다.
+        eventPublisher.publishEvent(AccountDeletedEvent(account.id))
     }
 
     /** 세션을 확인한 뒤 비밀번호가 지워졌다면 해시가 없어 불일치로 봅니다. */

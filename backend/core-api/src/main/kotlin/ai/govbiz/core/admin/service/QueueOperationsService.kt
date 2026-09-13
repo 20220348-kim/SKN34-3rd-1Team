@@ -1,6 +1,7 @@
 package ai.govbiz.core.admin.service
 
 import ai.govbiz.core.admin.client.QueueOperationsClient
+import ai.govbiz.core.account.config.AccountOAuthUnlinkRabbitConfig
 import ai.govbiz.core.admin.domain.QueueOperationsStatus
 import ai.govbiz.core.admin.repository.QueueOperationsRepository
 import ai.govbiz.core.applicationpreparation.config.ApplicationFormDiscoveryRabbitConfig
@@ -18,6 +19,8 @@ class QueueOperationsService(
     @param:Value("\${app.combination-review.queue.enabled:false}") private val reviewsEnabled: Boolean,
     @param:Value("\${app.application-form-discovery.queue.enabled:false}") private val discoveryEnabled: Boolean,
     @param:Value("\${app.daily-report.queue.delivery-enabled:false}") private val deliveryEnabled: Boolean,
+    @param:Value("\${app.account.oauth.unlink.enabled:true}") private val unlinkEnabled: Boolean,
+    @param:Value("\${app.account.oauth.unlink.queue-enabled:false}") private val unlinkQueueEnabled: Boolean,
 ) {
     fun status(): List<QueueOperationsStatus> {
         val counts = repository.counts()
@@ -30,6 +33,7 @@ class QueueOperationsService(
             read("combination-review", reviewsEnabled, CombinationReviewRabbitConfig.QUEUE, CombinationReviewRabbitConfig.DEAD_QUEUE),
             read("application-form-discovery", discoveryEnabled, ApplicationFormDiscoveryRabbitConfig.QUEUE, ApplicationFormDiscoveryRabbitConfig.DEAD_QUEUE),
             read("daily-report-delivery", deliveryEnabled, DailyReportDeliveryRabbitConfig.QUEUE, DailyReportDeliveryRabbitConfig.DEAD_QUEUE),
+            read("account-oauth-unlink", unlinkEnabled && unlinkQueueEnabled, AccountOAuthUnlinkRabbitConfig.QUEUE, AccountOAuthUnlinkRabbitConfig.DEAD_QUEUE),
         )
     }
 }

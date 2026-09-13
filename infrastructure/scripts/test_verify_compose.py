@@ -34,6 +34,8 @@ if [[ "${VERIFY_CHECK_SAFE_UPSTREAM_ENV:-false}" == "true" ]]; then
   [[ -z "$DAILY_REPORT_FROM$SMTP_HOST$SMTP_USERNAME$SMTP_PASSWORD" ]] || exit 108
   [[ "$DAILY_REPORT_QUEUE_ENABLED" == "true" ]] || exit 109
   [[ "$DAILY_REPORT_DELIVERY_QUEUE_ENABLED" == "true" ]] || exit 112
+  [[ "$ACCOUNT_OAUTH_UNLINK_ENABLED" == "true" && "$ACCOUNT_OAUTH_UNLINK_QUEUE_ENABLED" == "true" ]] || exit 113
+  [[ -z "$ACCOUNT_OAUTH_KAKAO_ADMIN_KEY$ACCOUNT_OAUTH_KAKAO_CLIENT_ID$ACCOUNT_OAUTH_KAKAO_CLIENT_SECRET$ACCOUNT_OAUTH_GOOGLE_CLIENT_ID$ACCOUNT_OAUTH_GOOGLE_CLIENT_SECRET" ]] || exit 114
   [[ "$COMBINATION_REVIEW_QUEUE_ENABLED" == "true" ]] || exit 111
   [[ "$APPLICATION_FORM_DISCOVERY_QUEUE_ENABLED" == "true" ]] || exit 112
   [[ "$RABBITMQ_USERNAME" == "govbiz-verification" && "$RABBITMQ_PASSWORD" == "govbiz-verification-not-a-secret" ]] || exit 110
@@ -172,6 +174,13 @@ printf '%s' '200'
             DAILY_REPORT_ENABLED="true",
             DAILY_REPORT_QUEUE_ENABLED="false",
             DAILY_REPORT_DELIVERY_QUEUE_ENABLED="false",
+            ACCOUNT_OAUTH_UNLINK_ENABLED="false",
+            ACCOUNT_OAUTH_UNLINK_QUEUE_ENABLED="false",
+            ACCOUNT_OAUTH_KAKAO_ADMIN_KEY="must-not-use-real-admin-key",
+            ACCOUNT_OAUTH_KAKAO_CLIENT_ID="must-not-use-real-kakao-id",
+            ACCOUNT_OAUTH_KAKAO_CLIENT_SECRET="must-not-use-real-kakao-secret",
+            ACCOUNT_OAUTH_GOOGLE_CLIENT_ID="must-not-use-real-google-id",
+            ACCOUNT_OAUTH_GOOGLE_CLIENT_SECRET="must-not-use-real-google-secret",
             RABBITMQ_USERNAME="must-not-use-real-rabbit-user",
             RABBITMQ_PASSWORD="must-not-use-real-rabbit-password",
             DAILY_REPORT_MAIL_ENABLED="true",

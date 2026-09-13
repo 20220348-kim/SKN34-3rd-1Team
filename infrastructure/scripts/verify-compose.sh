@@ -41,6 +41,14 @@ export OPENAI_BASE_URL="http://openai-stub:8002/v1"
 export DAILY_REPORT_ENABLED="false"
 export DAILY_REPORT_QUEUE_ENABLED="true"
 export DAILY_REPORT_DELIVERY_QUEUE_ENABLED="true"
+export ACCOUNT_OAUTH_UNLINK_ENABLED="true"
+export ACCOUNT_OAUTH_UNLINK_QUEUE_ENABLED="true"
+# 외부 계정 연결 해제는 검증 범위가 아니다. 개발자 자격증명을 검증 스택에 넣지 않는다.
+export ACCOUNT_OAUTH_KAKAO_ADMIN_KEY=""
+export ACCOUNT_OAUTH_KAKAO_CLIENT_ID=""
+export ACCOUNT_OAUTH_KAKAO_CLIENT_SECRET=""
+export ACCOUNT_OAUTH_GOOGLE_CLIENT_ID=""
+export ACCOUNT_OAUTH_GOOGLE_CLIENT_SECRET=""
 export COMBINATION_REVIEW_QUEUE_ENABLED="true"
 export APPLICATION_FORM_DISCOVERY_QUEUE_ENABLED="true"
 export RABBITMQ_USERNAME="govbiz-verification"
@@ -385,8 +393,10 @@ wait_for_report_consumer() {
         && grep -Eq '^govbiz\.application-form-discovery\.generation\.v1[[:space:]]+quorum[[:space:]]+1$' <<<"${queues}" \
         && grep -Eq '^govbiz\.application-form-discovery\.generation\.dead\.v1[[:space:]]+quorum[[:space:]]+0$' <<<"${queues}" \
         && grep -Eq '^govbiz\.daily-report\.delivery\.v1[[:space:]]+quorum[[:space:]]+1$' <<<"${queues}" \
-        && grep -Eq '^govbiz\.daily-report\.delivery\.dead\.v1[[:space:]]+quorum[[:space:]]+0$' <<<"${queues}"; then
-      echo "Verified report generation/delivery, combination-review and form-discovery quorum queues and their connected consumers"
+        && grep -Eq '^govbiz\.daily-report\.delivery\.dead\.v1[[:space:]]+quorum[[:space:]]+0$' <<<"${queues}" \
+        && grep -Eq '^govbiz\.account\.oauth-unlink\.v1[[:space:]]+quorum[[:space:]]+1$' <<<"${queues}" \
+        && grep -Eq '^govbiz\.account\.oauth-unlink\.dead\.v1[[:space:]]+quorum[[:space:]]+0$' <<<"${queues}"; then
+      echo "Verified report generation/delivery, combination-review, form-discovery and OAuth unlink quorum queues and their connected consumers"
       return 0
     fi
     sleep "${WAIT_INTERVAL_SECONDS}"

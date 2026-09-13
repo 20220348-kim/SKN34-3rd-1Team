@@ -53,6 +53,7 @@ docker compose --env-file .env --file infrastructure/compose.yaml up --build
 | [RabbitMQ 정기 리포트](docs/rabbitmq-daily-report-generation.md) · [메일 발송](docs/rabbitmq-daily-report-delivery.md) | 생성·발송 큐 분리와 중복 방지·장애 대응 |
 | [RabbitMQ 중복 검토 분석](docs/rabbitmq-combination-review.md) | 분석 작업 큐, 진행 상태·이력 복원·운영 설정 |
 | [RabbitMQ 공식 문서 분석](docs/rabbitmq-application-form-discovery.md) | 문항 추출 작업·결과 복원·관리자 큐 운영 조회 |
+| [RabbitMQ 카카오 연결 해제](docs/rabbitmq-account-oauth-unlink.md) | 탈퇴 작업 보관·재가입 충돌 방지·운영 확인 |
 | [구현 현황](docs/implementation-status.md) | 완료 단계·검증 결과·현재 한계·다음 작업 |
 | [검색 평가 결과](evaluation/support-program-search/runs/support-program-catalog-20260906-v1/README.md) | 고정 실데이터·AI-only 판정·전후 비교·재현 방법 |
 | [실행·검증](infrastructure/README.md) | Compose·환경변수·통합 검증 |

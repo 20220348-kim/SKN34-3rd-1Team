@@ -28,5 +28,10 @@
             COUNT(*), MIN(CASE WHEN delivery_status = 'SENDING' THEN delivery_started_at ELSE delivery_queued_at END),
             SUM(CASE WHEN delivery_status = 'NOT_REQUESTED' AND delivery_last_published_at IS NULL THEN 1 ELSE 0 END)
         FROM daily_report WHERE delivery_queued_at IS NOT NULL GROUP BY delivery_status
+        UNION ALL
+        SELECT 'account-oauth-unlink', status, COUNT(*),
+            MIN(CASE WHEN status = 'RUNNING' THEN started_at ELSE created_at END),
+            SUM(CASE WHEN status = 'QUEUED' AND last_published_at IS NULL THEN 1 ELSE 0 END)
+        FROM account_oauth_unlink_job GROUP BY status
     </select>
 </mapper>

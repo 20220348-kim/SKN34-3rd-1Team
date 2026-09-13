@@ -8,6 +8,16 @@
 [기술 구성](../../docs/technology.md)과 [구현 현황](../../docs/implementation-status.md),
 실제 실행 순서는 [호출·데이터 흐름](../../docs/architecture.md)을 참고하세요.
 
+## 카카오 탈퇴 연결 해제
+
+탈퇴와 `V28` 연결 해제 작업을 같은 MySQL transaction에 저장합니다. 성공 전까지 이전 카카오 identity를 유지해
+같은 공급자 계정의 재가입을 막고, OAuth 콜백은 `unlink-pending`으로 안내합니다.
+`AccountOAuthUnlinkScheduler → QueueClient → RabbitMQ → Consumer → Service → KakaoOAuthClient`로 처리하며,
+큐 없는 환경은 스케줄러가 동일 Service를 직접 호출합니다. HTTP는 DB transaction 밖에서 실행합니다.
+`ACCOUNT_OAUTH_UNLINK_QUEUE_ENABLED`는 직접 Core false / Compose true, 전체 실행 스위치 `ACCOUNT_OAUTH_UNLINK_ENABLED`는 true입니다.
+불명확한 응답·중단은 UNKNOWN으로 남기며 자동 재호출하지 않습니다. 대화 기록 삭제는 기존 탈퇴 transaction 안에서 유지합니다.
+[상태·DB 차단·설정·운영자 확인·검증](../../docs/rabbitmq-account-oauth-unlink.md)을 참고하세요.
+
 ## 계정별 대화 기록
 
 `ai.govbiz.core.chathistory`는 로그인 회원 본인의 대화 스냅샷을 보관합니다. `V19__create_chat_conversation.sql`로
@@ -121,7 +131,7 @@ UNKNOWN은 같은 검토의 새 실행도 차단합니다. [한도·만료·재�
 가 MySQL 실행권을 선점하고 기존 수집·추출 Service를 실행합니다. V26 작업 행이 Outbox이며 UNKNOWN은 새 분석도 차단합니다.
 `APPLICATION_FORM_DISCOVERY_QUEUE_ENABLED`는 Compose에서 true, Core 단독 기본 false입니다. 새 API는 비활성 시 503입니다.
 구형 동기 `POST .../forms/discover`는 큐 비활성 환경에서만 남기며, 큐 활성 환경은 409로 차단합니다.
-관리자 전용 `GET /api/v1/admin/queues`는 생성·발송·중복 검토·공식 문서 분석 네 큐의 DB 상태·대기 메시지·소비자·DLQ를 읽기 전용으로 확인합니다.
+관리자 전용 `GET /api/v1/admin/queues`는 생성·발송·중복 검토·공식 문서 분석·카카오 연결 해제 다섯 큐의 DB 상태·대기 메시지·소비자·DLQ를 읽기 전용으로 확인합니다.
 [API·화면·한도·장애·운영 조회·V26 배포 상세](../../docs/rabbitmq-application-form-discovery.md)를 참고하세요.
 
 목록·상세와 화면 진입은 AI Service·OpenAI·Qdrant를 호출하지 않습니다. 양식 발견과 생성은 각각 사용자의 명시적 POST와
@@ -508,7 +518,8 @@ Compose는 일부 주소·CORS 값을 내부 네트워크에 맞게 덮어씁니
 | `ACCOUNT_OAUTH_FRONTEND_BASE_URL` | `http://127.0.0.1:5173` | 소셜 로그인 뒤 돌아갈 프런트 origin(`/oauth/complete`, 실패는 `/login?oauthError=`) |
 | `ACCOUNT_OAUTH_GOOGLE_CLIENT_ID` / `…_SECRET` | 빈 값 | Google 웹 애플리케이션 클라이언트. 둘 다 있어야 켜짐 |
 | `ACCOUNT_OAUTH_KAKAO_CLIENT_ID` / `…_SECRET` | 빈 값 | 카카오 REST API 키·Client Secret. 둘 다 있어야 켜짐 |
-| `ACCOUNT_OAUTH_KAKAO_ADMIN_KEY` | 빈 값 | 탈퇴 때 카카오 연결 끊기용 어드민 키. 비어 있으면 건너뛰고 경고 로그 |
+| `ACCOUNT_OAUTH_KAKAO_ADMIN_KEY` | 빈 값 | 연결 해제 어드민 키. 없으면 FAILED를 기록하고 같은 카카오 계정 재가입 차단 유지 |
+| `ACCOUNT_OAUTH_UNLINK_ENABLED` / `ACCOUNT_OAUTH_UNLINK_QUEUE_ENABLED` | true / false (Compose true / true) | DB 연결 해제 worker 실행 / RabbitMQ 전달 모드 |
 | `ACCOUNT_OAUTH_CONNECT_TIMEOUT` / `ACCOUNT_OAUTH_READ_TIMEOUT` | `2s` / `10s` | 공급자 호출 제한시간 |
 | `BIZNO_API_KEY` | 빈 값 | 기업 등록 시 사업자등록번호를 확인하는 Bizno API 키. 비어 있으면 조회·등록이 503 `BIZNO_NOT_CONFIGURED` |
 | `BIZNO_URL` | `https://bizno.net/api/fapi` | Bizno 조회 endpoint |

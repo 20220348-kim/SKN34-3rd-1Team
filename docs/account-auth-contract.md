@@ -364,9 +364,12 @@ Origin: http://127.0.0.1:5173
 ```
 
 성공은 204와 `Max-Age=0` 쿠키입니다. 한 transaction에서 내가 보낸 대기 제안 철회, 내 모집글 수동 마감(받은 제안은
-만료로 계산), 기업 행 삭제, 소셜 로그인 연결 삭제, 모든 세션 삭제, `deleted_at` 표시를 합니다. 계정 행은 모집글·제안이 참조하므로 남기되 이메일을
-`deleted+<id>+<시각>@deleted.invalid`로 바꿉니다. 그래서 같은 이메일(또는 같은 소셜 계정)로 다시 가입하면 새 계정이 되고, 옛 계정으로는 로그인할 수 없습니다.
-카카오로 연결된 계정은 삭제가 커밋된 뒤 어드민 키로 카카오 연결 끊기를 호출합니다(키가 없거나 실패하면 경고 로그만 남기고 삭제는 유지).
+만료로 계산), 기업 행 삭제, Google 연결 삭제, 모든 세션 삭제, `deleted_at` 표시와 카카오 연결 해제 작업 저장을 합니다.
+계정 행은 모집글·제안이 참조하므로 남기되 이메일을 `deleted+<id>+<시각>@deleted.invalid`로 바꿉니다.
+같은 이메일로 다시 가입하면 새 계정이 되고, 옛 계정으로는 로그인할 수 없습니다. 같은 카카오 계정은 외부 연결 해제 성공
+확인 전까지 identity UNIQUE를 유지해 재가입을 막습니다. 204는 로컬 탈퇴 완료이며 외부 연결 해제 완료는 아닙니다.
+커밋 뒤 DB 작업을 RabbitMQ 또는 전용 직접 worker가 처리합니다. 어드민 키 누락은 FAILED, 불명확한 결과는 UNKNOWN으로
+남기고 운영 확인 전까지 차단을 유지합니다. [설정·오류·수동 복구 정책](rabbitmq-account-oauth-unlink.md)을 참고하세요.
 소셜 로그인으로만 가입해 비밀번호가 없는 계정(`account.hasPassword=false`)은 `password` 없이 `{}`를 보내 세션만으로 삭제합니다.
 비밀번호가 있는 계정은 `password`가 없거나 틀리면 422 `CURRENT_PASSWORD_MISMATCH`입니다.
 
@@ -463,6 +466,7 @@ client secret과 nonce로 막습니다.
 | `expired` | 로그인 상태 쿠키가 없거나 10분이 지났거나 state·공급자가 다름 |
 | `unavailable` | 모르거나 설정되지 않은 공급자 |
 | `failed` | 공급자 오류, 코드 교환 거절, ID 토큰 검증 실패 |
+| `unlink-pending` | 이전 카카오 탈퇴의 연결 해제가 확정되지 않아 재가입 차단. 지속 시 관리자 문의 |
 | `email-required` | 인증된 이메일을 받지 못함(카카오 이메일 미동의·미인증, Google `email_verified=false`) |
 | `account-exists` | 그 이메일로 가입한 계정이 있어 연결하지 않음 |
 | `suspended` | 정지된 계정 |
@@ -593,7 +597,8 @@ ISO 로컬 시각(`2026-09-11T17:49:09.591286`, 초 아래 자리는 있을 때�
 | `ACCOUNT_OAUTH_FRONTEND_BASE_URL` | `http://127.0.0.1:5173` | 소셜 로그인을 마친 뒤 돌아갈 프런트 origin |
 | `ACCOUNT_OAUTH_GOOGLE_CLIENT_ID` / `ACCOUNT_OAUTH_GOOGLE_CLIENT_SECRET` | 빈 값 | Google Cloud Console 웹 애플리케이션 클라이언트. 둘 다 있어야 Google 버튼이 켜짐 |
 | `ACCOUNT_OAUTH_KAKAO_CLIENT_ID` / `ACCOUNT_OAUTH_KAKAO_CLIENT_SECRET` | 빈 값 | 카카오 REST API 키와 Client Secret. 둘 다 있어야 카카오 버튼이 켜짐(OpenID Connect·이메일 동의항목 설정 필요) |
-| `ACCOUNT_OAUTH_KAKAO_ADMIN_KEY` | 빈 값 | 탈퇴 때 카카오 연결 끊기에 쓰는 어드민 키. 비어 있으면 연결 끊기를 건너뛰고 경고 로그 |
+| `ACCOUNT_OAUTH_KAKAO_ADMIN_KEY` | 빈 값 | 탈퇴 연결 해제용 어드민 키. 없으면 FAILED 기록·재가입 차단 유지 |
+| `ACCOUNT_OAUTH_UNLINK_ENABLED` / `ACCOUNT_OAUTH_UNLINK_QUEUE_ENABLED` | true / false (Compose true / true) | 연결 해제 worker / RabbitMQ 모드. 큐 off는 직접 실행이며 실행 중지가 아님 |
 | `ACCOUNT_OAUTH_CONNECT_TIMEOUT` / `ACCOUNT_OAUTH_READ_TIMEOUT` | `2s` / `10s` | 공급자 호출 연결·응답 제한시간 |
 | `BIZNO_API_KEY` | 빈 값 | 사업자등록번호 조회용 Bizno(bizno.net) API 키. 비어 있으면 기업 조회·등록이 503 |
 | `BIZNO_URL` | `https://bizno.net/api/fapi` | Bizno 조회 endpoint. 경로는 `/api/fapi` 고정 |

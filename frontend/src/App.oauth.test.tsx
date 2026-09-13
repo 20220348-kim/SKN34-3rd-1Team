@@ -66,6 +66,11 @@ describe('소셜 로그인', () => {
     expect(screen.queryByRole('alert')).toBeNull()
   })
 
+  it('explains why a Kakao account awaiting unlink cannot sign up again', () => {
+    renderApp('/login?oauthError=unlink-pending')
+    expect(screen.getByRole('alert').textContent).toBe(loginMessages.oauth['unlink-pending'])
+  })
+
   it('완료 화면은 세션으로 계정을 확인해 복귀 경로로 이동한다', async () => {
     const execute = vi.spyOn(appContainer.resolve('completeOAuthSignInUseCase'), 'execute').mockResolvedValue(memberAccount)
     renderApp('/oauth/complete?next=%2Fapp%2Fpricing')

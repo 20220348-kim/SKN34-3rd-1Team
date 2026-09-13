@@ -116,14 +116,18 @@ class KakaoOAuthClient(
             add("target_id_type", "user_id")
             add("target_id", subject)
         }
-        executeOAuthHttpCall(provider) {
+        val response = executeOAuthHttpCall(provider) {
             restClient.post()
                 .uri(UNLINK_ENDPOINT)
                 .header(HttpHeaders.AUTHORIZATION, "KakaoAK $adminKey")
                 .contentType(FORM_UTF8)
                 .body(form)
                 .retrieve()
-                .toBodilessEntity()
+                .body(JsonNode::class.java)
+        }
+        val id = response?.path("id")
+        if (id == null || !id.isIntegralNumber || id.asText() != subject) {
+            throw OAuthClientException.invalidResponse(provider, "unlink user id does not match")
         }
         return true
     }

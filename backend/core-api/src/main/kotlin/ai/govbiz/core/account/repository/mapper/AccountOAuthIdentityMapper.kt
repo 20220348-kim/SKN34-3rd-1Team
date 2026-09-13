@@ -16,5 +16,9 @@ interface AccountOAuthIdentityMapper {
 
     fun findIdentitiesByAccountId(@Param("accountId") accountId: Long): List<AccountOAuthIdentityDbRow>
 
-    fun deleteIdentitiesByAccountId(@Param("accountId") accountId: Long): Int
+    fun deleteNonKakaoIdentities(@Param("accountId") accountId: Long): Int
+
+    fun hasPendingUnlink(@Param("provider") provider: String, @Param("subject") subject: String): Boolean
+
+    fun deleteKakaoIdentity(@Param("accountId") accountId: Long, @Param("subject") subject: String): Int
 }

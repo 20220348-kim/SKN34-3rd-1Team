@@ -1,6 +1,5 @@
 package ai.govbiz.core.account.service.dto
 
-import ai.govbiz.core.account.domain.OAuthLink
 import ai.govbiz.core.account.helper.OAuthStateCookieHelper
 import java.net.URI
 
@@ -52,12 +51,12 @@ enum class OAuthFailure(val code: String) {
     /** 그 이메일로 이미 가입한 계정이 있어 자동으로 연결하지 않았습니다. */
     ACCOUNT_EXISTS("account-exists"),
 
+    /** 이전 탈퇴의 외부 연결 해제 결과가 확정되지 않아 재가입을 차단했습니다. */
+    UNLINK_PENDING("unlink-pending"),
+
     SUSPENDED("suspended"),
     RATE_LIMITED("rate-limited"),
 }
 
-/** 계정 삭제 transaction이 커밋된 뒤 외부 공급자 연결을 끊도록 알립니다. 삭제 전에 읽은 연결 목록을 담습니다. */
-data class AccountDeletedEvent(
-    val accountId: Long,
-    val oauthLinks: List<OAuthLink>,
-)
+/** 탈퇴 transaction 안에서 다른 기능의 로컬 개인정보를 정리한다. 외부 호출에는 사용하지 않는다. */
+data class AccountDeletedEvent(val accountId: Long)

@@ -41,8 +41,16 @@
         ORDER BY id
     </select>
 
-    <delete id="deleteIdentitiesByAccountId">
+    <delete id="deleteNonKakaoIdentities">
         DELETE FROM account_oauth_identity
-        WHERE account_id = #{accountId}
+        WHERE account_id = #{accountId} AND provider != 'KAKAO'
+    </delete>
+    <select id="hasPendingUnlink" resultType="boolean">
+        SELECT EXISTS (SELECT 1 FROM account_oauth_identity i JOIN account a ON a.id = i.account_id
+                       WHERE i.provider = #{provider} AND i.subject = #{subject} AND a.deleted_at IS NOT NULL)
+    </select>
+    <delete id="deleteKakaoIdentity">
+        DELETE FROM account_oauth_identity
+        WHERE account_id = #{accountId} AND provider = 'KAKAO' AND subject = #{subject}
     </delete>
 </mapper>

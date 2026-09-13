@@ -15,6 +15,7 @@
 | [Redis 적용 범위·검색 결과 복원](redis-search-result-restoration.md) | 적용 위치·호출 흐름·저장 구조, 30분 TTL·계정 소유권, 장애·운영·검증과 미적용 범위 |
 | [RabbitMQ 정기 리포트 생성](rabbitmq-daily-report-generation.md) | 용어·호출 흐름·코드 위치, DB Outbox·중복·예산·실행 불명, 설정 조합·증상별 대응·검증과 미적용 범위 |
 | [RabbitMQ 리포트 메일 발송](rabbitmq-daily-report-delivery.md) | V27 기존 리포트 행 Outbox·SMTP 전용 소비자·UNKNOWN·큐 off 호환·운영 조회 |
+| [RabbitMQ 카카오 연결 해제](rabbitmq-account-oauth-unlink.md) | V28 탈퇴 작업·재가입 차단·중복/UNKNOWN·큐 off·운영자 확인 |
 | [RabbitMQ 중복 검토 분석](rabbitmq-combination-review.md) | 202 접수·실행 상태 자동 조회, 실행 행 Outbox·중복/만료/결과 불명·V25·설정·검증 |
 | [RabbitMQ 공식 문서 분석·운영 조회](rabbitmq-application-form-discovery.md) | V26 문항 추출 작업·이력 복원, 관리자 큐 현황·장애 대응 |
 | [구현 현황](implementation-status.md) | 현재 완료 단계, 검증 범위, 제한 사항과 다음 작업 |

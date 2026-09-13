@@ -187,9 +187,11 @@ class AccountRepositoryIntegrationTest {
         assertNull(repository.findCredentialByEmail("social@kakao.com"))
         assertEquals(listOf(OAuthLink(OAuthProvider.KAKAO, KAKAO_SUBJECT)), repository.findOAuthLinks(account.id))
 
-        assertEquals(1, repository.deleteOAuthIdentities(account.id))
-        assertNull(repository.findByOAuthIdentity(OAuthProvider.KAKAO, KAKAO_SUBJECT))
-        assertEquals(emptyList<OAuthLink>(), repository.findOAuthLinks(account.id))
+        assertEquals(0, repository.deleteNonKakaoIdentities(account.id))
+        assertEquals(account, repository.findByOAuthIdentity(OAuthProvider.KAKAO, KAKAO_SUBJECT))
+        assertFalse(repository.hasPendingOAuthUnlink(OAuthProvider.KAKAO, KAKAO_SUBJECT))
+        repository.markDeleted(account.id, LocalDateTime.now())
+        assertTrue(repository.hasPendingOAuthUnlink(OAuthProvider.KAKAO, KAKAO_SUBJECT))
     }
 
     @Test
