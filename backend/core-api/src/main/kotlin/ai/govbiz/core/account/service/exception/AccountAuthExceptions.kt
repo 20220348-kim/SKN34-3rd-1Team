@@ -51,3 +51,22 @@ class PasswordResetTokenInvalidException : RuntimeException()
 
 /** SMTP가 설정되지 않았거나 전송에 실패해 재설정 메일을 보낼 수 없을 때 발생합니다. */
 class PasswordResetMailUnavailableException(cause: Throwable? = null) : RuntimeException(cause)
+
+/** 회원가입 인증번호가 틀렸을 때 발생합니다. 시도 횟수는 서비스가 올립니다. */
+class EmailCodeInvalidException : RuntimeException()
+
+/** 보낸 인증번호가 없거나 만료됐거나 시도 횟수를 다 썼을 때 발생합니다. 새로 받아야 합니다. */
+class EmailCodeExpiredException : RuntimeException()
+
+/** 인증번호 재전송 대기 시간이나 발송 한도에 걸렸을 때 발생합니다. */
+class EmailCodeRateLimitedException(val retryAfterSeconds: Int) : RuntimeException() {
+    init {
+        require(retryAfterSeconds > 0) { "retryAfterSeconds must be positive" }
+    }
+}
+
+/** 가입 요청의 통행 토큰이 없거나 그 이메일로 인증을 마친 토큰이 아닐 때 발생합니다. */
+class EmailVerificationRequiredException : RuntimeException()
+
+/** SMTP가 설정되지 않았거나 전송에 실패해 인증번호 메일을 보낼 수 없을 때 발생합니다. */
+class EmailVerificationMailUnavailableException(cause: Throwable? = null) : RuntimeException(cause)

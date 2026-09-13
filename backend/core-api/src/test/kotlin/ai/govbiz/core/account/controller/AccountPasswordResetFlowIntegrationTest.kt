@@ -4,6 +4,7 @@ import ai.govbiz.core._common.test.MySqlTestContainerConfig
 import ai.govbiz.core.account.client.mail.AccountPasswordResetMailClient
 import ai.govbiz.core.account.helper.OneTimeTokenHelper
 import ai.govbiz.core.account.helper.SessionCookieHelper
+import ai.govbiz.core.account.helper.SignupTestHelper
 import jakarta.servlet.http.Cookie
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -115,7 +116,7 @@ class AccountPasswordResetFlowIntegrationTest {
             mockMvc.perform(
                 post("/api/v1/auth/signup")
                     .contentType(MediaType.APPLICATION_JSON)
-                    .content("""{"email":"$email","password":"$password"}"""),
+                    .content(SignupTestHelper.signupJson(jdbcTemplate, email, password)),
             )
                 .andExpect(status().isCreated())
                 .andReturn().response.getCookie(SessionCookieHelper.COOKIE_NAME),

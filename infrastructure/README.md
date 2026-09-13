@@ -127,7 +127,8 @@ OPENAI_API_KEY=발급받은_OpenAI_API_키
 | `ACCOUNT_DEV_LOGIN_EMAIL` | `admin@govbiz.local` | 개발용 관리자 시드 계정 이메일 |
 | `ACCOUNT_DEV_LOGIN_MEMBER_EMAIL` | `member@govbiz.local` | 개발용 회원 시드 계정 이메일 |
 | `ACCOUNT_DEV_LOGIN_PASSWORD` | `govbiz-admin1` | 시드 계정을 만들 때 저장하는 비밀번호. 로그인 폼으로도 쓸 수 있으므로 공유 환경에서는 교체 |
-| `ACCOUNT_PASSWORD_RESET_MAIL_ENABLED` | `false` | 비밀번호 재설정 메일 전송. 끄면 개발용 로그인이 켜진 Compose에서는 재설정 링크가 core-api 로그(WARN)에 찍히므로 `docker compose logs core-api`에서 복사해 열면 됨 |
+| `ACCOUNT_PASSWORD_RESET_MAIL_ENABLED` | `false` | 비밀번호 재설정 메일 전송. 끄면 개발용 로그인이 켜진 Compose에서는 재설정 링크가 core-api 로그(WARN)에 찍히므로 `docker compose logs core-api`에서 복사해 열면 됨. 회원가입 인증번호 메일도 이 값과 `ACCOUNT_PASSWORD_RESET_FROM`을 그대로 쓰며, 꺼져 있으면 인증번호가 같은 로그에 찍힘 |
+| `ACCOUNT_EMAIL_VERIFICATION_CODE_TTL` | `PT10M` | 회원가입 인증번호 유효 시간 |
 | `ACCOUNT_PASSWORD_RESET_FROM` | 빈 값 | 재설정 메일 발신 주소. 메일을 켜면 `SMTP_*`와 함께 필수 |
 | `ACCOUNT_PASSWORD_RESET_FRONTEND_BASE_URL` | `http://127.0.0.1:5173` | 메일 링크가 여는 프런트 origin |
 | `ACCOUNT_OAUTH_CALLBACK_BASE_URL` | `http://127.0.0.1:5173` | 소셜 로그인 콜백 origin. Compose는 브라우저가 5173만 쓰고 Vite가 `/api`를 넘기므로 공급자 콘솔에 `http://127.0.0.1:5173/api/v1/auth/oauth/{kakao\|google}/callback`을 등록 |

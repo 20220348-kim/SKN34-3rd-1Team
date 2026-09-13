@@ -47,7 +47,7 @@ class AccountAuthController(
         @RequestBody @Valid request: SignupRequest,
         httpRequest: HttpServletRequest,
     ): ResponseEntity<AuthSessionResponse> {
-        val result = signupService.signUp(request.email, request.password, httpRequest.remoteAddr)
+        val result = signupService.signUp(request.email, request.password, request.emailPassToken, httpRequest.remoteAddr)
         return ResponseEntity.status(HttpStatus.CREATED)
             .header(HttpHeaders.SET_COOKIE, cookieHelper.issue(result.sessionToken, result.rememberMe).toString())
             .body(AuthSessionResponse.from(result))

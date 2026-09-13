@@ -31,6 +31,13 @@ export const authPageStyles = {
     'border-sample-border bg-white text-app-ink placeholder:text-sample-muted',
     'focus:border-brand-primary focus:shadow-[0_0_0_3px_rgb(8_127_70_/_15%)] focus:outline-0',
   ),
+  // 이메일·인증번호 칸 오른쪽에 "인증번호 받기"·"확인" 버튼을 같은 줄로 붙입니다. 버튼은 입력칸과 같은 높이·모서리입니다.
+  inlineRow: 'flex items-stretch gap-2',
+  inlineButton: classes(
+    'min-h-14 shrink-0 cursor-pointer whitespace-nowrap rounded-xl border border-brand-primary bg-white px-4 text-[0.9rem] font-bold text-brand-primary',
+    'hover:bg-brand-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-primary disabled:cursor-default disabled:opacity-60',
+  ),
+  verifiedTag: 'inline-flex min-h-14 shrink-0 items-center rounded-xl bg-brand-accent px-4 text-[0.9rem] font-extrabold text-brand-primary',
   fieldHint: 'm-0 text-center text-[0.75rem] font-medium text-sample-muted',
   fieldError: 'm-0 text-[0.82rem] font-medium text-[#9a3947]',
   notice: 'm-0 rounded-xl bg-brand-accent px-4 py-3 text-[0.88rem] leading-[1.6] text-app-ink',

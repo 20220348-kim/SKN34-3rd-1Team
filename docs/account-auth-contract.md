@@ -92,17 +92,18 @@ JWT는 HS256이며 `sub`=계정 ID, `iat`·`exp`=초 단위 epoch, `jti`=무작�
 POST /api/v1/auth/signup
 Content-Type: application/json
 
-{ "email": "manager@company.co.kr", "password": "password1" }
+{ "email": "manager@company.co.kr", "password": "password1", "emailPassToken": "<43자 통행 토큰>" }
 ```
 
 | 필드 | 규칙 |
 |---|---|
 | `email` | 이메일 형식, 320자 이하. Core가 앞뒤 공백 제거·소문자로 정규화해 저장하며 같은 이메일은 409. 탈퇴한 계정의 이메일은 익명화되므로 다시 가입할 수 있음 |
 | `password` | 8~72자. 길이만 검사하고 문자 종류는 강제하지 않음. BCrypt 해시만 저장 |
+| `emailPassToken` | 아래 회원가입 이메일 인증에서 인증번호를 맞히면 받는 43자 통행 토큰. 같은 이메일로 인증한 것이어야 하며 없거나 다르면 422 `EMAIL_VERIFICATION_REQUIRED` |
 
 성공하면 201과 함께 아래 로그인과 같은 세션 응답을 돌려주고 브라우저 세션 쿠키(`rememberMe=false`와 같음)를
-발급합니다. 계정은 `role=USER`, `tier=MEMBER`, `emailVerified=false`로 만들어지고 약관 동의 시각은 요청 시각으로
-기록합니다. 이메일 인증은 별도 단계입니다. 가입 시도는 로그인과 같은 접속 주소 한도(분당 20회)를 함께 씁니다.
+발급합니다. 계정은 `role=USER`, `tier=MEMBER`, `emailVerified=true`(가입 전 인증번호로 확인한 이메일)로 만들어지고 약관 동의
+시각은 요청 시각으로 기록합니다. 통행 토큰은 가입에 한 번 쓰면 끝납니다. 가입 시도는 로그인과 같은 접속 주소 한도(분당 20회)를 함께 씁니다.
 
 ## 로그인
 
@@ -124,7 +125,7 @@ Content-Type: application/json
 ```json
 {
   "expiresAt": "2026-10-06T12:00:00+09:00",
-  "account": { "email": "manager@company.co.kr", "role": "USER", "tier": "MEMBER", "emailVerified": false, "hasPassword": true }
+  "account": { "email": "manager@company.co.kr", "role": "USER", "tier": "MEMBER", "emailVerified": true, "hasPassword": true }
 }
 ```
 
@@ -133,7 +134,7 @@ Content-Type: application/json
 | `expiresAt` | 세션 절대 만료 시각(서울 offset). `rememberMe=true`면 쿠키의 Max-Age와 같음 |
 | `account.role` | `USER` 또는 `ADMIN`. 가입 시에는 항상 `USER` |
 | `account.tier` | 권한 단계 `MEMBER`·`COMPANY`·`ADMIN` |
-| `account.emailVerified` | 이메일 인증 완료 여부. 가입 직후에는 `false`이고 시드 계정만 `true` |
+| `account.emailVerified` | 이메일 인증 완료 여부. 이메일 가입은 인증번호를 거치고 소셜 가입은 공급자가 인증한 이메일만 받으므로 새 계정은 항상 `true`. 인증 기능 이전에 만든 계정만 `false`일 수 있음 |
 | `account.hasPassword` | 비밀번호를 만든 계정인지. 소셜 로그인으로만 가입한 계정은 `false`이며 프로필이 비밀번호 항목을 숨기고 계정 삭제에 비밀번호를 묻지 않음 |
 
 ### 로그인 시도 제한
@@ -311,7 +312,7 @@ Cookie: govbiz_session=<JWT>
 ```
 
 ```json
-{ "account": { "email": "manager@company.co.kr", "role": "USER", "tier": "MEMBER", "emailVerified": false, "hasPassword": true } }
+{ "account": { "email": "manager@company.co.kr", "role": "USER", "tier": "MEMBER", "emailVerified": true, "hasPassword": true } }
 ```
 
 `POST /api/v1/auth/logout`은 세션 행을 삭제하고 `Max-Age=0` 쿠키로 브라우저의 쿠키를 지운 뒤 204를
@@ -407,6 +408,40 @@ POST /api/v1/auth/password-reset/confirm
 합니다. 토큰이 없거나 만료됐거나 이미 쓴 토큰이면 422 `PASSWORD_RESET_TOKEN_INVALID`이며 셋을 구분하지 않습니다. 정지된
 계정은 403 `ACCOUNT_SUSPENDED`입니다. 프런트의 `/forgot-password`는 이메일 하나를 받고, 메일 링크가 여는 `/reset-password`는
 주소의 토큰과 새 비밀번호를 보냅니다.
+
+## 회원가입 이메일 인증
+
+가입 화면에서 이메일이 본인 주소인지 6자리 인증번호로 확인하는 흐름입니다. 계정이 아직 없으므로 기록은 이메일 기준이고
+세션 쿠키가 없어 Origin 검사 대상이 아닙니다. 인증번호·통행 토큰은 SHA-256 해시만 `signup_email_verification`에 저장합니다.
+
+```http
+POST /api/v1/auth/signup/email-code
+
+{ "email": "manager@company.co.kr" }
+```
+
+성공은 204이며 메일 제목과 본문에 6자리 인증번호를 보냅니다. 인증번호는 10분 동안 유효하고 한 번호에 5번까지 입력할 수
+있습니다. 이미 가입된 이메일은 409 `EMAIL_ALREADY_REGISTERED`(가입 자체가 같은 409를 주므로 새로 드러나는 정보는 없음),
+같은 이메일 재전송 대기(60초)나 10분 창 안 발송 한도(3회)를 넘기면 429 `EMAIL_CODE_RATE_LIMITED`와 `retryAfterSeconds`·
+`Retry-After`입니다. 접속 주소 한도(분당 20회)는 로그인과 같이 씁니다. SMTP(`ACCOUNT_PASSWORD_RESET_MAIL_ENABLED=true`와
+`SMTP_*`, 따로 주면 `ACCOUNT_EMAIL_VERIFICATION_*`)가 없으면 개발용 로그인이 켜진 환경에서만 인증번호를 Core API 로그(WARN)로
+남기고, 둘 다 없으면 503 `EMAIL_VERIFICATION_MAIL_UNAVAILABLE`입니다.
+
+```http
+POST /api/v1/auth/signup/email-code/verify
+
+{ "email": "manager@company.co.kr", "code": "482137" }
+```
+
+```json
+{ "passToken": "<43자 URL-safe Base64>", "expiresAt": "2026-09-13T18:00:00+09:00" }
+```
+
+가장 최근에 보낸 인증번호와 비교합니다. 틀리면 422 `EMAIL_CODE_INVALID`이고 시도 횟수가 올라갑니다. 보낸 인증번호가 없거나
+만료됐거나 시도를 다 썼으면 422 `EMAIL_CODE_EXPIRED`이며 새로 받아야 합니다. 맞으면 30분짜리 통행 토큰을 돌려주고, 가입
+요청의 `emailPassToken`에 그대로 실어 보냅니다. 통행 토큰은 인증한 이메일과 짝이어야 하고 가입에 한 번 쓰면 끝납니다.
+프런트 `/signup`은 이메일 옆 "인증번호 받기"로 보내고 바로 아래 인증번호 칸의 "확인"으로 맞힌 뒤에만 가입 버튼을 켭니다.
+소셜 가입은 공급자가 인증한 이메일만 받으므로 이 흐름을 거치지 않습니다.
 
 ## 소셜 로그인(카카오·Google)
 
@@ -531,6 +566,11 @@ ISO 로컬 시각(`2026-09-11T17:49:09.591286`, 초 아래 자리는 있을 때�
 | 이미 가입된 이메일로 회원가입 | 409 | `EMAIL_ALREADY_REGISTERED` |
 | 계정 삭제의 현재 비밀번호 불일치 | 422 | `CURRENT_PASSWORD_MISMATCH` |
 | 비밀번호 재설정 토큰이 없거나 만료·사용됨 | 422 | `PASSWORD_RESET_TOKEN_INVALID` |
+| 회원가입 인증번호 불일치 | 422 | `EMAIL_CODE_INVALID` |
+| 회원가입 인증번호 없음·만료·시도 초과 | 422 | `EMAIL_CODE_EXPIRED` |
+| 회원가입 인증번호 재전송 대기·발송 한도 | 429 | `EMAIL_CODE_RATE_LIMITED` (`retryAfterSeconds`, `Retry-After`) |
+| 가입 통행 토큰이 없거나 그 이메일로 인증한 것이 아님 | 422 | `EMAIL_VERIFICATION_REQUIRED` |
+| 회원가입 인증번호 메일을 보낼 수 없음 | 503 | `EMAIL_VERIFICATION_MAIL_UNAVAILABLE` |
 | SMTP가 없어 재설정 메일을 보낼 수 없음(개발용 로그인도 꺼짐) | 503 | `PASSWORD_RESET_MAIL_UNAVAILABLE` |
 | 기업을 등록하지 않은 계정의 기업 조회·수정 | 404 | `COMPANY_NOT_REGISTERED` |
 | 등록되지 않은 사업자등록번호 | 404 | `BUSINESS_NOT_FOUND` |
