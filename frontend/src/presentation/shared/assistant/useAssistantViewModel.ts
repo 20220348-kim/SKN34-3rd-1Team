@@ -2,16 +2,24 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation } from 'react-router'
 
 import { appContainer } from '../../../app/appContainer'
+import { useAppDispatch } from '../../../app/hooks'
+import type { AskAssistantUseCase } from '../../../domain/usecases/AskAssistantUseCase'
+import { isValidAssistantMessage } from '../../../domain/usecases/AskAssistantUseCase'
 import type { BrowseSavedSupportProgramsUseCase } from '../../../domain/usecases/SavedSupportProgramUseCases'
+import type { IsAssistantAiEnabled } from '../../../data/config/assistantAi'
 import type { KakaoChannelChatUrl } from '../../../data/config/kakaoChannel'
+import { draftChanged } from '../../features/chat/state/chatSlice'
 import { useAuthSession } from '../auth/hooks/useAuthSession'
-import { findHelpEntry } from '../help/helpContent'
+import { findHelpEntry, helpEntriesForSurface } from '../help/helpContent'
 import { useReceivedProposals } from '../partner-proposal/useReceivedProposals'
 import {
+  type AssistantCardButton,
   type AssistantMessage,
   type AssistantQuickReply,
   contactAnswer,
   findAssistantHelpTopic,
+  freeTextAnswer,
+  freeTextFailure,
   freeTextFallback,
   greetingMessages,
   helpAnswer,
@@ -20,6 +28,7 @@ import {
   loginBenefitsAnswer,
   loginPromptAnswer,
   otherQuestionReply,
+  programIdentityFrom,
   quickRepliesFor,
   receivedProposalsAnswer,
   savedProgramsAnswer,
@@ -29,6 +38,10 @@ import {
 import { assistantMessages } from './assistantMessages'
 
 type SavedProgramsUseCase = Pick<BrowseSavedSupportProgramsUseCase, 'execute'>
+type AskUseCase = Pick<AskAssistantUseCase, 'execute'>
+
+/** 자유 질문은 이 시간 안에 답이 없으면 끊고 다시 시도를 안내합니다. */
+export const assistantAnswerTimeoutMs = 15_000
 
 /** 대화는 브라우저 세션 동안만 남습니다. 탭을 닫으면 사라지고 서버에는 보내지 않습니다. */
 export const assistantConversationStorageKey = 'govbiz.assistant.conversation'
@@ -71,17 +84,22 @@ function readLabelShown(): boolean {
 
 /**
  * GovBiz 도우미 위젯의 대표 ViewModel입니다. 열림·대화·빠른 답변·라벨·안 읽음 배지를 소유하고,
- * 상태 질문은 기존 UseCase(관심 공고함·받은 제안함)로 답합니다. C1에서는 AI를 부르지 않습니다.
+ * 상태 질문은 기존 UseCase(관심 공고함·받은 제안함)로 답하고, 자유 질문만 Core의 도우미 API로 보냅니다.
  */
 export function useAssistantViewModel(
   browseSavedPrograms: SavedProgramsUseCase = appContainer.resolve('browseSavedSupportProgramsUseCase'),
   kakaoChannelChatUrl: KakaoChannelChatUrl = appContainer.resolve('kakaoChannelChatUrl'),
+  askAssistant: AskUseCase = appContainer.resolve('askAssistantUseCase'),
+  isAssistantAiEnabled: IsAssistantAiEnabled = appContainer.resolve('isAssistantAiEnabled'),
 ) {
+  const dispatchToStore = useAppDispatch()
   const { pathname, search } = useLocation()
   const { isAuthenticated, hasCompany } = useAuthSession()
   const receivedProposals = useReceivedProposals()
   // 채널 주소는 빌드 환경값이라 인스턴스 동안 고정입니다. 대화 규칙 함수에는 값으로 넘겨 환경을 직접 읽지 않게 합니다.
   const contactUrl = useMemo(() => kakaoChannelChatUrl(), [kakaoChannelChatUrl])
+  // 모델 호출은 빌드 스위치로만 켭니다. 꺼져 있으면 자유 입력을 주제 알약으로 돌려보내 비용이 들지 않습니다.
+  const aiEnabled = useMemo(() => isAssistantAiEnabled(), [isAssistantAiEnabled])
   const session = useMemo(() => ({ isAuthenticated, hasCompany, contactUrl }), [isAuthenticated, hasCompany, contactUrl])
   const [isOpen, setIsOpen] = useState(false)
   const [messages, setMessages] = useState<AssistantMessage[]>(() => readStored()?.messages ?? [])
@@ -135,9 +153,63 @@ export function useAssistantViewModel(
 
   const returnTo = `${pathname}${search}`
 
+  /**
+   * 자유 질문을 Core에 보냅니다. 최근 대화 6개, 현재 화면 경로와 공고 선택 여부, 챗봇 표면의 도움말 전량을 함께 실어
+   * 서버가 인용을 그 안에서만 인정하게 합니다. 15초 안에 답이 없으면 끊고 다시 시도를 안내합니다.
+   */
+  const submitText = useCallback(async (text: string) => {
+    const trimmed = text.trim()
+    if (trimmed === '') return
+    const asked = userMessage(trimmed)
+    if (!aiEnabled || !isValidAssistantMessage(trimmed)) {
+      append([asked, freeTextFallback()], routeReplies())
+      return
+    }
+    const history = messages.slice(-6).map((item) => (item.role === 'user'
+      ? { role: 'USER' as const, content: item.text }
+      : { role: 'ASSISTANT' as const, content: item.paragraphs.join(' ') }))
+    setMessages((current) => [...current, asked])
+    setQuickReplies([])
+    setIsTyping(true)
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), assistantAnswerTimeoutMs)
+    try {
+      const result = await askAssistant.execute({
+        message: trimmed,
+        history,
+        context: { route: pathname.replace(/\/+$/, '') || '/', programSelected: programIdentityFrom(pathname, search) !== null },
+        helpEntries: helpEntriesForSurface('chatbot').map((entry) => ({
+          id: entry.id, title: entry.title, question: entry.question, summary: entry.summary, body: [...entry.body],
+          limitation: entry.limitation, audience: entry.audience, status: entry.status,
+          // 서버 계약은 경로만 받으므로 `?mode=filter` 같은 질의는 떼고 보냅니다. 버튼은 화면이 원본 항목으로 다시 만듭니다.
+          action: entry.action === null ? null : { label: entry.action.label, to: entry.action.to.split('?')[0] ?? entry.action.to },
+        })),
+      }, controller.signal)
+      const answer = result.outcome === 'answered'
+        ? freeTextAnswer(result.answer, { pathname, search, session, returnTo })
+        : freeTextFailure(trimmed, result.outcome === 'rate-limited' ? assistantMessages.rateLimited(result.retryAfterSeconds) : assistantMessages.unavailable)
+      append([answer], answer.role === 'assistant' && answer.followUps.length > 0 ? answer.followUps : routeReplies())
+    } catch {
+      const answer = freeTextFailure(trimmed, assistantMessages.loadFailed)
+      append([answer], answer.role === 'assistant' ? answer.followUps : [])
+    } finally {
+      clearTimeout(timer)
+      setIsTyping(false)
+    }
+  }, [aiEnabled, append, askAssistant, messages, pathname, returnTo, routeReplies, search, session])
+
+  /** 검색 이동 버튼은 검색 입력창에 도우미가 고른 검색어를 미리 채웁니다. 검색 자체는 사용자가 보낼 때 시작합니다. */
+  const prepareNavigation = useCallback((button: AssistantCardButton) => {
+    if (button.searchQuery !== undefined) dispatchToStore(draftChanged(button.searchQuery))
+  }, [dispatchToStore])
+
   const pickQuickReply = useCallback(async (reply: AssistantQuickReply) => {
     if (reply.kind === 'other') {
       setQuickReplies(routeReplies())
+      return
+    }
+    if (reply.kind === 'retry') {
+      await submitText(reply.text ?? '')
       return
     }
     const asked = userMessage(reply.label)
@@ -187,14 +259,7 @@ export function useAssistantViewModel(
     } finally {
       setIsTyping(false)
     }
-  }, [append, browseSavedPrograms, contactUrl, isAuthenticated, pathname, receivedProposals, returnTo, routeReplies, session])
-
-  /** C1은 자유 질문을 AI에 보내지 않고 추천 질문으로 돌려보냅니다. */
-  const submitText = useCallback((text: string) => {
-    const trimmed = text.trim()
-    if (trimmed === '') return
-    append([userMessage(trimmed), freeTextFallback()], routeReplies())
-  }, [append, routeReplies])
+  }, [append, browseSavedPrograms, contactUrl, isAuthenticated, pathname, receivedProposals, returnTo, routeReplies, session, submitText])
 
   return {
     isHidden: isAssistantHiddenOn(pathname),
@@ -209,7 +274,8 @@ export function useAssistantViewModel(
     quickReplies,
     isTyping,
     pickQuickReply: (reply: AssistantQuickReply) => { void pickQuickReply(reply) },
-    submitText,
+    submitText: (text: string) => { void submitText(text) },
+    prepareNavigation,
     startNewConversation,
   }
 }

@@ -1,7 +1,6 @@
 /** 도우미 위젯에 나가는 문구 전부입니다. 위젯 관례대로 "~해요"체를 쓰고, 버튼·메뉴는 명사형으로 짧게 둡니다. */
 export const assistantMessages = {
   name: 'GovBiz 도우미',
-  status: 'AI가 답합니다',
   launcherLabel: '무엇을 도와드릴까요?',
   openLauncher: '도우미 열기',
   closeLauncher: '도우미 접기',
@@ -11,14 +10,21 @@ export const assistantMessages = {
   newConversation: '새 대화',
   today: '오늘',
   greetingIntro: '안녕하세요, GovBiz 도우미입니다.',
-  greetingScope: '화면 사용법과 회원님의 진행 상황(관심 공고, 제안, 검토)을 안내해 드려요. 공고 내용 자체는 공고 상세의 "원문 질문"에서 확인하실 수 있어요.',
+  greetingScope: '화면 사용법과 회원님의 진행 상황(관심 공고 마감, 받은 제안, 기업 등록)을 안내해 드려요. 공고 내용 자체는 공고 상세의 "원문 질문"에서 확인하실 수 있어요.',
   greetingAsk: '무엇을 도와드릴까요?',
   placeholder: '메시지를 입력하세요',
   send: '보내기',
   typing: '답변을 준비하고 있어요',
   otherQuestion: '다른 주제',
   topicAsk: (label: string) => `${label}에서 궁금한 것을 골라 주세요.`,
-  freeTextPreparing: '아직 자유 질문은 준비 중이에요. 아래 주제 중 하나를 골라 주세요.',
+  freeTextPreparing: '이 질문은 아직 답하지 못해요. 아래 주제 중 하나를 골라 주세요.',
+  rateLimited: (retryAfterSeconds: number | null) => retryAfterSeconds === null
+    ? '질문이 많아 잠시 쉬어야 해요. 잠시 뒤 다시 시도해 주세요.'
+    : `질문이 많아 잠시 쉬어야 해요. ${retryAfterSeconds}초 뒤에 다시 시도해 주세요.`,
+  unavailable: '지금은 AI 답변을 받을 수 없어요. 잠시 뒤 다시 시도해 주세요.',
+  profileSource: '내 프로필 기준',
+  aiSource: 'AI 답변',
+  openProgramQuestion: '원문 질문 열기',
   quickSavedPrograms: '관심 공고 마감 확인',
   quickReceivedProposals: '받은 제안 확인',
   quickLoginBenefits: '로그인하면 뭐가 되나요?',

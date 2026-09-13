@@ -67,7 +67,7 @@ def build_application_container(
     general_model = None
     if (
         evidence_answer_agent is None or conversation_agent is None
-        or application_preparation_agent is None or assistant_agent is None
+        or application_preparation_agent is None
     ):
         general_model = OpenAIResponsesModel(
             model=settings.openai_model,
@@ -109,9 +109,10 @@ def build_application_container(
         )
 
     if assistant_agent is None:
-        assert general_model is not None
+        # 도우미는 분류만 하므로 전용(가장 싼) 모델을 쓰고 클라이언트·재시도 정책은 공유한다.
         assistant_agent = AssistantAgent(
-            model=general_model,
+            model=OpenAIResponsesModel(model=settings.openai_assistant_model, openai_client=openai_client),
+            reasoning_effort=settings.openai_assistant_reasoning_effort,
             model_timeout_seconds=settings.llm_model_timeout_seconds,
             run_timeout_seconds=settings.llm_run_timeout_seconds,
         )

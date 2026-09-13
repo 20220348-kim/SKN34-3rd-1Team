@@ -5,6 +5,7 @@ import { DailyReportRepositoryImpl } from '../../data/repositories/DailyReportRe
 import { asClass } from 'awilix/browser'
 
 import { AccountRepositoryImpl } from '../../data/repositories/AccountRepositoryImpl'
+import { AssistantRepositoryImpl } from '../../data/repositories/AssistantRepositoryImpl'
 import { AdminAccountRepositoryImpl } from '../../data/repositories/AdminAccountRepositoryImpl'
 import { SavedSupportProgramRepositoryImpl } from '../../data/repositories/SavedSupportProgramRepositoryImpl'
 import { CompanyRepositoryImpl } from '../../data/repositories/CompanyRepositoryImpl'
@@ -22,6 +23,7 @@ export function registerRepositories(container: AppContainer) {
     dailyReportRepository: asClass(DailyReportRepositoryImpl).singleton(),
     combinationReviewRepository: asClass(CombinationReviewRepositoryImpl).singleton(),
     accountRepository: asClass(AccountRepositoryImpl).singleton(),
+    assistantRepository: asClass(AssistantRepositoryImpl).singleton(),
     adminAccountRepository: asClass(AdminAccountRepositoryImpl).singleton(),
     savedSupportProgramRepository: asClass(SavedSupportProgramRepositoryImpl).singleton(),
     companyRepository: asClass(CompanyRepositoryImpl).singleton(),

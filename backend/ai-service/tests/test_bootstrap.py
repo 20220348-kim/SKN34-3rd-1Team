@@ -57,6 +57,7 @@ async def test_builds_and_wires_agent_in_the_composition_root(
 ) -> None:
     captured_client_arguments: dict[str, object] = {}
     captured_model_arguments: dict[str, object] = {}
+    captured_models: list[str] = []
     client = FakeOpenAIClient()
     expected = SupportProgramRankingOutput(
         rankings=[
@@ -89,6 +90,7 @@ async def test_builds_and_wires_agent_in_the_composition_root(
 
     def fake_responses_model(**arguments: object) -> ScriptedModel:
         captured_model_arguments.update(arguments)
+        captured_models.append(str(arguments["model"]))
         return model
 
     monkeypatch.setattr(bootstrap_module, "AsyncOpenAI", fake_openai_client)
@@ -140,10 +142,10 @@ async def test_builds_and_wires_agent_in_the_composition_root(
         "timeout": 1.25,
         "max_retries": 0,
     }
-    assert captured_model_arguments == {
-        "model": "test-model",
-        "openai_client": client,
-    }
+    # 공용 모델과 도우미 전용(가장 싼) 모델을 같은 클라이언트로 만든다.
+    assert captured_models[0] == "test-model" and captured_models[-1] == "gpt-5-nano"
+    assert set(captured_models) == {"test-model", "gpt-5-nano"}
+    assert captured_model_arguments["openai_client"] is client
 
     response = await container.support_program_ranking_service.rank(
         SupportProgramRankingRequest(
@@ -209,12 +211,21 @@ async def test_ranking_model_and_reasoning_do_not_change_conversation_or_evidenc
             assert agent.model_settings.reasoning.effort == "none"
             assert agent.model_settings.timeout == 1.25
             assert not agent.model_settings.extra_args or "service_tier" not in agent.model_settings.extra_args
+        # 도우미는 랭킹 설정과 무관하게 전용 모델·low 추론을 쓰고 Fast 등급을 붙이지 않는다.
+        assistant_arguments, assistant_model = captured[2]
+        assert assistant_arguments == {"model": "gpt-5-nano", "openai_client": client}
+        assistant = container.assistant_service._agent._agent
+        assert assistant.model is assistant_model
+        assert assistant.model_settings.reasoning.effort == "low"
+        assert assistant.model_settings.timeout == 1.25
+        assert "service_tier" not in (assistant.model_settings.extra_args or {})
         assert container.openai_client is client
         assert container.support_program_index_service.openai_client is client
         assert container.support_program_evidence_service.openai_client is client
-        assert len(captured) == 2
+        assert len(captured) == 3
         general_model.assert_complete()
         selected_ranking_model.assert_complete()
+        assistant_model.assert_complete()
     finally:
         await container.close()
     assert client.closed

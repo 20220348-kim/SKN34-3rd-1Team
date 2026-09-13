@@ -130,6 +130,8 @@ ANSWERED는 비어 있지 않은 answer와 빈 updates, null 질문을 반환합
 (`id`·`title`·`question`·`summary`·`body`·`limitation`·`audience`·`status`·`action`)이며 AI Service는 사본을 갖지 않습니다.
 응답 `intent`와 함께 채워야 하는 필드는 아래와 같고 나머지는 null 또는 빈 배열입니다.
 
+분류·인용 회귀는 [도우미 의도 분류 평가](../../evaluation/assistant/README.md)의 가상 질문 50문항으로 확인합니다. 기본 실행은 모델을 부르지 않고, `--live` 첫 측정(2026-09-13)은 의도 50/50·인용 30/30·기권 10/10이었습니다.
+
 | intent | 채우는 필드 | 뜻 |
 |---|---|---|
 | `PRODUCT_HELP` | `answer`, `citations`(요청 helpEntries의 id 1~3개) | 사용법·화면·정책 질문 |
@@ -604,6 +606,11 @@ EMBEDDING_TIMEOUT_SECONDS=15
 Luna의 Responses·구조화 출력·`low` 지원은 [OpenAI 공식 모델 문서](https://developers.openai.com/api/docs/models/gpt-5.6-luna)를
 기준으로 확인했습니다. 무료 스텁 테스트는 요청·출력 계약 검증이며 실제 검색 품질 측정이 아닙니다.
 직접 생성하는 `SupportProgramRecommendationAgent`의 추론 기본값도 `none`으로 유지합니다.
+
+도우미 자유 질문 분류(`app/assistant`)만 `OPENAI_ASSISTANT_MODEL`(기본 `gpt-5-nano`)과
+`OPENAI_ASSISTANT_REASONING_EFFORT`(기본 `low`, `none`·`minimal` 허용)를 따로 씁니다. [의도 분류 평가](../../evaluation/assistant/README.md)
+50문항에서 nano/low는 48개(luna/none 50개, nano/minimal 28개)를 맞혀 비용이 절반인 nano/low를 기본으로 두었습니다.
+조건 해석·근거 답변·랭킹 모델은 바뀌지 않습니다.
 이는 시작 시 선택하는 명시적 설정이며, 장애 시 다른 모델로 재시도하는 fallback이 아닙니다.
 출력 축약은 미채택이며 기존 후보 ID·필드명·출력 계약을 유지합니다. 실험 구현은 평가 경로에만 보존합니다.
 `OPENAI_RANKING_SERVICE_TIER` 미설정 시 코드·Compose 기본값은 `default`입니다. 위 예제와 루트

@@ -5,6 +5,10 @@ from typing import Literal, cast
 
 
 DEFAULT_OPENAI_MODEL = "gpt-5.6-luna"
+# 도우미 자유 질문은 짧은 분류 작업이라 가장 싼 모델을 기본으로 쓴다. 다른 기능의 모델은 바꾸지 않는다.
+# nano는 추론 minimal에서 분류가 흔들려(50문항 중 28개) low를 기본으로 둔다. 평가 기록은 evaluation/assistant/runs 참고.
+DEFAULT_OPENAI_ASSISTANT_MODEL = "gpt-5-nano"
+ASSISTANT_REASONING_EFFORTS = ("none", "minimal", "low")
 DEFAULT_LLM_MODEL_TIMEOUT_SECONDS = 25.0
 DEFAULT_LLM_RUN_TIMEOUT_SECONDS = 30.0
 DEFAULT_LLM_RANKING_MODEL_TIMEOUT_SECONDS = 45.0
@@ -36,8 +40,12 @@ class Settings:
     openai_ranking_model: str | None = None
     openai_ranking_reasoning_effort: Literal["none", "low"] = "none"
     openai_ranking_service_tier: Literal["default", "priority"] = "default"
+    openai_assistant_model: str = DEFAULT_OPENAI_ASSISTANT_MODEL
+    openai_assistant_reasoning_effort: Literal["none", "minimal", "low"] = "low"
 
     def __post_init__(self) -> None:
+        if self.openai_assistant_reasoning_effort not in ASSISTANT_REASONING_EFFORTS:
+            raise SettingsConfigurationError("OPENAI_ASSISTANT_REASONING_EFFORT must be none, minimal or low")
         if self.openai_ranking_reasoning_effort not in ("none", "low"):
             raise SettingsConfigurationError("OPENAI_RANKING_REASONING_EFFORT must be none or low")
         if self.openai_ranking_service_tier not in ("default", "priority"):
@@ -80,6 +88,11 @@ class Settings:
             ),
             openai_ranking_service_tier=cast(
                 Literal["default", "priority"], environ.get("OPENAI_RANKING_SERVICE_TIER", "default").strip(),
+            ),
+            openai_assistant_model=_optional_value(environ.get("OPENAI_ASSISTANT_MODEL")) or DEFAULT_OPENAI_ASSISTANT_MODEL,
+            openai_assistant_reasoning_effort=cast(
+                Literal["none", "minimal", "low"],
+                _optional_value(environ.get("OPENAI_ASSISTANT_REASONING_EFFORT")) or "low",
             ),
             llm_model_timeout_seconds=_positive_float(
                 environ.get("LLM_MODEL_TIMEOUT_SECONDS"),

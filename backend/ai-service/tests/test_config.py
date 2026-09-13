@@ -154,6 +154,30 @@ def test_absent_ranking_model_preserves_the_general_model(monkeypatch, value):
     assert settings.openai_ranking_reasoning_effort == "none"
 
 
+@pytest.mark.parametrize("value", [None, "", "   "])
+def test_assistant_model_defaults_to_the_cheapest_model(monkeypatch, value):
+    monkeypatch.setenv("OPENAI_MODEL", "custom-existing-model")
+    for name in ("OPENAI_ASSISTANT_MODEL", "OPENAI_ASSISTANT_REASONING_EFFORT"):
+        monkeypatch.delenv(name, raising=False)
+        if value is not None:
+            monkeypatch.setenv(name, value)
+    settings = Settings.from_environment()
+    assert settings.openai_assistant_model == "gpt-5-nano"
+    assert settings.openai_assistant_reasoning_effort == "low"
+    assert settings.openai_model == "custom-existing-model"
+
+
+def test_reads_trimmed_assistant_model_and_rejects_unknown_reasoning(monkeypatch):
+    monkeypatch.setenv("OPENAI_ASSISTANT_MODEL", " gpt-5.6-luna ")
+    monkeypatch.setenv("OPENAI_ASSISTANT_REASONING_EFFORT", " minimal ")
+    settings = Settings.from_environment()
+    assert settings.openai_assistant_model == "gpt-5.6-luna"
+    assert settings.openai_assistant_reasoning_effort == "minimal"
+    monkeypatch.setenv("OPENAI_ASSISTANT_REASONING_EFFORT", "high")
+    with pytest.raises(SettingsConfigurationError):
+        Settings.from_environment()
+
+
 def test_reads_independent_trimmed_ranking_model_and_reasoning(monkeypatch):
     monkeypatch.setenv("OPENAI_MODEL", "gpt-5.6-luna")
     monkeypatch.setenv("OPENAI_RANKING_MODEL", " gpt-5.6-sol ")

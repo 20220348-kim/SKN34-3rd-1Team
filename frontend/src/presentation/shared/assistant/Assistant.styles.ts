@@ -41,8 +41,6 @@ export const assistantStyles = {
   avatarSmall: 'flex size-7 shrink-0 items-center justify-center rounded-full bg-white text-[12px] font-bold text-brand-primary border border-sample-border',
   headerText: 'min-w-0 flex-1',
   headerName: 'm-0 text-[15px] font-bold leading-tight',
-  headerStatus: 'm-0 flex items-center gap-1.5 text-[12px] leading-tight opacity-90',
-  headerDot: 'inline-block size-[7px] rounded-full bg-[#a8e6c3]',
   headerActions: 'relative flex shrink-0 gap-1',
   headerButton: classes(
     'flex size-8 cursor-pointer items-center justify-center rounded-lg border-0 bg-transparent text-white text-base',

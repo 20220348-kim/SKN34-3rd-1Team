@@ -1,7 +1,7 @@
 import { type FormEvent, type KeyboardEvent, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { Link } from 'react-router'
 
-import { type AssistantCard as AssistantCardModel, type AssistantMessage } from './assistantConversation'
+import { type AssistantCard as AssistantCardModel, type AssistantCardButton, type AssistantMessage } from './assistantConversation'
 import { assistantMessages } from './assistantMessages'
 import { assistantCardTagClassName, assistantStyles as styles } from './Assistant.styles'
 import type { AssistantViewModel } from './useAssistantViewModel'
@@ -55,7 +55,8 @@ export function AssistantPanel({ vm, launcherRef }: { vm: AssistantViewModel; la
     submit()
   }
 
-  function onNavigate() {
+  function onNavigate(button: AssistantCardButton) {
+    vm.prepareNavigation(button)
     setIsMenuOpen(false)
     vm.close()
   }
@@ -72,7 +73,6 @@ export function AssistantPanel({ vm, launcherRef }: { vm: AssistantViewModel; la
         <span className={styles.avatar} aria-hidden="true">G</span>
         <div className={styles.headerText}>
           <p className={styles.headerName}>{assistantMessages.name}</p>
-          <p className={styles.headerStatus}><span className={styles.headerDot} aria-hidden="true" />{assistantMessages.status}</p>
         </div>
         <div className={styles.headerActions}>
           <button
@@ -152,7 +152,7 @@ export function AssistantPanel({ vm, launcherRef }: { vm: AssistantViewModel; la
           onChange={(event) => setDraft(event.target.value)}
           onKeyDown={onInputKeyDown}
         />
-        <button className={styles.send} type="submit" aria-label={assistantMessages.send} disabled={draft.trim() === ''}>↑</button>
+        <button className={styles.send} type="submit" aria-label={assistantMessages.send} disabled={draft.trim() === '' || vm.isTyping}>↑</button>
       </form>
     </section>
   )
@@ -160,7 +160,7 @@ export function AssistantPanel({ vm, launcherRef }: { vm: AssistantViewModel; la
 
 function AssistantBubble({ message, onNavigate }: {
   message: Extract<AssistantMessage, { role: 'assistant' }>
-  onNavigate: () => void
+  onNavigate: (button: AssistantCardButton) => void
 }) {
   return (
     <>
@@ -175,7 +175,7 @@ function AssistantBubble({ message, onNavigate }: {
   )
 }
 
-function AssistantCard({ card, onNavigate }: { card: AssistantCardModel; onNavigate: () => void }) {
+function AssistantCard({ card, onNavigate }: { card: AssistantCardModel; onNavigate: (button: AssistantCardButton) => void }) {
   return (
     <div className={styles.card}>
       {card.rows.map((row, index) => (
@@ -190,7 +190,7 @@ function AssistantCard({ card, onNavigate }: { card: AssistantCardModel; onNavig
       {card.buttons.map((button) => button.external ? (
         <a className={styles.cardButton} key={`${button.label}-${button.to}`} href={button.to} target="_blank" rel="noopener noreferrer">{button.label}</a>
       ) : (
-        <Link className={styles.cardButton} key={`${button.label}-${button.to}`} to={button.to} onClick={onNavigate}>{button.label}</Link>
+        <Link className={styles.cardButton} key={`${button.label}-${button.to}`} to={button.to} onClick={() => onNavigate(button)}>{button.label}</Link>
       ))}
     </div>
   )

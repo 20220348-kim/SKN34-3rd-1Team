@@ -1,9 +1,10 @@
+import type { AssistantAnswer } from '../../../domain/entities/AssistantAnswer'
 import type { PartnerProposal } from '../../../domain/entities/PartnerProposal'
 import type { SavedSupportProgram } from '../../../domain/entities/SavedSupportProgram'
 import { loginPathFor, signupPathFor } from '../auth/returnPath'
 import { findHelpEntry, helpActionHref } from '../help/helpContent'
 import type { HelpEntry } from '../help/helpTypes'
-import { appPaths, isAppPath, publicPaths } from '../routes/appPaths'
+import { appPaths, isAppPath, publicPaths, supportProgramQuestionPath } from '../routes/appPaths'
 import type { AssistantCardTagTone } from './Assistant.styles'
 import { assistantMessages } from './assistantMessages'
 
@@ -11,11 +12,13 @@ import { assistantMessages } from './assistantMessages'
 export type AssistantQuickReply = {
   id: string
   label: string
-  kind: 'topic' | 'help' | 'saved-programs' | 'received-proposals' | 'login-benefits' | 'contact' | 'other'
+  kind: 'topic' | 'help' | 'saved-programs' | 'received-proposals' | 'login-benefits' | 'contact' | 'other' | 'retry'
   /** `help`일 때 도움말 항목 id입니다. */
   helpId?: string
   /** `topic`일 때 주제 id입니다. */
   topicId?: string
+  /** `retry`일 때 다시 보낼 질문입니다. */
+  text?: string
 }
 
 /** 도움말 항목을 묶는 주제입니다. 어느 화면에서 열어도 같은 주제 목록이 먼저 나오고, 주제 → 질문 → 답 순서로 타고 들어갑니다. */
@@ -23,8 +26,9 @@ export type AssistantHelpTopic = { id: string; label: string; entryIds: readonly
 
 export const assistantHelpTopics: readonly AssistantHelpTopic[] = [
   { id: 'search', label: '지원사업 검색', entryIds: ['search-confirm-card', 'search-score-meaning', 'eligibility-unknown', 'status-unknown-source', 'evidence-insufficient', 'search-slow-or-failed'] },
-  { id: 'review', label: '중복 검토·신청 문서', entryIds: ['review-save-vs-run', 'review-input-revision'] },
-  { id: 'partner', label: '파트너·기업 등록', entryIds: ['partner-write-requires-company'] },
+  { id: 'saved', label: '관심 공고·리포트', entryIds: ['saved-programs-pipeline', 'daily-report'] },
+  { id: 'review', label: '중복 검토·신청 문서', entryIds: ['review-save-vs-run', 'review-input-revision', 'application-preparation-flow'] },
+  { id: 'partner', label: '파트너·기업 등록', entryIds: ['partner-write-requires-company', 'proposal-box'] },
   { id: 'general', label: '기타 안내', entryIds: ['feature-status-preparing'] },
 ]
 
@@ -38,8 +42,8 @@ export type AssistantCardRow = {
   detail: string | null
 }
 
-/** [external]이면 새 탭에서 바깥 주소를 엽니다. 그 밖에는 앱 안 화면 이동입니다. */
-export type AssistantCardButton = { label: string; to: string; external?: boolean }
+/** [external]이면 새 탭에서 바깥 주소를 엽니다. `searchQuery`가 있으면 이동하면서 검색 입력창에 그 문구를 미리 채웁니다. */
+export type AssistantCardButton = { label: string; to: string; external?: boolean; searchQuery?: string }
 
 /** 목록·버튼이 있는 답변입니다. 버튼은 화면 이동만 합니다. */
 export type AssistantCard = {
@@ -167,9 +171,94 @@ export function contactAnswer(contactUrl: string | null): AssistantMessage {
   })
 }
 
-/** 자유 질문은 C1에서 받지 않고 추천 질문으로 돌려보냅니다. */
+/** 주제·도움말 id가 맞지 않을 때의 안내입니다. */
 export function freeTextFallback(): AssistantMessage {
   return botMessage([assistantMessages.freeTextPreparing])
+}
+
+/** 공고 상세·원문 질문 화면이면 URL의 복합 식별자를 돌려줍니다. 자유 질문의 `programSelected`와 원문 질문 버튼에 씁니다. */
+export function programIdentityFrom(pathname: string, search: string): { sourceCode: string; sourceProgramId: string } | null {
+  const path = pathname.replace(/\/+$/, '') || publicPaths.landing
+  const detailPaths: string[] = [publicPaths.supportProgramDetail, publicPaths.supportProgramQuestion, appPaths.supportProgramDetail, appPaths.supportProgramQuestion]
+  if (!detailPaths.includes(path)) return null
+  const params = new URLSearchParams(search)
+  const sourceCode = params.get('sourceCode')
+  const sourceProgramId = params.get('sourceProgramId')
+  if (!sourceCode || !sourceProgramId) return null
+  return { sourceCode, sourceProgramId }
+}
+
+export type AssistantFreeTextContext = { pathname: string; search: string; session: AssistantSession; returnTo: string }
+
+/**
+ * Core가 검증한 자유 질문 답을 말풍선으로 바꿉니다. 의도별로 출처·버튼·후속 알약이 다릅니다.
+ * UNCLEAR는 확인 질문 뒤에 주제 알약을 다시 보여 주고, 비로그인 상태 질문은 로그인 링크를 붙입니다.
+ */
+export function freeTextAnswer(answer: AssistantAnswer, context: AssistantFreeTextContext): AssistantMessage {
+  const inApp = isAppPath(context.pathname)
+  const navigation: AssistantCardButton | null = answer.navigation === null
+    ? null
+    : { label: answer.navigation.label, to: helpActionHref(answer.navigation.to, inApp) }
+  const cardOf = (buttons: AssistantCardButton[]): AssistantCard | null => (buttons.length > 0 ? { rows: [], buttons } : null)
+  const loginButtons: AssistantCardButton[] = [
+    { label: assistantMessages.login, to: loginPathFor(context.returnTo) },
+    { label: assistantMessages.signup, to: signupPathFor(context.returnTo) },
+  ]
+
+  switch (answer.intent) {
+    case 'UNCLEAR':
+      return botMessage([answer.clarificationQuestion ?? assistantMessages.greetingAsk], { followUps: quickRepliesFor(context.session) })
+    case 'PRODUCT_HELP': {
+      const cited = answer.citations.map((id) => findHelpEntry(id)).filter((entry): entry is HelpEntry => entry !== undefined)
+      const first = cited[0]
+      const related = (first?.related ?? [])
+        .map((id) => findHelpEntry(id))
+        .filter((entry): entry is HelpEntry => entry !== undefined)
+        .slice(0, 2)
+        .map(helpQuickReply)
+      // 첫 인용 항목의 행동 버튼은 원본 도움말 그대로(질의 포함) 씁니다. 인용이 없을 때만 Core가 고른 경로를 씁니다.
+      const helpButton: AssistantCardButton | null = first?.action
+        ? { label: first.action.label, to: helpActionHref(first.action.to, inApp) }
+        : navigation
+      return botMessage([answer.answer ?? ''], {
+        card: cardOf(helpButton === null ? [] : [helpButton]),
+        source: first === undefined ? assistantMessages.aiSource : assistantMessages.helpSource(first.title),
+        followUps: [...related, otherQuestionReply],
+      })
+    }
+    case 'ACCOUNT_STATE': {
+      const source = answer.accountTopic === 'SAVED_PROGRAMS'
+        ? assistantMessages.savedSource
+        : answer.accountTopic === 'RECEIVED_PROPOSALS' ? assistantMessages.proposalsSource : assistantMessages.profileSource
+      return botMessage([answer.answer ?? ''], {
+        card: cardOf(context.session.isAuthenticated ? (navigation === null ? [] : [navigation]) : loginButtons),
+        source: context.session.isAuthenticated ? source : null,
+        followUps: [otherQuestionReply],
+      })
+    }
+    case 'SEARCH':
+      return botMessage([answer.answer ?? ''], {
+        card: cardOf(navigation === null ? [] : [{ ...navigation, searchQuery: answer.searchQuery ?? undefined }]),
+        followUps: [otherQuestionReply],
+      })
+    case 'PROGRAM_QUESTION': {
+      const identity = programIdentityFrom(context.pathname, context.search)
+      const button = navigation ?? (identity === null
+        ? null
+        : { label: assistantMessages.openProgramQuestion, to: supportProgramQuestionPath(identity, inApp) })
+      return botMessage([answer.answer ?? ''], { card: cardOf(button === null ? [] : [button]), followUps: [otherQuestionReply] })
+    }
+    case 'OUT_OF_SCOPE':
+      return botMessage([answer.answer ?? ''], { source: assistantMessages.aiSource, followUps: [otherQuestionReply] })
+  }
+}
+
+/** 자유 질문에 답을 받지 못했을 때입니다. 같은 질문을 다시 보내는 알약을 붙입니다. */
+export function freeTextFailure(text: string, message: string): AssistantMessage {
+  return botMessage([message], {
+    tone: 'warn',
+    followUps: [{ id: 'retry', label: assistantMessages.retry, kind: 'retry', text }, otherQuestionReply],
+  })
 }
 
 /** 비로그인이 상태 질문을 눌렀을 때입니다. 로그인 뒤 같은 화면으로 돌아옵니다. */

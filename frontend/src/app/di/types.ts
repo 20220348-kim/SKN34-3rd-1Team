@@ -4,6 +4,7 @@ import type { BrowseSupportProgramsUseCase } from '../../domain/usecases/BrowseS
 import type { CoreApiHealth } from '../../data/api/coreApiHealth'
 import type { SessionHintStorage } from '../../data/storage/sessionHintStorage'
 import type { KakaoChannelChatUrl } from '../../data/config/kakaoChannel'
+import type { IsAssistantAiEnabled } from '../../data/config/assistantAi'
 import type { AccountRepository } from '../../domain/repositories/AccountRepository'
 import type { ApplicationPreparationRepository } from '../../domain/repositories/ApplicationPreparationRepository'
 import type { ApplicationPreparationUseCase } from '../../domain/usecases/ApplicationPreparationUseCase'
@@ -64,6 +65,8 @@ import type { LogOutUseCase } from '../../domain/usecases/LogOutUseCase'
 import type { RequestPasswordResetUseCase } from '../../domain/usecases/RequestPasswordResetUseCase'
 import type { ResetPasswordUseCase } from '../../domain/usecases/ResetPasswordUseCase'
 import type { SendSignupEmailCodeUseCase } from '../../domain/usecases/SendSignupEmailCodeUseCase'
+import type { AskAssistantUseCase } from '../../domain/usecases/AskAssistantUseCase'
+import type { AssistantRepository } from '../../domain/repositories/AssistantRepository'
 import type { VerifySignupEmailCodeUseCase } from '../../domain/usecases/VerifySignupEmailCodeUseCase'
 import type { SignUpUseCase } from '../../domain/usecases/SignUpUseCase'
 import type { PrepareSampleItemUseCase } from '../../domain/usecases/PrepareSampleItemUseCase'
@@ -86,6 +89,8 @@ export type AppCradle = {
   reviewRequestJournal: typeof import('../../data/storage/reviewRequestJournal').reviewRequestJournal
   browseSupportProgramsUseCase: BrowseSupportProgramsUseCase
   accountRepository: AccountRepository
+  assistantRepository: AssistantRepository
+  askAssistantUseCase: AskAssistantUseCase
   adminAccountRepository: AdminAccountRepository
   savedSupportProgramRepository: SavedSupportProgramRepository
   browseSavedSupportProgramsUseCase: BrowseSavedSupportProgramsUseCase
@@ -116,6 +121,7 @@ export type AppCradle = {
   completeOAuthSignInUseCase: CompleteOAuthSignInUseCase
   fetchCoreApiHealth: FetchCoreApiHealth
   kakaoChannelChatUrl: KakaoChannelChatUrl
+  isAssistantAiEnabled: IsAssistantAiEnabled
   getCurrentAccountUseCase: GetCurrentAccountUseCase
   getSupportProgramDetailUseCase: GetSupportProgramDetailUseCase
   getSupportProgramSearchReadinessUseCase: GetSupportProgramSearchReadinessUseCase
