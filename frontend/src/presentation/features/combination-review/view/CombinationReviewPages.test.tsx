@@ -55,6 +55,31 @@ function mount(path = '/app/combination-reviews/12?step=analysis', strict = fals
   return { store, ...rendered }
 }
 describe('review screens and execution safety', () => {
+  it('shows the review title and both ancestor links on results and navigates back', async () => {
+    mount('/app/combination-reviews/12/runs/30')
+    expect(await screen.findByRole('heading', { level: 1, name: `${reviewFixture.title} 결과` })).toBeTruthy()
+    const navigation = within(screen.getByRole('navigation', { name: '상위 화면' }))
+    expect(navigation.getAllByRole('link').map((link) => link.textContent)).toEqual(['중복 지원 수혜 검토', '공고 분석'])
+    expect(navigation.getByRole('link', { name: '중복 지원 수혜 검토' }).getAttribute('href')).toBe('/app/combination-reviews')
+    fireEvent.click(navigation.getByRole('link', { name: '공고 분석' }))
+    expect(await screen.findByRole('heading', { level: 1, name: '공고 분석' })).toBeTruthy()
+    fireEvent.click(screen.getByRole('link', { name: '중복 지원·수혜 검토' }))
+    expect(await screen.findByRole('heading', { level: 1, name: '중복 지원·수혜 검토' })).toBeTruthy()
+    expect(repository.start).not.toHaveBeenCalled()
+  })
+
+  it('keeps selected programs in order and removes only the chosen program', async () => {
+    mount('/app/combination-reviews/12')
+    await screen.findByDisplayValue(reviewFixture.title)
+    const selected = within(screen.getByLabelText('현재 선택한 공고'))
+    await selected.findByText(/사업 1 · 청년창업 사업화 지원 공고/)
+    expect(selected.getByText(/사업 2 · 딥테크 성장 지원 공고/)).toBeTruthy()
+    fireEvent.click(selected.getByRole('button', { name: /청년창업 사업화 지원 공고.*선택 해제/ }))
+    expect(selected.queryByText(/청년창업/)).toBeNull()
+    expect(selected.getByText(/사업 1 · 딥테크 성장 지원 공고/)).toBeTruthy()
+    expect((screen.getByRole('button', { name: '다음: 참여 상태 설정' }) as HTMLButtonElement).disabled).toBe(true)
+  })
+
   it('submits once then polls queued and running work until completion without another POST', async () => {
     vi.useFakeTimers()
     const queued = { ...runFixture, status: 'QUEUED', analysis: null, evidence: null, configuration: null, finishedAt: null }

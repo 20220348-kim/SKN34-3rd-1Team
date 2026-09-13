@@ -14,16 +14,16 @@ export const workspacePageStyles = {
     'px-[clamp(1.25rem,5vw,4.5rem)] py-6 max-chat:px-4 max-chat:py-4',
   ),
   // 오른쪽 동작이 버튼(2.5rem)이든 태그든 없든 머리글 높이가 같도록 제목 줄의 최소 높이를 버튼 높이에 맞춥니다.
-  headerTitleGroup: 'flex min-h-10 min-w-0 shrink-0 flex-wrap items-center gap-2',
+  headerTitleGroup: 'flex min-h-10 min-w-0 max-w-full flex-wrap items-center gap-2',
   // "파트너 관리 › 모집글 작성"처럼 상위 화면 이름을 제목 앞에 링크로 둡니다. 제목과 같은 크기, 옅은 색.
-  headerCrumb: 'inline-flex items-center gap-2',
+  headerCrumb: 'inline-flex flex-wrap items-center gap-2',
   headerCrumbLink:
     'text-[1.25rem] font-bold tracking-[-0.04em] whitespace-nowrap text-sample-muted no-underline hover:text-app-ink',
   headerCrumbSeparator: 'shrink-0 text-sample-muted',
   // 제목 옆에 화면을 오가는 탭을 같은 줄로 붙일 때 씁니다. 좁은 폭에서는 세로 구분선을 숨기고 탭 줄이 아래로 내려갑니다.
   headerDivider: 'h-[22px] w-px shrink-0 bg-sample-border max-chat:hidden',
   headerTabs: 'flex min-w-0 grow items-center',
-  title: 'm-0 text-[1.25rem] font-bold tracking-[-0.04em] whitespace-nowrap text-app-ink',
+  title: 'm-0 text-[1.25rem] font-bold tracking-[-0.04em] break-words text-app-ink',
   headerActions: 'ml-auto flex min-w-0 max-w-full flex-wrap items-center gap-2',
   content: classes(
     'flex flex-col gap-5 px-[clamp(1.25rem,5vw,4.5rem)] pt-8 pb-12',
