@@ -11,6 +11,14 @@ React·TypeScript·Vite·Tailwind CSS를 사용합니다. 전체 기술 구성�
 
 ## 실행
 
+### Vercel 운영 배포 준비
+
+Root Directory는 `frontend`, Node 24.x/pnpm 11.22.x를 사용합니다. `vercel.json`은 SPA 라우팅과 API 캐시 금지,
+`middleware.ts`는 고정 운영 주소의 `/api`를 CloudFront로 중계하며 프록시 비밀값과 신뢰 사용자 IP를 전달합니다.
+미들웨어는 서버 전용이며 UI/AI 실행 코드가 아닙니다. Preview의 운영 API 접근은 차단합니다.
+환경값은 [배포 안내](../docs/deployment-aws-vercel.md)에 정리했습니다. 기존 Vite 개발 프록시는 그대로 유지하며
+실제 Vercel 프로젝트 연결·배포는 별도입니다.
+
 ### Docker Compose
 
 저장소 루트의 `.env`와 API 키를 먼저 준비합니다. 상세 설정은

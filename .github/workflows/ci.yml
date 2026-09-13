@@ -172,6 +172,9 @@ jobs:
       - name: Verify containerized stack
         run: ./infrastructure/scripts/verify-compose.sh
 
+      - name: Verify production Nginx boundary without external APIs
+        run: python3 infrastructure/scripts/verify-production-proxy.py
+
       - name: Show container state and logs
         if: failure()
         run: |

@@ -1,5 +1,9 @@
 # GovBiz Core API
 
+AWS 초기 운영 설정은 [별도 Compose 및 배포 안내](../../docs/deployment-aws-vercel.md)에 있습니다.
+private RDS TLS 검증, Secure 쿠키, 개발 로그인 비활성화, Nginx 고정 IP만 신뢰하는 전달 헤더 설정을 사용합니다.
+로컬 기본 `server.forward-headers-strategy=none`과 개발 실행 방식은 유지합니다. 실제 RDS/CloudFront 연결 검증은 배포 시 필요합니다.
+
 브라우저에 공개하는 Spring Boot API입니다. 기업마당·K-Startup·과기정통부·충청남도 수출입공지 수집기를 제공하며, Elasticsearch 키워드·Qdrant 벡터 색인을 준비한 뒤 MySQL에
 공개하고, 저장된 공고의 검색·상세 조회와 기업마당 공식 원문 근거 질문을 담당합니다.
 
