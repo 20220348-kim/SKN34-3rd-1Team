@@ -210,7 +210,7 @@ class ApplicationPreparationRepositoryIntegrationTest {
     fun regeneratesLegacyFilesWithoutLosingTheirOwnedDownloads() {
         val preparation = repository.create(ownerId, draft())
         val legacy = documents.save(ownerId, preparation.id, 1, "이전.hwp", "application/x-hwp", byteArrayOf(1), "a".repeat(64), emptyList())
-        jdbc.update("UPDATE application_document_file SET generator_version = 1 WHERE id = ?", legacy.id)
+        jdbc.update("UPDATE application_document_file SET generator_version = 3 WHERE id = ?", legacy.id)
         assertNull(documents.findRevision(ownerId, preparation.id, 1))
         val current = documents.save(ownerId, preparation.id, 1, "수정.hwp", "application/x-hwp", byteArrayOf(2), "a".repeat(64), emptyList(), listOf("s0-p1"))
         assertTrue(current.id != legacy.id)

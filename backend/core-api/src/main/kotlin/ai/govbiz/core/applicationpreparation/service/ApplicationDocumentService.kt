@@ -79,15 +79,20 @@ class ApplicationDocumentService(
                 ?.let { ApplicationDocumentPlacement(fact.id, it.id) }
         }
         val remaining = facts.filter { fact -> choices.none { it.factId == fact.id } }
-        val result = if (remaining.isEmpty()) AiApplicationDocumentPayload("application-document-v1", choices, emptyList())
+        val examples = inspection.targets.filter { it.exampleText.isNotBlank() }.map { it.id }.toSet()
+        val result = if (remaining.isEmpty() && examples.isEmpty()) AiApplicationDocumentPayload("application-document-v1", choices, emptyList())
         else ai.placeDocument(AiApplicationDocumentRequest(facts = remaining, targets = inspection.targets, pageImages = inspection.pageImages)).let { it.copy(placements = it.placements + choices) }
         val targetIds = inspection.targets.map { it.id }.toSet()
         if (result.contractVersion != "application-document-v1" || result.unmappedFactIds.isNotEmpty() || result.placements.size != facts.size || result.placements.map { it.factId }.toSet() != facts.map { it.id }.toSet() || result.placements.any { it.targetId !in targetIds }) {
             throw ApplicationDocumentException("APPLICATION_DOCUMENT_MAPPING_FAILED", "일부 답변의 기입 위치를 확인하지 못해 파일을 생성하지 않았습니다. 공식 양식과 답변을 확인해 주세요.")
         }
-        val examples = inspection.targets.filter { it.exampleText.isNotBlank() }.map { it.id }.toSet()
         if (result.clearExampleTargetIds.distinct().size != result.clearExampleTargetIds.size || result.clearExampleTargetIds.any { it !in examples } || result.placements.any { it.targetId in examples && it.targetId !in result.clearExampleTargetIds }) {
             throw ApplicationDocumentException("APPLICATION_DOCUMENT_MAPPING_FAILED", "예시 문구와 답변의 기입 위치를 구분하지 못했습니다.")
+        }
+        if (result.preserveExampleTargetIds.distinct().size != result.preserveExampleTargetIds.size ||
+            result.clearExampleTargetIds.any { it in result.preserveExampleTargetIds } ||
+            (result.clearExampleTargetIds + result.preserveExampleTargetIds).toSet() != examples) {
+            throw ApplicationDocumentException("APPLICATION_DOCUMENT_MAPPING_FAILED", "답변이 없는 칸을 포함한 예시·안내 문구 분류가 완료되지 않았습니다.")
         }
         val bytes = editor.fill(original.bytes, original.format, facts, result.placements, result.clearExampleTargetIds)
         val format = original.format.lowercase()

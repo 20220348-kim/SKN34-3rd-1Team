@@ -237,6 +237,10 @@ class ApplicationDocumentEditor {
             else -> fail("지원하지 않는 원본 파일 형식입니다.")
         }
         require(output.size in 1..MAX_BYTES)
+        if (clearExampleTargetIds.isNotEmpty()) {
+            val written = inspect(output, format).targets.associateBy { it.id }
+            require(clearExampleTargetIds.all { written[it]?.exampleText?.isBlank() == true })
+        }
         output
     }
 
