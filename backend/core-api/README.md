@@ -514,6 +514,13 @@ Compose는 일부 주소·CORS 값을 내부 네트워크에 맞게 덮어씁니
 | `ACCOUNT_PASSWORD_RESET_FRONTEND_BASE_URL` | `http://127.0.0.1:5173` | 메일 링크(`/reset-password#token=`)의 프런트 origin |
 | `ACCOUNT_PASSWORD_RESET_TOKEN_TTL` | `PT30M` | 재설정 토큰 유효 시간 |
 | `ACCOUNT_PASSWORD_RESET_MAX_REQUESTS_PER_HOUR` | `3` | 계정당 시간당 요청 한도 |
+| `ACCOUNT_EMAIL_VERIFICATION_MAIL_ENABLED` | 재설정 메일 값 | 회원가입 인증번호 메일 SMTP 전송. 따로 주지 않으면 `ACCOUNT_PASSWORD_RESET_MAIL_ENABLED`를 물려받고, 꺼져 있으면 개발용 로그인 환경에서만 인증번호를 WARN 로그로 남김 |
+| `ACCOUNT_EMAIL_VERIFICATION_FROM` | 재설정 메일 값 | 인증번호 메일 발신 주소. 따로 주지 않으면 `ACCOUNT_PASSWORD_RESET_FROM` |
+| `ACCOUNT_EMAIL_VERIFICATION_CODE_TTL` | `PT10M` | 6자리 인증번호 유효 시간(최대 1시간) |
+| `ACCOUNT_EMAIL_VERIFICATION_PASS_TTL` | `PT30M` | 인증을 마친 뒤 가입을 끝내야 하는 시간 |
+| `ACCOUNT_EMAIL_VERIFICATION_RESEND_COOLDOWN` | `PT1M` | 같은 이메일로 다시 보낼 수 있기까지의 대기 시간 |
+| `ACCOUNT_EMAIL_VERIFICATION_SEND_WINDOW` / `_MAX_SENDS_PER_WINDOW` | `PT10M` / `3` | 발송 횟수를 세는 창과 그 안의 최대 발송 수 |
+| `ACCOUNT_EMAIL_VERIFICATION_MAX_ATTEMPTS` | `5` | 인증번호 하나에 허용하는 입력 시도 수 |
 | `ACCOUNT_OAUTH_CALLBACK_BASE_URL` | `http://127.0.0.1:5173` | 브라우저가 `/api`에 닿는 origin. 공급자 콘솔 Redirect URI = 이 값 + `/api/v1/auth/oauth/{kakao\|google}/callback` |
 | `ACCOUNT_OAUTH_FRONTEND_BASE_URL` | `http://127.0.0.1:5173` | 소셜 로그인 뒤 돌아갈 프런트 origin(`/oauth/complete`, 실패는 `/login?oauthError=`) |
 | `ACCOUNT_OAUTH_GOOGLE_CLIENT_ID` / `…_SECRET` | 빈 값 | Google 웹 애플리케이션 클라이언트. 둘 다 있어야 켜짐 |

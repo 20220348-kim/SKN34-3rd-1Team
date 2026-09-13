@@ -4,6 +4,7 @@ import ai.govbiz.core._common.test.MySqlTestContainerConfig
 import ai.govbiz.core.account.client.bizno.BiznoClient
 import ai.govbiz.core.account.client.bizno.dto.BiznoBusiness
 import ai.govbiz.core.account.helper.SessionCookieHelper
+import ai.govbiz.core.account.helper.SignupTestHelper
 import jakarta.servlet.http.Cookie
 import java.time.LocalDate
 import java.time.ZoneId
@@ -116,7 +117,7 @@ class PartnerRecruitmentFlowIntegrationTest {
             .andExpect(jsonPath("$.minimumCompanyAgeYears").value(3))
             .andExpect(jsonPath("$.company.companyName").value("삼성전자(주)"))
             .andExpect(jsonPath("$.company.region").value("서울특별시"))
-            .andExpect(jsonPath("$.company.isEmailVerified").value(false))
+            .andExpect(jsonPath("$.company.isEmailVerified").value(true))
             .andExpect(jsonPath("$.company.isBusinessVerified").value(true))
             .andExpect(jsonPath("$.program.sourceProgramId").value("open-program"))
             .andExpect(jsonPath("$.program.applicationEndDate").value(today.plusDays(30).toString()))
@@ -358,7 +359,7 @@ class PartnerRecruitmentFlowIntegrationTest {
         val response = mockMvc.perform(
             post("/api/v1/auth/signup")
                 .contentType(MediaType.APPLICATION_JSON)
-                .content("""{"email":"$email","password":"password1"}"""),
+                .content(SignupTestHelper.signupJson(jdbcTemplate, email, "password1")),
         )
             .andExpect(status().isCreated())
             .andReturn().response

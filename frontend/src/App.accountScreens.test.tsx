@@ -42,17 +42,85 @@ afterEach(() => {
 })
 
 describe('계정 화면', () => {
-  it('회원가입 화면은 이메일과 비밀번호만 받는다', () => {
+  it('회원가입 화면은 이메일·인증번호·비밀번호만 받고 인증 전에는 가입 버튼을 잠근다', () => {
     renderApp('/signup')
 
     const form = screen.getByRole('form', { name: '회원가입' })
     expect(within(form).getByRole('heading', { name: '회원가입' })).toBeTruthy()
     expect(within(form).getByLabelText('이메일')).toBeTruthy()
+    expect(within(form).getByRole('button', { name: '인증번호 받기' })).toBeTruthy()
+    expect(within(form).queryByLabelText('인증번호')).toBeNull()
     expect(within(form).getByLabelText('비밀번호')).toBeTruthy()
     expect(within(form).getByLabelText('비밀번호 확인')).toBeTruthy()
+    expect((within(form).getByRole('button', { name: '이메일로 가입하기' }) as HTMLButtonElement).disabled).toBe(true)
     for (const removedField of ['담당자 이름', '기업명', '사업자등록번호', '소재지', '업종']) {
       expect(within(form).queryByLabelText(removedField)).toBeNull()
     }
+  })
+
+  it('회원가입은 인증번호를 받아 맞힌 뒤에만 통행 토큰과 함께 가입을 요청한다', async () => {
+    const send = vi.spyOn(appContainer.resolve('sendSignupEmailCodeUseCase'), 'execute')
+      .mockResolvedValueOnce({ outcome: 'email-taken' })
+      .mockResolvedValueOnce({ outcome: 'sent' })
+    const verify = vi.spyOn(appContainer.resolve('verifySignupEmailCodeUseCase'), 'execute')
+      .mockResolvedValueOnce({ outcome: 'code-invalid' })
+      .mockResolvedValueOnce({ outcome: 'verified', passToken: 'b'.repeat(43) })
+    const signUp = vi.spyOn(appContainer.resolve('signUpUseCase'), 'execute').mockResolvedValue({
+      outcome: 'session', session: { account: memberAccount, expiresAt: '2026-12-01T00:00:00+09:00' },
+    })
+    renderApp('/signup')
+    const form = screen.getByRole('form', { name: '회원가입' })
+
+    fireEvent.click(within(form).getByRole('button', { name: '인증번호 받기' }))
+    expect(screen.getByRole('alert').textContent).toBe(signupMessages.emailRequired)
+    expect(send).not.toHaveBeenCalled()
+
+    fireEvent.change(within(form).getByLabelText('이메일'), { target: { value: 'Member@Govbiz.local' } })
+    fireEvent.click(within(form).getByRole('button', { name: '인증번호 받기' }))
+    await waitFor(() => expect(screen.getByRole('alert').textContent).toBe(signupMessages.emailTaken))
+    fireEvent.click(within(form).getByRole('button', { name: '인증번호 받기' }))
+    await waitFor(() => expect(screen.getByRole('status').textContent).toBe(signupMessages.codeSent))
+    expect(send).toHaveBeenLastCalledWith('Member@Govbiz.local')
+    expect(within(form).getByRole('button', { name: '다시 받기' })).toBeTruthy()
+
+    fireEvent.change(within(form).getByLabelText('인증번호'), { target: { value: '12ab34' } })
+    expect((within(form).getByLabelText('인증번호') as HTMLInputElement).value).toBe('1234')
+    fireEvent.click(within(form).getByRole('button', { name: '확인' }))
+    expect(screen.getByRole('alert').textContent).toBe(signupMessages.codeRequired)
+    fireEvent.change(within(form).getByLabelText('인증번호'), { target: { value: '000000' } })
+    fireEvent.click(within(form).getByRole('button', { name: '확인' }))
+    await waitFor(() => expect(screen.getByRole('alert').textContent).toBe(signupMessages.codeInvalid))
+    fireEvent.change(within(form).getByLabelText('인증번호'), { target: { value: '482137' } })
+    fireEvent.click(within(form).getByRole('button', { name: '확인' }))
+    await waitFor(() => expect(screen.getByRole('status').textContent).toBe(signupMessages.codeVerified))
+    expect(verify).toHaveBeenLastCalledWith('Member@Govbiz.local', '482137')
+    expect(within(form).getByText('인증됨')).toBeTruthy()
+    expect(within(form).queryByLabelText('인증번호')).toBeNull()
+    expect((within(form).getByLabelText('이메일') as HTMLInputElement).readOnly).toBe(true)
+
+    fireEvent.change(within(form).getByLabelText('비밀번호'), { target: { value: 'welcome-12' } })
+    fireEvent.change(within(form).getByLabelText('비밀번호 확인'), { target: { value: 'welcome-12' } })
+    fireEvent.submit(form)
+    await waitFor(() => expect(signUp).toHaveBeenCalledWith({ email: 'Member@Govbiz.local', password: 'welcome-12', emailPassToken: 'b'.repeat(43) }))
+  })
+
+  it('회원가입에서 인증한 이메일을 고치면 인증이 풀리고 가입 버튼이 다시 잠긴다', async () => {
+    vi.spyOn(appContainer.resolve('sendSignupEmailCodeUseCase'), 'execute').mockResolvedValue({ outcome: 'sent' })
+    vi.spyOn(appContainer.resolve('verifySignupEmailCodeUseCase'), 'execute').mockResolvedValue({ outcome: 'verified', passToken: 'b'.repeat(43) })
+    renderApp('/signup')
+    const form = screen.getByRole('form', { name: '회원가입' })
+
+    fireEvent.change(within(form).getByLabelText('이메일'), { target: { value: 'member@govbiz.local' } })
+    fireEvent.click(within(form).getByRole('button', { name: '인증번호 받기' }))
+    await screen.findByLabelText('인증번호')
+    fireEvent.change(within(form).getByLabelText('인증번호'), { target: { value: '482137' } })
+    fireEvent.click(within(form).getByRole('button', { name: '확인' }))
+    await waitFor(() => expect((within(form).getByRole('button', { name: '이메일로 가입하기' }) as HTMLButtonElement).disabled).toBe(false))
+
+    fireEvent.change(within(form).getByLabelText('이메일'), { target: { value: 'other@govbiz.local' } })
+    expect(within(form).queryByText('인증됨')).toBeNull()
+    expect(within(form).getByRole('button', { name: '인증번호 받기' })).toBeTruthy()
+    expect((within(form).getByRole('button', { name: '이메일로 가입하기' }) as HTMLButtonElement).disabled).toBe(true)
   })
 
   it('로그인과 회원가입 화면은 서로를 오간다', () => {
@@ -163,10 +231,10 @@ describe('계정 화면', () => {
     expect(execute).not.toHaveBeenCalled()
   })
 
-  it('비밀번호 확인이 다르면 입력 화면에서 설명한다', () => {
+  it('비밀번호 확인이 다르면 입력 화면에서 설명한다', async () => {
     renderApp('/signup')
     const form = screen.getByRole('form', { name: '회원가입' })
-    fireEvent.change(within(form).getByLabelText('이메일'), { target: { value: 'demo@example.test' } })
+    await verifySignupEmail(form, 'demo@example.test')
     fireEvent.change(within(form).getByLabelText('비밀번호'), { target: { value: 'Demo1234' } })
     fireEvent.change(within(form).getByLabelText('비밀번호 확인'), { target: { value: 'Different1234' } })
     fireEvent.submit(form)
@@ -181,12 +249,12 @@ describe('계정 화면', () => {
     })
     renderApp('/signup')
     const form = screen.getByRole('form', { name: '회원가입' })
-    fireEvent.change(within(form).getByLabelText('이메일'), { target: { value: 'New@Example.test' } })
+    await verifySignupEmail(form, 'New@Example.test')
     fireEvent.change(within(form).getByLabelText('비밀번호'), { target: { value: 'welcome-12' } })
     fireEvent.change(within(form).getByLabelText('비밀번호 확인'), { target: { value: 'welcome-12' } })
     fireEvent.click(screen.getByRole('button', { name: '이메일로 가입하기' }))
 
-    expect(execute).toHaveBeenCalledWith({ email: 'New@Example.test', password: 'welcome-12' })
+    expect(execute).toHaveBeenCalledWith({ email: 'New@Example.test', password: 'welcome-12', emailPassToken: 'b'.repeat(43) })
     const sidebar = await screen.findByRole('complementary', { name: '작업 사이드바' })
     expect(within(sidebar).getByText('new@example.test')).toBeTruthy()
     expect(screen.getByRole('textbox', { name: '지원사업 검색어' })).toBeTruthy()
@@ -199,7 +267,7 @@ describe('계정 화면', () => {
       .mockRejectedValueOnce(new Error('network'))
     renderApp('/signup')
     const form = screen.getByRole('form', { name: '회원가입' })
-    fireEvent.change(within(form).getByLabelText('이메일'), { target: { value: 'taken@example.test' } })
+    await verifySignupEmail(form, 'taken@example.test')
     fireEvent.change(within(form).getByLabelText('비밀번호'), { target: { value: 'welcome-12' } })
     fireEvent.change(within(form).getByLabelText('비밀번호 확인'), { target: { value: 'welcome-12' } })
 
@@ -216,16 +284,17 @@ describe('계정 화면', () => {
     expect(screen.queryByRole('complementary', { name: '작업 사이드바' })).toBeNull()
   })
 
-  it.each(['short1', 'p'.repeat(73)])('비밀번호 길이 조건을 충족하지 못하면 보내지 않는다: %s', (password) => {
+  it.each(['short1', 'p'.repeat(73)])('비밀번호 길이 조건을 충족하지 못하면 보내지 않는다: %s', async (password) => {
+    const execute = vi.spyOn(appContainer.resolve('signUpUseCase'), 'execute')
     renderApp('/signup')
     const form = screen.getByRole('form', { name: '회원가입' })
-    fireEvent.change(within(form).getByLabelText('이메일'), { target: { value: 'demo@example.test' } })
+    await verifySignupEmail(form, 'demo@example.test')
     fireEvent.change(within(form).getByLabelText('비밀번호'), { target: { value: password } })
     fireEvent.change(within(form).getByLabelText('비밀번호 확인'), { target: { value: password } })
     fireEvent.submit(form)
     expect(screen.getByRole('alert').textContent).toContain('8자')
     expect(document.activeElement).toBe(within(form).getByLabelText('비밀번호'))
-    expect(fetch).not.toHaveBeenCalled()
+    expect(execute).not.toHaveBeenCalled()
   })
 
   it('약관 안내와 로고로 돌아가는 홈 링크만 두고 새 비밀번호 자동완성을 쓴다', () => {
@@ -1483,6 +1552,17 @@ describe('제안함 화면', () => {
 })
 
 /** 로그인 전 화면은 비로그인으로, 작업 화면은 회원으로 시작합니다. `account`를 넘기면 그 계정으로 고정합니다. */
+/** 회원가입 폼의 이메일을 채우고 인증번호 발송·확인 대역으로 인증을 마칩니다. 이후 비밀번호만 넣으면 가입할 수 있습니다. */
+async function verifySignupEmail(form: HTMLElement, email: string) {
+  vi.spyOn(appContainer.resolve('sendSignupEmailCodeUseCase'), 'execute').mockResolvedValue({ outcome: 'sent' })
+  vi.spyOn(appContainer.resolve('verifySignupEmailCodeUseCase'), 'execute').mockResolvedValue({ outcome: 'verified', passToken: 'b'.repeat(43) })
+  fireEvent.change(within(form).getByLabelText('이메일'), { target: { value: email } })
+  fireEvent.click(within(form).getByRole('button', { name: '인증번호 받기' }))
+  fireEvent.change(await within(form).findByLabelText('인증번호'), { target: { value: '482137' } })
+  fireEvent.click(within(form).getByRole('button', { name: '확인' }))
+  await within(form).findByText('인증됨')
+}
+
 function renderApp(initialEntry: string, account: Account | null = defaultAccountFor(initialEntry)) {
   const store = createAppStore()
   store.dispatch(sessionRestored(account))

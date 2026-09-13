@@ -4,6 +4,7 @@ import ai.govbiz.core._common.test.MySqlTestContainerConfig
 import ai.govbiz.core.account.domain.NewAccount
 import ai.govbiz.core.account.repository.AccountRepository
 import ai.govbiz.core.account.helper.SessionCookieHelper
+import ai.govbiz.core.account.helper.SignupTestHelper
 import jakarta.servlet.http.Cookie
 import java.time.LocalDateTime
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -115,14 +116,14 @@ class AccountAuthFlowIntegrationTest {
         val response = mockMvc.perform(
             post("/api/v1/auth/signup")
                 .contentType(MediaType.APPLICATION_JSON)
-                .content("""{"email":"New.Member@Company.co.kr","password":"welcome-12"}"""),
+                .content(SignupTestHelper.signupJson(jdbcTemplate, "New.Member@Company.co.kr", "welcome-12")),
         )
             .andExpect(status().isCreated())
             .andExpect(cookie().httpOnly(SessionCookieHelper.COOKIE_NAME, true))
             .andExpect(cookie().maxAge(SessionCookieHelper.COOKIE_NAME, -1))
             .andExpect(jsonPath("$.account.email").value("new.member@company.co.kr"))
             .andExpect(jsonPath("$.account.tier").value("MEMBER"))
-            .andExpect(jsonPath("$.account.emailVerified").value(false))
+            .andExpect(jsonPath("$.account.emailVerified").value(true))
             .andReturn().response
         val session = requireNotNull(response.getCookie(SessionCookieHelper.COOKIE_NAME))
 
@@ -132,7 +133,7 @@ class AccountAuthFlowIntegrationTest {
         assertEquals(
             1,
             jdbcTemplate.queryForObject(
-                "SELECT COUNT(*) FROM account WHERE email = 'new.member@company.co.kr' AND email_verified_at IS NULL AND terms_agreed_at IS NOT NULL",
+                "SELECT COUNT(*) FROM account WHERE email = 'new.member@company.co.kr' AND email_verified_at IS NOT NULL AND terms_agreed_at IS NOT NULL",
                 Int::class.java,
             ),
         )
@@ -140,7 +141,7 @@ class AccountAuthFlowIntegrationTest {
         mockMvc.perform(
             post("/api/v1/auth/signup")
                 .contentType(MediaType.APPLICATION_JSON)
-                .content("""{"email":"NEW.MEMBER@company.co.kr","password":"another-12"}"""),
+                .content(SignupTestHelper.signupJson(jdbcTemplate, "NEW.MEMBER@company.co.kr", "another-12")),
         )
             .andExpect(status().isConflict())
             .andExpect(jsonPath("$.code").value("EMAIL_ALREADY_REGISTERED"))

@@ -36,6 +36,8 @@ beforeEach(() => {
   vi.spyOn(appContainer.resolve('signUpUseCase'), 'execute').mockResolvedValue({
     outcome: 'session', session: { account, expiresAt: '2026-12-01T00:00:00+09:00' },
   })
+  vi.spyOn(appContainer.resolve('sendSignupEmailCodeUseCase'), 'execute').mockResolvedValue({ outcome: 'sent' })
+  vi.spyOn(appContainer.resolve('verifySignupEmailCodeUseCase'), 'execute').mockResolvedValue({ outcome: 'verified', passToken: 'b'.repeat(43) })
   vi.spyOn(appContainer.resolve('logInUseCase'), 'execute').mockResolvedValue({
     outcome: 'session', session: { account, expiresAt: '2026-12-01T00:00:00+09:00' },
   })
@@ -206,6 +208,13 @@ function locationText() { return screen.getByTestId('location').textContent ?? '
 async function submitAuth(entry: 'signup' | 'login') {
   const form = screen.getByRole('form', { name: entry === 'signup' ? '회원가입' : '로그인' })
   fireEvent.change(within(form).getByLabelText('이메일'), { target: { value: account.email } })
+  if (entry === 'signup') {
+    // 가입은 인증번호를 맞힌 뒤에만 보낼 수 있습니다.
+    await act(async () => { fireEvent.click(within(form).getByRole('button', { name: '인증번호 받기' })) })
+    fireEvent.change(await within(form).findByLabelText('인증번호'), { target: { value: '482137' } })
+    await act(async () => { fireEvent.click(within(form).getByRole('button', { name: '확인' })) })
+    await within(form).findByText('인증됨')
+  }
   fireEvent.change(within(form).getByLabelText('비밀번호'), { target: { value: 'welcome-12' } })
   if (entry === 'signup') fireEvent.change(within(form).getByLabelText('비밀번호 확인'), { target: { value: 'welcome-12' } })
   await act(async () => fireEvent.submit(form))

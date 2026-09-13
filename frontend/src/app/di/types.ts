@@ -62,6 +62,8 @@ import type { LogInUseCase } from '../../domain/usecases/LogInUseCase'
 import type { LogOutUseCase } from '../../domain/usecases/LogOutUseCase'
 import type { RequestPasswordResetUseCase } from '../../domain/usecases/RequestPasswordResetUseCase'
 import type { ResetPasswordUseCase } from '../../domain/usecases/ResetPasswordUseCase'
+import type { SendSignupEmailCodeUseCase } from '../../domain/usecases/SendSignupEmailCodeUseCase'
+import type { VerifySignupEmailCodeUseCase } from '../../domain/usecases/VerifySignupEmailCodeUseCase'
 import type { SignUpUseCase } from '../../domain/usecases/SignUpUseCase'
 import type { PrepareSampleItemUseCase } from '../../domain/usecases/PrepareSampleItemUseCase'
 import type { RestoreSupportProgramSearchUseCase } from '../../domain/usecases/RestoreSupportProgramSearchUseCase'
@@ -129,6 +131,8 @@ export type AppCradle = {
   signUpUseCase: SignUpUseCase
   requestPasswordResetUseCase: RequestPasswordResetUseCase
   resetPasswordUseCase: ResetPasswordUseCase
+  sendSignupEmailCodeUseCase: SendSignupEmailCodeUseCase
+  verifySignupEmailCodeUseCase: VerifySignupEmailCodeUseCase
   changePasswordUseCase: ChangePasswordUseCase
   getAccountDeletionPreviewUseCase: GetAccountDeletionPreviewUseCase
   deleteAccountUseCase: DeleteAccountUseCase

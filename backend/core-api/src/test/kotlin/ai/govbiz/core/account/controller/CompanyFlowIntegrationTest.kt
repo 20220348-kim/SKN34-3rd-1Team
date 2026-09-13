@@ -5,6 +5,7 @@ import ai.govbiz.core.account.client.bizno.BiznoClient
 import ai.govbiz.core.account.client.bizno.dto.BiznoBusiness
 import ai.govbiz.core.account.client.bizno.exception.BiznoClientException
 import ai.govbiz.core.account.helper.SessionCookieHelper
+import ai.govbiz.core.account.helper.SignupTestHelper
 import jakarta.servlet.http.Cookie
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
@@ -224,7 +225,7 @@ class CompanyFlowIntegrationTest {
         val response = mockMvc.perform(
             post("/api/v1/auth/signup")
                 .contentType(MediaType.APPLICATION_JSON)
-                .content("""{"email":"$email","password":"$password"}"""),
+                .content(SignupTestHelper.signupJson(jdbcTemplate, email, password)),
         )
             .andExpect(status().isCreated())
             .andReturn().response

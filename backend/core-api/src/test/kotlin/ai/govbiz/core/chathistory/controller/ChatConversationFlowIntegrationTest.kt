@@ -2,6 +2,7 @@ package ai.govbiz.core.chathistory.controller
 
 import ai.govbiz.core._common.test.MySqlTestContainerConfig
 import ai.govbiz.core.account.helper.SessionCookieHelper
+import ai.govbiz.core.account.helper.SignupTestHelper
 import ai.govbiz.core.chathistory.repository.ChatConversationRepository
 import jakarta.servlet.http.Cookie
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -220,8 +221,11 @@ class ChatConversationFlowIntegrationTest {
     private fun signup(email: String = "${UUID.randomUUID()}@test.local"): Cookie = authenticate("signup", email)
     private fun login(email: String): Cookie = authenticate("login", email)
     private fun authenticate(action: String, email: String): Cookie {
+        // 가입은 인증번호를 맞힌 통행 토큰이 있어야 하므로 테스트용 통행 토큰을 먼저 만듭니다.
+        val body = if (action == "signup") SignupTestHelper.signupJson(jdbc, email, "password1")
+            else """{"email":"$email","password":"password1"}"""
         val response = mvc.perform(post("/api/v1/auth/$action").contentType(MediaType.APPLICATION_JSON)
-            .content("""{"email":"$email","password":"password1"}""")).andReturn().response
+            .content(body)).andReturn().response
         assertEquals(if (action == "signup") 201 else 200, response.status)
         val cookie = requireNotNull(response.getCookie(SessionCookieHelper.COOKIE_NAME))
         emails[cookie.value] = email

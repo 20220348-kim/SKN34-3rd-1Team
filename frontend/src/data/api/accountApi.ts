@@ -1,5 +1,7 @@
 import type { AccountRole } from '../../domain/entities/Account'
 import type { OAuthProviderId } from '../../domain/entities/OAuthProvider'
+import { z } from 'zod'
+
 import type { AccountLogIn, AccountSignUp } from '../../domain/repositories/AccountRepository'
 import { getCoreApiBaseUrl } from './coreApiConfig'
 import {
@@ -17,6 +19,8 @@ const LOGIN_PATH = '/api/v1/auth/login'
 const DEV_LOGIN_PATH = '/api/v1/auth/dev-login'
 const PASSWORD_RESET_PATH = '/api/v1/auth/password-reset'
 const PASSWORD_RESET_CONFIRM_PATH = '/api/v1/auth/password-reset/confirm'
+const SIGNUP_EMAIL_CODE_PATH = '/api/v1/auth/signup/email-code'
+const SIGNUP_EMAIL_CODE_VERIFY_PATH = '/api/v1/auth/signup/email-code/verify'
 const LOGOUT_PATH = '/api/v1/auth/logout'
 const CURRENT_ACCOUNT_PATH = '/api/v1/auth/me'
 const ACCOUNT_PATH = '/api/v1/me'
@@ -168,6 +172,34 @@ export async function resetPasswordApi(token: string, newPassword: string, signa
     signal,
   })
   await rejectFailedResponse(response)
+}
+
+/** 가입할 이메일로 6자리 인증번호를 보냅니다. 성공은 204, 이미 가입된 이메일은 409, 재전송 대기·발송 한도는 429입니다. */
+export async function sendSignupEmailCodeApi(email: string, signal?: AbortSignal): Promise<void> {
+  const response = await fetch(`${getCoreApiBaseUrl()}${SIGNUP_EMAIL_CODE_PATH}`, {
+    method: 'POST',
+    headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email }),
+    signal,
+  })
+  await rejectFailedResponse(response)
+}
+
+export type SignupEmailPassDto = { passToken: string; expiresAt: string }
+
+const signupEmailPassDtoSchema = z.object({ passToken: z.string().regex(/^[A-Za-z0-9_-]{43}$/), expiresAt: z.string() })
+
+/** 인증번호를 확인하고 가입 요청에 실을 통행 토큰을 받습니다. 틀리면 422 `EMAIL_CODE_INVALID`, 만료·시도 초과면 422 `EMAIL_CODE_EXPIRED`입니다. */
+export async function verifySignupEmailCodeApi(email: string, code: string, signal?: AbortSignal): Promise<SignupEmailPassDto> {
+  const response = await fetch(`${getCoreApiBaseUrl()}${SIGNUP_EMAIL_CODE_VERIFY_PATH}`, {
+    method: 'POST',
+    headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, code }),
+    signal,
+  })
+  await rejectFailedResponse(response)
+
+  return signupEmailPassDtoSchema.parse(await response.json())
 }
 
 async function rejectFailedResponse(response: Response): Promise<void> {

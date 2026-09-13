@@ -26,6 +26,9 @@ export class SignUpUseCase {
     if (!isValidSignUpPassword(command.password)) {
       throw new RangeError(`password must be ${signUpPasswordLength.min}~${signUpPasswordLength.max} characters`)
     }
-    return this.repository.signUp({ email: normalizeEmail(command.email), password: command.password }, signal)
+    return this.repository.signUp(
+      { email: normalizeEmail(command.email), password: command.password, emailPassToken: command.emailPassToken.trim() },
+      signal,
+    )
   }
 }

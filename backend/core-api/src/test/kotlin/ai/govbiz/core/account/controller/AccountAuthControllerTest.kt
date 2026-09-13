@@ -105,12 +105,12 @@ class AccountAuthControllerTest {
     @Test
     fun signUpCreatesTheAccountAndIssuesABrowserSessionCookieWithoutTheTokenInTheBody() {
         doReturn(sessionResult(rememberMe = false)).`when`(signupService)
-            .signUp("manager@company.co.kr", "password1", "127.0.0.1")
+            .signUp("manager@company.co.kr", "password1", "a".repeat(43), "127.0.0.1")
 
         mockMvc.perform(
             post(SIGNUP_PATH)
                 .contentType(MediaType.APPLICATION_JSON)
-                .content("""{"email":"manager@company.co.kr","password":"password1"}"""),
+                .content("""{"email":"manager@company.co.kr","password":"password1","emailPassToken":"${"a".repeat(43)}"}"""),
         )
             .andExpect(status().isCreated())
             .andExpect(cookie().value(SessionCookieHelper.COOKIE_NAME, "session-token"))
@@ -126,9 +126,11 @@ class AccountAuthControllerTest {
     @Test
     fun signUpRejectsShortPasswordsAndMalformedEmailsBeforeTheService() {
         for (body in listOf(
-            """{"email":"manager@company.co.kr","password":"short1"}""",
-            """{"email":"not-an-email","password":"password1"}""",
-            """{"email":"manager@company.co.kr","password":"${"p".repeat(73)}"}""",
+            """{"email":"manager@company.co.kr","password":"short1","emailPassToken":"${"a".repeat(43)}"}""",
+            """{"email":"not-an-email","password":"password1","emailPassToken":"${"a".repeat(43)}"}""",
+            """{"email":"manager@company.co.kr","password":"${"p".repeat(73)}","emailPassToken":"${"a".repeat(43)}"}""",
+            """{"email":"manager@company.co.kr","password":"password1"}""",
+            """{"email":"manager@company.co.kr","password":"password1","emailPassToken":"short"}""",
         )) {
             mockMvc.perform(post(SIGNUP_PATH).contentType(MediaType.APPLICATION_JSON).content(body))
                 .andExpect(status().isBadRequest())
@@ -141,12 +143,12 @@ class AccountAuthControllerTest {
 
     @Test
     fun signUpMapsADuplicateEmailToAStableConflictProblem() {
-        doThrow(EmailAlreadyRegisteredException()).`when`(signupService).signUp("taken@company.co.kr", "password1", "127.0.0.1")
+        doThrow(EmailAlreadyRegisteredException()).`when`(signupService).signUp("taken@company.co.kr", "password1", "a".repeat(43), "127.0.0.1")
 
         mockMvc.perform(
             post(SIGNUP_PATH)
                 .contentType(MediaType.APPLICATION_JSON)
-                .content("""{"email":"taken@company.co.kr","password":"password1"}"""),
+                .content("""{"email":"taken@company.co.kr","password":"password1","emailPassToken":"${"a".repeat(43)}"}"""),
         )
             .andExpect(status().isConflict())
             .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
