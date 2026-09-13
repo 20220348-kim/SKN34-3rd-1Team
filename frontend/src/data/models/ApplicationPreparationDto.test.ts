@@ -23,6 +23,7 @@ const form = {
   }],
 }
 const detail = {
+  contents: [],
   id: 1,
   inputRevision: 1,
   serviceField: 'TECHNICAL_SUPPORT',

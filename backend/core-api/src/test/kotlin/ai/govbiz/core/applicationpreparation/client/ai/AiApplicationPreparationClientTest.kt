@@ -32,6 +32,11 @@ import org.springframework.test.web.client.response.MockRestResponseCreators.wit
 import org.springframework.test.web.client.response.MockRestResponseCreators.withStatus
 import org.springframework.web.client.RestClient
 import tools.jackson.databind.ObjectMapper
+import ai.govbiz.core.applicationpreparation.client.ai.dto.AiApplicationDraftRequest
+import ai.govbiz.core.applicationpreparation.domain.ApplicationDraftInput
+import ai.govbiz.core.applicationpreparation.domain.ApplicationContentFact
+import ai.govbiz.core.applicationpreparation.domain.ApplicationFormSectionDefinition
+import ai.govbiz.core.applicationpreparation.domain.ApplicationFormFieldDefinition
 
 /** AI Service producer test와 공유하는 JSON으로 HTTP 디코딩과 Facade 검증을 함께 확인합니다. */
 @RestClientTest(AiApplicationPreparationClient::class)
@@ -40,6 +45,43 @@ class AiApplicationPreparationClientTest {
     @Autowired private lateinit var client: AiApplicationPreparationClient
     @Autowired private lateinit var server: MockRestServiceServer
     @Autowired private lateinit var json: ObjectMapper
+
+    @Test
+    fun sharesNativeDocumentPlacementContractWithProducer() {
+        val request = resource("document-contract-request.json")
+        server.expect(requestTo("http://ai.test/internal/v1/application-preparations/document"))
+            .andExpect(method(HttpMethod.POST)).andExpect(content().json(request))
+            .andRespond(withSuccess(resource("document-contract-response.json"), MediaType.APPLICATION_JSON))
+        val result = client.placeDocument(json.readValue(request, ai.govbiz.core.applicationpreparation.client.ai.dto.AiApplicationDocumentRequest::class.java))
+        assertEquals("company:name", result.placements.single().factId)
+        assertEquals("s0-p2-t0-r0-c1-p0", result.placements.single().targetId)
+        server.verify()
+    }
+
+    @Test
+    fun sharesDraftProducerContractAndRejectsMismatchedMetadataAndUnsupportedFacts() {
+        val requestBody = resource("draft-contract-request.json")
+        val request = json.readValue(requestBody, AiApplicationDraftRequest::class.java)
+        val input = ApplicationDraftInput(request.preparationId, request.inputRevision, request.formVersionId, request.serviceField,
+            ApplicationFormSectionDefinition(request.sectionKey, request.sectionTitle, "문단 1", request.sectionDescription,
+                request.fieldOptions.map { ApplicationFormFieldDefinition(it.fieldKey, it.label, it.guidance, it.required) }),
+            request.currentFacts.map { ApplicationContentFact(it.fieldKey, it.status, it.value) })
+        val response = resource("draft-contract-response.json")
+        val variants = listOf(response, response.replace("\"preparationId\": 7", "\"preparationId\": 8"),
+            response.replace("\"usedFieldKeys\": [\"company-name\"]", "\"usedFieldKeys\": [\"invented\"]"),
+            response.replace("담당자: 미정", "담당자: 홍길동"))
+        variants.forEachIndexed { index, body ->
+            server.expect(requestTo("http://ai.test/internal/v1/application-preparations/draft/configuration"))
+                .andRespond(withSuccess("""{"contractVersion":"application-preparation-draft-v1","model":"test-model","promptVersion":"sha256:${"a".repeat(64)}"}""", MediaType.APPLICATION_JSON))
+            server.expect(requestTo("http://ai.test/internal/v1/application-preparations/draft"))
+                .andExpect(method(HttpMethod.POST)).andExpect(content().json(requestBody))
+                .andRespond(withSuccess(body, MediaType.APPLICATION_JSON))
+            if (index == 0) assertEquals("업체명은 새봄테크 & 연구소입니다.\n\n담당자: 미정", AiApplicationPreparationFacade(client).draft(input).content)
+            else assertEquals(AiServiceFailure.INVALID_RESPONSE, assertThrows(AiServiceCallException::class.java) { AiApplicationPreparationFacade(client).draft(input) }.failure)
+            server.verify()
+            server.reset()
+        }
+    }
 
     @Test
     fun distinguishesConfirmedValidationFailureFromUnknownExecutionErrors() {

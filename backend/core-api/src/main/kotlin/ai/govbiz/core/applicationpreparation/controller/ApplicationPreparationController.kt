@@ -29,6 +29,9 @@ import org.springframework.web.bind.annotation.PutMapping
 import org.springframework.web.bind.annotation.RestController
 import org.springframework.beans.factory.annotation.Value
 import ai.govbiz.core.applicationpreparation.service.exception.ApplicationFormDiscoveryException
+import ai.govbiz.core.applicationpreparation.controller.dto.GenerateApplicationDraftRequest
+import ai.govbiz.core.applicationpreparation.controller.dto.SaveApplicationContentRequest
+import ai.govbiz.core.applicationpreparation.controller.dto.ConfirmApplicationContentRequest
 
 @RestController
 @RequestMapping("/api/v1/application-preparations")
@@ -114,4 +117,25 @@ class ApplicationPreparationController(
         ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(
             ApplicationPreparationResponse.from(service.replaceInputs(account, id, sectionKey, request.expectedRevision, request.toFacts())),
         )
+
+    @PostMapping("/{id}/sections/{sectionKey}/drafts")
+    fun draft(account: Account, @PathVariable @Min(1) id: Long, @PathVariable sectionKey: String,
+              @RequestBody @Valid request: GenerateApplicationDraftRequest): ResponseEntity<ApplicationPreparationResponse> =
+        ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(ApplicationPreparationResponse.from(
+            service.generateDraft(account, id, sectionKey, request.expectedRevision, request.expectedVersionId, request.requestKey),
+        ))
+
+    @PutMapping("/{id}/sections/{sectionKey}/content")
+    fun saveContent(account: Account, @PathVariable @Min(1) id: Long, @PathVariable sectionKey: String,
+                    @RequestBody @Valid request: SaveApplicationContentRequest): ResponseEntity<ApplicationPreparationResponse> =
+        ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(ApplicationPreparationResponse.from(
+            service.saveContent(account, id, sectionKey, request.expectedRevision, request.expectedVersionId, request.content),
+        ))
+
+    @PostMapping("/{id}/sections/{sectionKey}/confirmations")
+    fun confirmContent(account: Account, @PathVariable @Min(1) id: Long, @PathVariable sectionKey: String,
+                       @RequestBody @Valid request: ConfirmApplicationContentRequest): ResponseEntity<ApplicationPreparationResponse> =
+        ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(ApplicationPreparationResponse.from(
+            service.confirmContent(account, id, sectionKey, request.expectedRevision, request.expectedVersionId),
+        ))
 }

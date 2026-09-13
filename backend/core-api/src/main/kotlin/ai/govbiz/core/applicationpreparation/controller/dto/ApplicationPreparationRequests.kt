@@ -64,3 +64,20 @@ data class ApplicationPreparationFactRequest(
     @field:Size(max = 2000) val value: String?,
     @field:NotBlank @field:Size(max = 4000) val sourceText: String,
 )
+
+data class GenerateApplicationDraftRequest(
+    @field:Min(1) val expectedRevision: Long,
+    @field:Min(1) val expectedVersionId: Long?,
+    @field:NotBlank @field:Pattern(regexp = "[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}") val requestKey: String,
+)
+
+data class SaveApplicationContentRequest(
+    @field:Min(1) val expectedRevision: Long,
+    @field:Min(1) val expectedVersionId: Long,
+    @field:NotBlank @field:Size(max = 15000) val content: String,
+)
+
+data class ConfirmApplicationContentRequest(
+    @field:Min(1) val expectedRevision: Long,
+    @field:Min(1) val expectedVersionId: Long,
+)

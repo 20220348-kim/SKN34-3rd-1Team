@@ -20,13 +20,21 @@ FastAPI, OpenAI 임베딩, Qdrant로 전체 공고에서 관련 후보를 찾고
 구조화 출력의 형태 준수와 실제 판단 품질은 다르며 [공식 안내](https://developers.openai.com/api/docs/guides/structured-outputs)를 참고합니다.
 [실행·원문 관리 계약](../../docs/duplicate-support-review-design.md)과 [무료 검증](../../evaluation/combination-review/README.md)에 범위를 정리했습니다.
 
-신청 문서 기능은 `app/application_preparation`에서 역할이 분리된 양식 발견 Agent와 입력 해석 Agent를 사용합니다.
+신청 문서 기능은 `app/application_preparation`에서 역할이 분리된 양식 발견·입력 해석·초안 작성 Agent를 사용합니다.
 양식 발견 Agent는 Core가 공식 PDF/HWP/HWPX에서 추출한 위치 포함 블록만 받아 작성 대상 문서와 문항을 제안하고, 모든 필드는
 허용된 블록의 정확한 원문 인용을 가져야 합니다. 모델이 원문의 줄바꿈을 공백으로 표현한 경우에만 실제 원문 구간으로
 정규화하며, 같은 문서·문항 식별자가 반복되면 데이터 손실 없이 안전한 고유 키로 바꿉니다. 입력 해석 Agent는 선택된 문항 필드와 현재 사용자 확인 사실, 이번 답변만
 전달받으며 두 Agent 모두 Qdrant나 외부 원문을 직접 조회하지 않습니다. 입력 해석 Agent는 이번 답변의
 정확한 부분 문자열을 근거로 `PROVIDED` 또는 명시적인 `UNKNOWN` 제안과 다음 질문을 반환합니다. Service는 허용 필드,
 중복, 정확 인용, 필수 미입력 순서를 검증하며 제안을 사용자 확인 사실로 표시하거나 저장하지 않습니다.
+
+`POST /internal/v1/application-preparations/draft`는 `application-preparation-draft-v1` 계약의 공식 문항·작성 안내와
+사용자가 확인한 사실만 받아 문항 초안을 생성합니다. 필수 필드의 미입력은 422로 거절하며, 명시적으로 확인한 UNKNOWN은 허용합니다.
+`GET /internal/v1/application-preparations/draft/configuration`으로 모델·프롬프트 hash를 조회합니다. 초안 Agent는
+기존 모델·실행 제한을 사용하고 `max_turns=1`, 출력 5,000 tokens, `store=False`, tracing 비활성화와 도구 없음으로 실행합니다.
+모든 PROVIDED 필드가 `usedFieldKeys`에 한 번씩 들어있는지 검증하고 UNKNOWN은 Service가 `항목명: 미정`으로 덧붙입니다.
+응답은 문안·사용 사실 키·입력 식별자·모델·프롬프트 hash이며 실패는 503, 시간 초과는 504입니다.
+필드 참조 검증은 문장의 사실 정확성 보장이 아니며 실제 문안 품질은 별도의 사용자 검토가 필요합니다.
 
 AI Service가 하는 일:
 
@@ -687,3 +695,17 @@ Agent 확장 원칙은 [AI Agent 모듈 구조](docs/agent-structure.md)를 참�
 과거 실행 수치와 실호출 범위는 [C02 기록](../../docs/conversation-condition-update.md),
 [순위화 timeout·인용 기록](../../docs/support-program-ranking-timeout-fix.md),
 [지역 자격 기록](../../docs/region-eligibility-scope-fix.md)을 참고하세요.
+
+## 신청 원본 문서의 기입 위치 선택
+
+`POST /internal/v1/application-preparations/document`는 `application-document-v1` 계약입니다.
+Core가 보내는 확인 답변, 원본 문단·셀의 ID/문맥 또는 PDF 페이지 이미지를 단일 typed Agent가 대조합니다.
+결과는 `placements(factId, targetId, box)`, `unmappedFactIds`, `clearExampleTargetIds`이며 답변 문안을 변경하거나 파일을 만들지 않습니다.
+HWP/HWPX의 `exampleText`는 파란 글씨 후보입니다. 행·열 문맥과 의미로 기입란의 예시·작성 힌트를 구분하여 삭제 대상 ID를 선택하고, 제목·항목명은 보존합니다. 예시 후보가 있는 기입 대상은 명시적인 삭제 선택 없이는 거절합니다. 삭제 ID는 중복 없이 실제 예시 후보에 한정하며 PDF 삭제 요청은 거절합니다.
+HWP/HWPX는 구조 ID, PDF는 페이지 영상의 왼쪽 위 기준 정규화 좌표를 사용합니다.
+모든 사실은 정확히 한 번 포함해야 하며 미지원 ID, 중복/누락, PDF 영역 겹침·경계 초과를 거절합니다.
+미매핑 항목은 Core에서 파일 생성 오류로 처리합니다. 실제 파일 쓰기와 소유자별 보관은 Core 책임입니다.
+OpenAI 외 대체 경로나 성공 fallback은 없습니다. store와 tracing을 끄고 한 번 호출하며 오류는 503/504로 반환합니다.
+공유 계약 fixture와 ScriptedModel 테스트는 실제 양식의 위치 선택 품질을 보장하지 않습니다.
+문서 생성 실패 로그에는 모델 호출/응답 검증 단계, 예외 종류, 고정 검증 사유, 입력 개수와 소요 시간만 기록합니다. 답변·문서 본문·외부 예외 메시지는 기록하지 않습니다.
+기입 대상의 `kind`는 `TEXT` 또는 `CHECKBOX`이며, `groupId`는 선택 그룹입니다. 정확히 일치하는 유일한 체크박스 값은 Core에서 직접 처리하므로 AI 요청에는 남은 답변만 포함될 수 있습니다. 서로 다른 답변을 같은 HWP/HWPX 문단에 넣는 응답은 거절합니다.

@@ -3,6 +3,32 @@ import { ApplicationPreparationRepositoryImpl } from '../../repositories/Applica
 
 afterEach(() => vi.unstubAllGlobals())
 
+it('requests and downloads the native document with credentials and validates binary content', async () => {
+  const file = { id: 8, inputRevision: 3, fileName: '신청서.hwpx', mediaType: 'application/hwp+zip', size: 4 }
+  const fetcher = vi.fn().mockResolvedValueOnce(Response.json([file]))
+    .mockResolvedValueOnce(new Response(new Uint8Array([80, 75, 3, 4]), { headers: { 'Content-Type': file.mediaType } }))
+    .mockResolvedValueOnce(new Response('<html>login</html>', { headers: { 'Content-Type': 'text/html' } }))
+  vi.stubGlobal('fetch', fetcher)
+  const repository = new ApplicationPreparationRepositoryImpl()
+  expect(await repository.generateDocuments(1, 3)).toEqual([file])
+  expect(JSON.parse(fetcher.mock.calls[0][1].body)).toEqual({ expectedRevision: 3 })
+  expect(fetcher.mock.calls[0][0]).toContain('/1/documents')
+  const downloaded = await repository.downloadDocument(1, 8)
+  expect(downloaded.size).toBe(4)
+  expect(fetcher.mock.calls[1][1].credentials).toBe('include')
+  expect(fetcher.mock.calls[1][0]).toContain('/1/documents/8/download')
+  await expect(repository.downloadDocument(1, 8)).rejects.toThrow('응답 형식')
+})
+
+it('rejects generation results from another revision or without files', async () => {
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce(Response.json([])).mockResolvedValueOnce(Response.json([
+    { id: 8, inputRevision: 2, fileName: '신청서.pdf', mediaType: 'application/pdf', size: 4 },
+  ])))
+  const repository = new ApplicationPreparationRepositoryImpl()
+  await expect(repository.generateDocuments(1, 3)).rejects.toThrow('응답 형식')
+  await expect(repository.generateDocuments(1, 3)).rejects.toThrow('응답 형식')
+})
+
 const form = {
   formVersionId: 'verified-form-v1',
   sourceCode: 'BIZINFO',
@@ -21,6 +47,7 @@ const form = {
   }],
 }
 const detail = {
+  contents: [],
   id: 1,
   inputRevision: 1,
   serviceField: 'TECHNICAL_SUPPORT',
@@ -34,6 +61,27 @@ const creation = {
   formVersionId: form.formVersionId,
   serviceField: 'TECHNICAL_SUPPORT' as const,
 }
+
+it('validates draft, edited content and confirmation responses across the HTTP boundary', async () => {
+  const version = { id: 10, sectionKey: 'company-overview', inputRevision: 1, kind: 'AI_DRAFT', content: '기업 개요',
+    stale: false, createdAt: detail.updatedAt, confirmedAt: null }
+  const fetcher = vi.fn()
+    .mockResolvedValueOnce(Response.json({ ...detail, contents: [version] }))
+    .mockResolvedValueOnce(Response.json({ ...detail, contents: [{ ...version, id: 11, kind: 'USER_EDIT', content: '수정본' }, version] }))
+    .mockResolvedValueOnce(Response.json({ ...detail, contents: [{ ...version, id: 11, confirmedAt: detail.updatedAt }] }))
+    .mockResolvedValueOnce(Response.json({ ...detail, contents: [{ ...version, sectionKey: 'invented' }] }))
+  vi.stubGlobal('fetch', fetcher)
+  const repository = new ApplicationPreparationRepositoryImpl()
+  const input = { expectedRevision: 1, expectedVersionId: null, requestKey: '0a504895-77bd-4d34-bc61-3e6d12389042' }
+  await repository.generateDraft(1, 'company-overview', input)
+  await repository.saveContent(1, 'company-overview', { expectedRevision: 1, expectedVersionId: 10, content: '수정본' })
+  await repository.confirmContent(1, 'company-overview', { expectedRevision: 1, expectedVersionId: 11 })
+  expect(fetcher.mock.calls[0][0]).toContain('/1/sections/company-overview/drafts')
+  expect(JSON.parse(fetcher.mock.calls[0][1].body)).toEqual(input)
+  expect(fetcher.mock.calls[1][1].method).toBe('PUT')
+  expect(fetcher.mock.calls[2][0]).toContain('/confirmations')
+  await expect(repository.generateDraft(1, 'company-overview', input)).rejects.toMatchObject({ code: 'INVALID_RESPONSE' })
+})
 
 describe('application preparation HTTP boundary', () => {
   it('rejects mismatched job identity and missing completed results', async () => {

@@ -51,6 +51,7 @@ dependencies {
     implementation 'tools.jackson.module:jackson-module-kotlin'
     implementation 'org.jsoup:jsoup:1.23.2'
     implementation 'org.apache.pdfbox:pdfbox:3.0.8'
+    implementation 'kr.dogfoot:hwplib:1.1.11'
     implementation 'org.apache.tika:tika-core:4.0.0'
     implementation 'org.apache.tika:tika-parser-miscoffice-module:4.0.0'
     // 회원 비밀번호 BCrypt 해시 전용. Security filter chain·자동 설정은 사용하지 않는다.

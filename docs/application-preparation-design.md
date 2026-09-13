@@ -3,7 +3,7 @@
 [문서 목록](README.md) · [시스템 구조](architecture/README.md) · [계정·인증 계약](account-auth-contract.md)
 
 - 관련 이슈: [#185 — skn-89 제약·계약](https://github.com/SKNETWORKS-FAMILY-AICAMP/SKN34-3rd-1Team/issues/185) · [#187 — skn-90 신청 준비 기본 흐름](https://github.com/SKNETWORKS-FAMILY-AICAMP/SKN34-3rd-1Team/issues/187) · [#189 — skn-92 문항별 질문과 사실 확인](https://github.com/SKNETWORKS-FAMILY-AICAMP/SKN34-3rd-1Team/issues/189) · [#199 — skn-96 공고 기반 양식 발견](https://github.com/SKNETWORKS-FAMILY-AICAMP/SKN34-3rd-1Team/issues/199) · [#207 — skn-100 작성 도우미 공고 검색](https://github.com/SKNETWORKS-FAMILY-AICAMP/SKN34-3rd-1Team/issues/207) · [#210 — skn-102 오류·삭제·선택 흐름](https://github.com/SKNETWORKS-FAMILY-AICAMP/SKN34-3rd-1Team/issues/210) · [#212 — skn-103 단계 분리·제공처 확장](https://github.com/SKNETWORKS-FAMILY-AICAMP/SKN34-3rd-1Team/issues/212) · [#230 — skn-112 전 제공처 공식 첨부](https://github.com/SKNETWORKS-FAMILY-AICAMP/SKN34-3rd-1Team/issues/230) · [#246 — skn-121 관심 공고 선택](https://github.com/SKNETWORKS-FAMILY-AICAMP/SKN34-3rd-1Team/issues/246)
-- 상태: **작성 도우미 안에서 버튼으로 연 관심 공고 팝업 또는 전체 제공처 검색으로 공고를 선택하고, 기업마당·K-Startup·과기정통부·충남 수출지원 공식 PDF/HWP/HWPX의 신청 문서와 문항을 동적으로 발견해 기존 질문·사실 확인 흐름에 연결한다. 관심 공고는 팝업을 열 때 지연 조회하며 중복 지원 검토와 같은 선택 UI를 공유한다. 공고 선택과 발견 문서 확인은 두 단계로 분리한다. 초안 생성·수정·확인은 미구현이다.**
+- 상태: **작성 도우미 안에서 버튼으로 연 관심 공고 팝업 또는 전체 제공처 검색으로 공고를 선택하고, 기업마당·K-Startup·과기정통부·충남 수출지원 공식 PDF/HWP/HWPX의 신청 문서와 문항을 동적으로 발견해 기존 질문·사실 확인 흐름에 연결한다. 관심 공고는 팝업을 열 때 지연 조회하며 중복 지원 검토와 같은 선택 UI를 공유한다. 공고 선택과 발견 문서 확인은 두 단계로 분리한다. 답변 입력과 결과 페이지를 분리하고 공식 원본 양식에 기입한 HWP/HWPX/PDF 파일을 제공한다.**
 - 설계 기준: 2026-09-11, 팀 `main` 커밋 `6fc41bc`에서 `skn-96` 전환.
 - 기능 이름: 화면에서는 **신청 문서 작성 도우미**, 코드에서는 `applicationpreparation` / `application_preparation` / `application-preparation`을 사용한다.
 
@@ -11,7 +11,7 @@
 
 지원사업 공고를 찾은 사용자가 공식 신청 양식의 문항을 이해하고 빈 문서에서 초안을 시작하기 어렵다는 문제를 해결한다.
 사용자가 특정 공고에서 `신청 문서 작성 시작`을 명시적으로 선택하면, 공식 첨부에서 찾은 신청 문서와 문항을 먼저 확인시키고
-AI가 필요한 사실을 질문한다. 사용자가 확인한 답변과 공식 작성 안내만으로 문항별 초안을 만들며, 미정 정보는
+AI가 필요한 사실을 질문한다. 사용자가 확인한 답변을 원본 양식의 기입 위치에 넣어 편집 가능한 문서를 만들며, 미정 정보는
 미정으로 남긴다.
 
 이 기능은 기존 기능과 결과물이 다르다.
@@ -23,8 +23,7 @@ AI가 필요한 사실을 질문한다. 사용자가 확인한 답변과 공식 
 | 중복 지원 검토 | 선택한 사업 조합의 단계별 제한·미확인 결과 |
 | 신청 문서 작성 도우미 | 공식 문항에 대응하는 사용자 확인 가능 초안 |
 
-AI가 만든 문장은 제출 완료나 사실 확인을 의미하지 않는다. 사용자가 직접 수정하고 특정 작성본 버전을 확인해야
-`사용자 확인`으로 표시한다.
+다운로드한 파일을 사용자가 직접 확인·수정한다. 파일 생성은 기관 제출이나 기관 검수 완료를 의미하지 않는다.
 
 ## 2. 최초 검수 기준과 동적 지원 범위
 
@@ -54,22 +53,17 @@ PDF/HWP/HWPX를 명시적 요청에서 분석한다.
 이 기준 manifest는 기존 준비 건 복원과 회귀 검증에 유지한다. 동적으로 발견한 양식도 원문 URL, 파일 hash, 파서·모델·
 프롬프트 버전을 스냅샷으로 고정하며 같은 URL의 파일 내용이 달라지면 기존 버전을 덮어쓰지 않는다.
 
-## 3. 포함 범위와 제외 범위
+## 3. 포함 범위와 한계
 
-| 포함 | 제외 |
-|---|---|
-| 로그인 회원의 신청 준비 건 생성·저장·이어쓰기 | 정부 사이트 로그인·자동 입력·자동 제출 |
-| 네 제공처 공식 PDF/HWP/HWPX의 신청 문서·문항 발견과 사용자 확인 | 스캔 PDF/OCR·암호화 문서·임의 파일 업로드 |
-| 문항별 질문, 사용자 답변의 사실·미정 구분 | 사용자에게 없는 실적·수치·인증·일정 생성 |
-| 사용자 확인 사실로 문항 초안 생성 | 선정 가능성·기관 수용 여부·법률 적합성 보장 |
-| 직접 수정, 버전 저장, 특정 버전 사용자 확인 | 원본 HWPX의 표·글꼴·페이지 완전 재현 |
-| 입력 변경 시 기존 초안 재확인 표시 | DOCX/HWPX/PDF 내보내기 |
-| 문항별 복사와 전체 작성 상태 확인 | 증명서 발급, 첨부 증빙 진위·누락·불일치 점검 |
-
-제출서류 누락 점검은 공고 요구와 사용자가 준비한 파일을 대조하는 별도 기능이다. 첫 이슈에 파일 업로드·OCR·보관,
-증빙 판정과 내보내기를 합치지 않는다. DOCX 생성은 현재 Core API에 production 라이브러리가 없으므로 새 의존성과
-출력 계약을 검토하는 별도 범위로 둔다.
-
+- 네 공식 제공처에서 발견한 양식에 대해 특정 공고별 템플릿을 하드코딩하지 않고 문단·셀·페이지를 분석한다.
+- HWP → HWP, HWPX → HWPX, PDF → PDF로 제공한다. 원본 파일 단위이며 여러 신청서가 한 첨부에 있으면 분리하지 않는다.
+- 현재 준비 건은 사용자가 선택한 첨부 하나를 소유한다. 다른 첨부는 별도의 준비 건에서 작성한다.
+- AI는 답변을 다시 쓰지 않고 기입 위치만 선택한다. 확인 값은 그대로 쓰고 UNKNOWN은 미정으로 기입한다.
+- HWP는 hwplib 1.1.11의 문단·표 셀, HWPX는 ZIP/XML의 leaf 문단, PDF는 페이지 이미지에서 찾은 영역에 편집 가능한 AcroForm 필드를 사용한다.
+- 모든 양식의 배치 정확성·원본과 동일한 페이지 수를 보장하지 않는다. 미매핑 답변·잘못된 위치 ID·PDF 영역 겹침·용량 초과는 명시적인 오류다.
+- 원본/출력 32 MiB, ZIP 256개 entry/32 MiB 확장, 대상 3,000개/문맥 합 400,000자, 사실 200개, PDF 50페이지/이미지 base64 합 32 MiB를 제한한다.
+- 암호화·배포용 HWP, 서명·암호화·XFA PDF, 지원되지 않는 객체의 기입은 거절한다. 현재 최초 문항 발견은 스캔 PDF/OCR를 지원하지 않는다.
+- 정부 사이트 자동 제출·증명서 발급·임의 파일 업로드·DOCX/XLSX는 포함하지 않는다.
 ## 4. 사용자 흐름과 화면 경계
 
 1. 로그인 사용자가 작성 도우미 안에서 공고명·기관명으로 전체 제공처 공고를 검색하고 공고를 선택하거나 공고 상세에서 진입한다.
@@ -79,20 +73,27 @@ PDF/HWP/HWPX를 명시적 요청에서 분석한다.
 4. 분석이 끝나면 별도 `신청 문서 확인` 단계로 전환한다. 사용자가 원문 위치와 발견 양식을 확인하고 생성 버튼을 누른다.
 5. 공식 문항 목록과 문항별 작성 상태를 본다.
 6. 선택 문항에서 AI 질문에 답하고 제안 사실·미정 정보를 확인하거나 정정한다.
-7. 후속 기능에서 초안 생성·수정·확인을 제공한다.
+7. 모든 필수 답변을 저장하고 이전·다음 항목 아래의 초안 생성하기를 누른다. 결과 페이지에서 원본 형식의 작성 파일을 다운로드한다.
+8. 다운로드한 파일에서 직접 수정하거나 이전으로 돌아가 답변을 수정·저장한 뒤 다시 생성한다.
 
-제안 경로:
+### skn-140 문서 생성 계약
 
-```text
-/app/application-preparations
-/app/application-preparations/new
-/app/application-preparations/:preparationId
-```
+입력 페이지는 `/app/application-preparations/:preparationId`, 결과 페이지는 그 아래 `/documents`이다.
+생성 버튼은 저장하지 않은 답변 또는 필수 입력 누락이 있으면 비활성화한다. `?generate=입력revision`으로
+결과 페이지에 진입하면 기존 파일을 조회한 뒤 없을 때만 생성한다. 일반 결과 조회는 AI를 호출하지 않는다.
 
-첫 구현은 하나의 작업 화면에서 문항 목록·질문·초안 패널을 제공한다. 각 문항을 독립 페이지로 분리하지 않는다.
-`new` 진입, 로그인 복귀, 페이지 mount만으로 신청 준비 건이나 AI 실행을 만들지 않는다. 공개 URL에는 사용자 답변,
-기업 설명, 신청 준비 ID를 넣지 않는다. 로그아웃·계정 전환 시 메모리의 미전송 입력과 늦은 응답을 격리한다.
+- `GET /api/v1/application-preparations/{id}/documents`: 현재 revision 파일 메타데이터 목록.
+- `POST /api/v1/application-preparations/{id}/documents`, body `{"expectedRevision":3}`: 원본 기입 및 결과 저장.
+- `GET /api/v1/application-preparations/{id}/documents/{fileId}/download`: 소유자 확인 후 attachment binary, no-store.
 
+원본은 기존 제공처 Client로 다시 수집하고 양식 스냅샷의 SHA-256과 대조한다. 원본이 바뀌었으면 다른 파일을
+대신 제공하지 않는다. 입력과 모든 위치의 대응을 검증하고 실제 파일을 만든 다음 짧은 transaction에서
+입력 revision을 잠금으로 재확인해 V30 `application_document_file`에 저장한다. 동시 입력 변경은 409다.
+같은 revision은 저장된 파일을 재사용한다. 같은 프로세스의 동시 생성은 거절하며 다중 인스턴스의 중복 유료 호출까지
+차단하는 분산 실행 예약은 구현하지 않았다. 사용자 로컬 수정은 서버 답변에 역으로 반영되지 않는다.
+
+기존 V29 텍스트 작성본 계약은 호환성을 위해 남겨 두었지만 새 UI는 호출하지 않는다.
+아래 6~8절 중 `contents`·문항별 draft/content/confirmation 관련 내용은 이 기존 계약의 명세이다.
 ## 5. 계층과 의존 방향
 
 ```text
@@ -240,24 +241,22 @@ AI가 답변에서 추출한 값은 제안이며 사용자 확인 전에는 초�
 {
   "expectedRevision": 3,
   "requestKey": "0a504895-77bd-4d34-bc61-3e6d12389042",
-  "sectionInputRevision": 2
+  "expectedVersionId": null
 }
 ```
 
-초안 응답은 최소한 다음을 구분한다.
+초안 생성·수정·확인은 현재 준비 건 상세를 반환하며 `contents`의 항목은 다음을 구분한다.
 
 ```json
 {
-  "runId": 7,
-  "status": "SUCCEEDED",
+  "id": 7,
   "inputRevision": 3,
   "sectionKey": "voucher-plan",
-  "draftVersion": 1,
+  "kind": "AI_DRAFT",
   "content": "사용자가 확인한 사실로 작성한 초안",
-  "usedFactIds": [11, 12, 13],
-  "citationIds": ["FORM-P714", "FORM-P718"],
-  "unknownFields": ["executionPeriod"],
-  "confirmed": false
+  "stale": false,
+  "createdAt": "2026-09-13T10:00:00+09:00",
+  "confirmedAt": null
 }
 ```
 
@@ -274,8 +273,8 @@ AI가 답변에서 추출한 값은 제안이며 사용자 확인 전에는 초�
 | 503 | AI Service 또는 실행 용량 사용 불가 |
 | 504 | AI 실행 시간 초과 |
 
-필요 정보가 부족하거나 미정인 상태는 기술 실패가 아니다. 해석 응답의 `missingFields`와 초안 응답의
-`unknownFields`로 반환한다. OpenAI 장애를 빈 초안이나 규칙 기반 성공 응답으로 숨기지 않는다.
+필수 답변 미입력은 초안 요청 전에 화면에서 안내하며 API는 400으로 거절한다. 명시적으로 확인한 미정은 허용하고
+문안에 `항목명: 미정`으로 표시한다. OpenAI 장애를 빈 초안이나 규칙 기반 성공 응답으로 숨기지 않는다.
 
 ## 8. AI 내부 계약과 생성 제약
 
@@ -287,19 +286,20 @@ GET  /internal/v1/application-preparations/configuration
 POST /internal/v1/application-preparations/interpret
 GET  /internal/v1/application-preparations/discovery/configuration
 POST /internal/v1/application-preparations/discovery
+GET  /internal/v1/application-preparations/draft/configuration
 POST /internal/v1/application-preparations/draft
 ```
 
-AI Service는 양식 발견과 입력 해석의 역할별 typed Agent를 각각 `max_turns=1`로 실행한다. configuration은 LLM을 호출하지 않고
-계약·모델·프롬프트 버전을 반환한다. 두 Agent는 도구·handoff·fallback 없이 각 출력 계약을 검증한다.
+AI Service는 양식 발견·입력 해석·초안 작성의 역할별 typed Agent를 각각 `max_turns=1`로 실행한다. configuration은 LLM을 호출하지 않고
+계약·모델·프롬프트 버전을 반환한다. Agent는 도구·handoff·fallback 없이 각 출력 계약을 검증한다.
 
 Core는 AI 응답에서 다음을 검증한다.
 
-- 요청의 준비 건·문항·입력 hash와 응답이 일치한다.
-- `usedFactIds`는 요청에 전달한 사용자 확인 사실에만 존재한다.
-- 인용은 Core가 제공한 `citationOptions` 중에서만 선택한다.
-- 회사명·제품·수량·기간·실적·인증 같은 사실 표현은 사용한 사실 ID로 추적된다.
-- 미제공·미정 값은 생성하지 않고 `unknownFields`에 남긴다.
+- 초안 응답의 준비 건·문항·입력 revision·양식 버전·모델·프롬프트 버전이 요청과 일치한다.
+- `usedFieldKeys`는 요청에 전달한 PROVIDED 필드 집합과 정확히 일치한다.
+- UNKNOWN은 해당 필드의 `항목명: 미정` 표시를 포함한다.
+- 초안 길이와 제어 문자를 검증한다. 개별 문장의 사실 정확성은 이 검증만으로 보장하지 않는다.
+- 미정 값은 생성하지 않고 문안에 미정으로 표시한다.
 - AI 문안을 사용자 확인 상태로 반환하지 않는다.
 - 출력 길이·문자열·목록 수와 enum을 제한하고 알 수 없는 필드는 거절한다.
 
@@ -349,7 +349,7 @@ GitHub 이슈에서 skn-번호 확정
 | 공고 기반 양식 발견 전환 | `skn-96` / #199 | 기업마당 공식 첨부 수집·문항 추출·버전 스냅샷과 공고 상세·새 작성 연결 | AI Service·Core·MySQL 8.4·Frontend |
 | 작성 도우미 공고 검색 | `skn-100` / #207 | 새 작성 안에서 기업마당 공고 검색·선택, URL·ID 입력은 보조 경로 | Frontend·`git diff --check` |
 | 발견 오류·삭제·선택 흐름 보강 | `skn-102` / #210 | 원문 인용 공백 정규화, AI/출처 오류 구분, 신청 준비 삭제, 선택 공고 상단 행동 | AI Service·Core·MySQL 8.4·Frontend |
-| 초안 생성·수정·확인 | 새 번호 배정 필요 | 초안 실행·이력, 직접 수정, 확인·재확인 상태와 화면 | AI Service·Core·Frontend·Stub 연결 |
+| 원본 문서 생성·다운로드 | `skn-140` / #285 | 입력/결과 페이지 분리, 원본 형식 기입·다운로드, 입력 수정 후 재생성 | AI Service·Core·MySQL 8.4·Frontend·Stub 계약 및 파일 재열기 |
 | 전체 흐름 안정화 | 새 번호 배정 필요 | 로그인 복귀·세션 격리·장애·Compose 통합과 운영 문서 | 변경 서비스 전체·Compose·`git diff --check` |
 
 후속 작업 단위와 범위는 새 이슈를 만들 때 다시 확인한다. Stub·자동 테스트 통과를 실제 신청 문서 품질이나 기관 검수

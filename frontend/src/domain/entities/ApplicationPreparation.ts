@@ -90,7 +90,24 @@ export type ApplicationPreparation = {
   createdAt: string
   updatedAt: string
   form: ApplicationForm
+  contents: ApplicationContentVersion[]
 }
+
+export type ApplicationContentVersion = {
+  id: number
+  sectionKey: string
+  inputRevision: number
+  kind: 'AI_DRAFT' | 'USER_EDIT'
+  content: string
+  stale: boolean
+  createdAt: string
+  confirmedAt: string | null
+}
+
+export type ApplicationDocument = { id: number; inputRevision: number; fileName: string; mediaType: string; size: number }
+export type GenerateApplicationDraft = { expectedRevision: number; expectedVersionId: number | null; requestKey: string }
+export type ConfirmApplicationContent = { expectedRevision: number; expectedVersionId: number }
+export type SaveApplicationContent = ConfirmApplicationContent & { content: string }
 
 export type ApplicationPreparationPage = {
   items: ApplicationPreparationSummary[]

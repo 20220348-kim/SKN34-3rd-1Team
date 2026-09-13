@@ -1,5 +1,5 @@
 import { useLayoutEffect, useRef, useState } from 'react'
-import { Link, useParams, useSearchParams } from 'react-router'
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router'
 import { useAppSelector } from '../../../../app/hooks'
 import {
   applicationServiceFieldLabels,
@@ -16,6 +16,7 @@ import { SavedSupportProgramPickerDialog } from '../../../shared/support-program
 import { useApplicationPreparationEditorViewModel } from '../viewmodel/useApplicationPreparationEditorViewModel'
 import { useApplicationPreparationListViewModel } from '../viewmodel/useApplicationPreparationListViewModel'
 import { applicationPreparationStyles as s } from './ApplicationPreparation.styles'
+
 
 const listTitle = '신청 문서 작성 도우미'
 const sectionStatus = {
@@ -117,6 +118,9 @@ function SectionInputEditor({ section, vm }: {
         <input type="radio" name={`choice-${messageKey}`} value={option} checked={vm.sectionMessages[messageKey] === option} onChange={() => vm.setSectionMessage(messageKey, option)} />
         {option}
       </label>)}
+      <label className="flex items-center gap-3 p-3 text-sm">
+        <input type="radio" name={`choice-${messageKey}`} value="미정" checked={vm.sectionMessages[messageKey] === '미정'} onChange={() => vm.setSectionMessage(messageKey, '미정')} />아직 미정
+      </label>
     </fieldset> : <textarea
       className={s.textarea}
       disabled={vm.busySection !== null}
@@ -140,6 +144,22 @@ function SectionInputEditor({ section, vm }: {
       {section.facts.length > 0 && <p className="mt-2 text-sm text-emerald-800" role="status">저장된 답변 {section.facts.length}개</p>}
     </div>
     <p className={s.locator}>공식 양식 위치: {section.locator}</p>
+  </section>
+}
+
+function DocumentGenerationAction({ vm }: { vm: ReturnType<typeof useApplicationPreparationEditorViewModel> }) {
+  const navigate = useNavigate()
+  const preparation = vm.preparation!
+  const pending = Object.values(vm.sectionMessages).some((value) => value.trim())
+  const incomplete = preparation.form.sections.every((section) => section.facts.length === 0) || preparation.form.sections.some((section) => section.fields.some((field) => field.required && !section.facts.some((fact) => fact.fieldKey === field.key)))
+  return <section className={s.sectionItem} aria-label="신청 문서 생성">
+    <h3 className="text-lg font-bold">신청 문서 초안 생성</h3>
+    <p className={s.muted}>모든 항목의 저장된 답변을 공식 원본 양식에 기입합니다. 다음 화면에서 편집 가능한 문서를 다운로드할 수 있습니다.</p>
+    {pending && <p className={s.warning}>저장하지 않은 답변이 있습니다. 해당 항목에서 문서 답변 저장을 눌러 주세요.</p>}
+    {incomplete && <p className={s.muted}>모든 필수 답변을 저장해 주세요. 모르는 내용은 미정으로 저장할 수 있습니다.</p>}
+    <button type="button" className={s.primary} disabled={pending || incomplete || vm.busySection !== null}
+      onClick={() => navigate(`${appPaths.applicationPreparations}/${preparation.id}/documents?generate=${preparation.inputRevision}`)}>초안 생성하기</button>
+    <Link className={s.officialLink} to={`${appPaths.applicationPreparations}/${preparation.id}/documents`}>생성된 문서 보기</Link>
   </section>
 }
 
@@ -186,6 +206,7 @@ function SectionWritingWorkspace({ vm }: { vm: ReturnType<typeof useApplicationP
           <button className={s.primary} type="button" disabled={activeIndex === sections.length - 1} onClick={() => selectSection(activeIndex + 1)}>다음 항목</button>
         </div>
         {activeIndex === sections.length - 1 && <p className={s.notice}>마지막 항목입니다. 목록에서 저장 전 답변이나 아직 확인하지 않은 항목을 살펴보세요.</p>}
+        <DocumentGenerationAction vm={vm} />
       </div>}
     </div>
     <p className={s.notice}>저장한 답변은 공식 기관에 자동 제출되지 않습니다. 제출 전 공식 양식과 작성 내용을 확인해 주세요.</p>

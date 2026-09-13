@@ -10,6 +10,7 @@ export const appPaths = {
   applicationPreparations: `${APP_PREFIX}/application-preparations`,
   applicationPreparationNew: `${APP_PREFIX}/application-preparations/new`,
   applicationPreparationDetail: `${APP_PREFIX}/application-preparations/:preparationId`,
+  applicationPreparationDocuments: `${APP_PREFIX}/application-preparations/:preparationId/documents`,
   combinationReviews: `${APP_PREFIX}/combination-reviews`,
   combinationReviewNew: `${APP_PREFIX}/combination-reviews/new`,
   combinationReviewDetail: `${APP_PREFIX}/combination-reviews/:reviewId`,

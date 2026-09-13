@@ -76,6 +76,42 @@ class InterpretationSelection(Contract):
     nextQuestion: str | None = Field(default=None, max_length=300)
 
 
+class DraftRequest(Contract):
+    contractVersion: Literal["application-preparation-draft-v1"]
+    preparationId: int = Field(gt=0)
+    inputRevision: int = Field(gt=0)
+    formVersionId: str = Field(pattern=r"^[a-z0-9][a-z0-9-]{0,159}$")
+    sectionKey: str = Field(pattern=r"^[a-z][a-z0-9-]{0,63}$")
+    serviceField: Literal["GENERAL", "CONSULTING", "TECHNICAL_SUPPORT", "MARKETING"]
+    sectionTitle: str = Field(min_length=1, max_length=100)
+    sectionDescription: str = Field(min_length=1, max_length=1000)
+    currentFacts: list[ConfirmedFact] = Field(max_length=20)
+    fieldOptions: list[FieldOption] = Field(min_length=1, max_length=20)
+
+    @model_validator(mode="after")
+    def confirmed_required_fields(self) -> Self:
+        keys = [field.fieldKey for field in self.fieldOptions]
+        facts = [fact.fieldKey for fact in self.currentFacts]
+        if len(keys) != len(set(keys)) or len(facts) != len(set(facts)) or not set(facts).issubset(keys):
+            raise ValueError("invalid draft fact keys")
+        if any(field.required and field.fieldKey not in facts for field in self.fieldOptions):
+            raise ValueError("required facts must be confirmed")
+        return self
+
+
+class DraftSelection(Contract):
+    content: str = Field(min_length=1, max_length=10000)
+    usedFieldKeys: list[str] = Field(max_length=20)
+
+
+def validate_draft(request: DraftRequest, output: DraftSelection) -> None:
+    provided = {fact.fieldKey for fact in request.currentFacts if fact.status == "PROVIDED"}
+    if set(output.usedFieldKeys) != provided or len(output.usedFieldKeys) != len(provided):
+        raise ValueError("draft references must match confirmed provided facts")
+    if not output.content.strip() or any(unicodedata.category(char).startswith("C") and char not in "\n\t\r" for char in output.content):
+        raise ValueError("invalid draft content")
+
+
 class DiscoveryBlock(Contract):
     blockId: str = Field(pattern=r"^D[0-7]-B[0-9]{1,3}$")
     locator: str = Field(min_length=1, max_length=200)
