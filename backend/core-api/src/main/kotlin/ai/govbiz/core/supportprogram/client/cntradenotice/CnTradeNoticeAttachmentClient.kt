@@ -40,7 +40,7 @@ class CnTradeNoticeAttachmentClient(
             val (candidate, detail) = matching.single()
             val warnings = mutableListOf("충남 공식 게시판에서 제목·본문을 교차 검증한 PDF/HWP/HWPX만 수집했습니다. 추출 결과는 사용자가 원문과 대조해야 합니다.")
             val files = collectFiles(detail, candidate.detailUri, warnings)
-            SupportProgramAttachments(expectedTitle, files, warnings.distinct())
+            SupportProgramAttachments(expectedTitle, files, warnings.distinct(), candidate.detailUri.toString())
         } catch (error: SupportProgramDocumentException) {
             throw error
         } catch (error: Exception) {

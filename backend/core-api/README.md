@@ -100,7 +100,7 @@ V10은 검토 입력, V11은 실행 스냅샷·원본 파일 이력을 저장합
 | `PUT /api/v1/combination-reviews/{id}/inputs` | 제목·사업 목록 전체 교체. expectedRevision 일치 시 204, 충돌 시 409 |
 | `POST /api/v1/combination-reviews/{id}/runs` | expectedRevision·requestKey·선택적 additionalFacts로 비동기 분석 접수. 신규 202 QUEUED, 동일 요청 재조회 200 |
 | `GET /api/v1/combination-reviews/{id}/runs` | 본인 실행 목록, size/beforeId 커서 |
-| `GET /api/v1/combination-reviews/{id}/runs/{runId}` | 당시 입력·근거·설정·결과 또는 실패 조회 |
+| `GET /api/v1/combination-reviews/{id}/runs/{runId}` | 당시 입력·근거·설정·결과 또는 실패 조회. 근거 문서는 공식 공고 상세 `sourcePageUrl`과 수집 첨부 `sourceUrl`을 구분해 반환 |
 | `GET /api/v1/combination-reviews/{id}/runs/{runId}/sources/{documentIndex}` | 실행 당시 원본 파일 다운로드. documentIndex는 0부터 시작 |
 
 소유자는 기존 세션 쿠키를 검증한 Account로 결정하며, 관리자도 타인 검토를 조회·수정할 수 없습니다.
@@ -185,7 +185,8 @@ K-Startup은 API의 `detl_pg_url`과 같은 공고 ID의 모집중·마감 상�
 같은 공고에 읽을 수 있는 공식 문서가 있으면 크기 제한을 넘거나 텍스트를 추출할 수 없는 첨부는 제외 사유와 파일명을
 `coverageWarnings`에 남기고 분석을 계속합니다. 공고 하나의 모든 지원 형식 첨부가 제외되면 기존처럼 기술 실패로 종료합니다.
 중복 지원 검토 한 실행에서 보존하는 원본은 최대 12개이며, 초과 조합은 일부만 분석하지 않고 `SOURCE_TOO_LARGE`로 종료합니다.
-원문·입력·결과는 실행마다 보존하며 기존 검색 Qdrant 색인과 분리됩니다. 자동 수집 근거를 사람 검수 완료로 표시하지 않습니다.
+원문·입력·결과는 실행마다 보존하며 기존 검색 Qdrant 색인과 분리됩니다. 공식 공고 상세 주소와 실제로 수집한 첨부 주소도
+구분해 보존하고, 자동 수집 근거를 사람 검수 완료로 표시하지 않습니다.
 같은 요청 키는 AI를 재호출하지 않습니다. 새 접수는 계정 식별자로 기존 공개 요청 제한을 공유하며,
 검토별 활성 실행 1개·계정별 활성 작업 3개를 제한합니다. 검토 큐는 소비자 1개로 처리하고,
 worker도 기존 검색·AI 기능의 공유 동시 실행 슬롯을 사용합니다.

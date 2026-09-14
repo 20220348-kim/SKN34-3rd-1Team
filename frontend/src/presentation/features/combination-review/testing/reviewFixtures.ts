@@ -10,7 +10,7 @@ export const runFixture: ReviewRun = {
   input: { title: '과거 검토 입력', programs: [...reviewFixture.programs].reverse(), additionalFacts: '확약 제출일은 확인 필요', asOfDate: '2026-09-09' },
   evidence: {
     reviewStatus: 'AUTOMATIC_UNREVIEWED', coverageWarnings: ['기관의 별도 협약 지침은 확보하지 않았습니다.'],
-    documents: [{ programIndex: 0, sourceUrl: 'https://www.bizinfo.go.kr/example.pdf', fileName: '공식-원문-모의.pdf', format: 'PDF', rawHash: 'a'.repeat(64), textHash: 'b'.repeat(64), parserVersion: 'fixture-v1', fetchedAt: '2026-09-09T09:00:00+09:00' }],
+    documents: [{ programIndex: 0, sourceUrl: 'https://www.bizinfo.go.kr/example.pdf', sourcePageUrl: 'https://www.bizinfo.go.kr/example', fileName: '공식-원문-모의.pdf', format: 'PDF', rawHash: 'a'.repeat(64), textHash: 'b'.repeat(64), parserVersion: 'fixture-v1', fetchedAt: '2026-09-09T09:00:00+09:00' }],
     blocks: [{ id: 'E0', programIndex: 0, documentHash: 'a'.repeat(64), locator: 'PDF 3쪽, 문단 2', text: '동일 목적의 사업비는 중복 지원하지 않습니다.' }],
   },
   configuration: { contractVersion: 'fixture-v1', model: 'mock-no-paid-call', promptVersion: 'fixture-v1' },

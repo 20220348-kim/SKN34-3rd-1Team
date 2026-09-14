@@ -230,6 +230,7 @@ class CombinationReviewRunIntegrationTest {
             .andExpect(jsonPath("$.status").value("SUCCEEDED"))
             .andExpect(jsonPath("$.inputRevision").value(1))
             .andExpect(jsonPath("$.evidence.reviewStatus").value("AUTOMATIC_UNREVIEWED"))
+            .andExpect(jsonPath("$.evidence.documents[0].sourcePageUrl").value(BIZINFO_PAGE_URL))
             .andExpect(jsonPath("$.configuration.model").value("test-model"))
             .andExpect(jsonPath("$.analysis.pairs[0].stages.length()").value(6)).andReturn().response
         val id = json.readTree(result.contentAsString).path("id").asLong()
@@ -258,13 +259,14 @@ class CombinationReviewRunIntegrationTest {
         }
         `when`(msitSource.collect(msit.sourceCode, msit.sourceProgramId, sourceUrl)).thenAnswer {
             assertFalse(TransactionSynchronizationManager.isActualTransactionActive())
-            fetched(deep, "과기정통부-공고.hwpx", attachmentUrl)
+            fetched(deep, "과기정통부-공고.hwpx", attachmentUrl, sourceUrl)
         }
 
         val runId = id(start().andExpect(status().isOk())
             .andExpect(jsonPath("$.status").value("SUCCEEDED"))
             .andExpect(jsonPath("$.evidence.documents[1].programIndex").value(1))
-            .andExpect(jsonPath("$.evidence.documents[1].sourceUrl").value(attachmentUrl)))
+            .andExpect(jsonPath("$.evidence.documents[1].sourceUrl").value(attachmentUrl))
+            .andExpect(jsonPath("$.evidence.documents[1].sourcePageUrl").value(sourceUrl)))
 
         val stored = requireNotNull(runs.findOwned(ownerId, reviewId, runId))
         assertEquals(listOf(0, 1), stored.evidence!!.documents.map { it.programIndex })
@@ -288,9 +290,9 @@ class CombinationReviewRunIntegrationTest {
         `when`(programDetails.get(kStartup.sourceCode, kStartup.sourceProgramId)).thenReturn(kStartupProgram)
         `when`(programDetails.get(cnTrade.sourceCode, cnTrade.sourceProgramId)).thenReturn(cnTradeProgram)
         `when`(kStartupSource.collect(kStartup.sourceCode, kStartup.sourceProgramId, kStartupUrl))
-            .thenReturn(fetched(general, "K-Startup-신청서.hwpx"))
+            .thenReturn(fetched(general, "K-Startup-신청서.hwpx", sourcePageUrl = kStartupUrl))
         `when`(cnTradeNoticeSource.collect(cnTrade.sourceCode, cnTrade.sourceProgramId, cnTradeProgram.title, cnTradeProgram.targetDescription))
-            .thenReturn(fetched(deep, "충남-신청서.hwpx"))
+            .thenReturn(fetched(deep, "충남-신청서.hwpx", sourcePageUrl = cnTradeUrl))
 
         val runId = id(start().andExpect(status().isOk())
             .andExpect(jsonPath("$.status").value("SUCCEEDED"))
@@ -553,7 +555,8 @@ class CombinationReviewRunIntegrationTest {
         bytes: ByteArray,
         name: String,
         sourceUrl: String = "https://www.mss.go.kr/common/board/Download.do?bcIdx=1&cbIdx=310&streFileNm=$name",
-    ) = SupportProgramAttachments("공식 공고", listOf(SupportProgramAttachment(sourceUrl, name, "HWPX", bytes)), listOf("기관 해석 미확인"))
+        sourcePageUrl: String = BIZINFO_PAGE_URL,
+    ) = SupportProgramAttachments("공식 공고", listOf(SupportProgramAttachment(sourceUrl, name, "HWPX", bytes)), listOf("기관 해석 미확인"), sourcePageUrl)
     private fun supportProgram(identity: ReviewProgramIdentity, sourceUrl: String) = SupportProgram(
         identity.sourceProgramId, identity.sourceCode, "과기정통부 공고", "과학기술정보통신부", "공고 요약",
         emptyList(), emptyList(), "중소기업", "접수 기간 미확인", null, null, SupportProgramStatus.UNKNOWN,
@@ -583,5 +586,8 @@ class CombinationReviewRunIntegrationTest {
         return mvc.perform(get("$path/$runId").cookie(cookie))
     }
     private fun id(result: org.springframework.test.web.servlet.ResultActions) = json.readTree(result.andReturn().response.contentAsString).path("id").asLong()
-    companion object { const val ORIGIN = "http://localhost:5173" }
+    companion object {
+        const val ORIGIN = "http://localhost:5173"
+        const val BIZINFO_PAGE_URL = "https://www.bizinfo.go.kr/sii/siia/selectSIIA200Detail.do?pblancId=PBLN_000000000117820"
+    }
 }

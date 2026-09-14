@@ -408,7 +408,29 @@ describe('review screens and execution safety', () => {
     fireEvent.click(screen.getByRole('tab', { name: '2단계 · 선정 · 공식 근거 부족' }))
     expect(screen.getByRole('tab', { name: '1단계 · 신청 · 사용자 정보 부족' }).getAttribute('aria-selected')).toBe('false')
     expect(screen.getByRole('tabpanel', { name: '선정 분석 결과' })).toBeTruthy()
+    const sourceLink = screen.getByRole('link', { name: '공식 공고 페이지 열기' })
+    expect(sourceLink.getAttribute('href')).toBe(runFixture.evidence!.documents[0].sourcePageUrl)
+    expect(screen.getAllByRole('button', { name: '수집 원본 다운로드' })).toHaveLength(1)
+    expect(screen.queryByRole('link', { name: '공식 출처 열기' })).toBeNull()
     expect(repository.start).not.toHaveBeenCalled()
+  })
+  it('explains analysis limitations and presents model status codes in Korean', async () => {
+    const run = structuredClone(runFixture)
+    run.analysis!.summary = '사업 1은 YES이고 사업 2는 UNKNOWN입니다.'
+    run.analysis!.limitations = ['협약은 NO이고 수행은 NOT_STARTED이며 교부는 UNKNOWN입니다.']
+    run.analysis!.pairs[0].stages[0].scope = 'IN_PROGRESS 상태까지 확인'
+    run.analysis!.pairs[0].stages[0].explanation = 'COMPLETED 또는 STOPPED 여부는 UNKNOWN입니다.'
+    run.analysis!.pairs[0].stages[0].questions = ['선정 결과가 YES인가요?']
+    repository.run.mockResolvedValue(run)
+
+    mount('/app/combination-reviews/12/runs/30')
+
+    expect(await screen.findByText('사업 1은 ‘예’이고 사업 2는 ‘미확인’입니다.')).toBeTruthy()
+    expect(screen.getByText(/입력한 참여 상태와 추가 사실, 자동 수집한 공식 원문의 범위/)).toBeTruthy()
+    expect(screen.getByText('협약은 ‘아니오’이고 수행은 ‘시작 전’이며 교부는 ‘미확인’입니다.')).toBeTruthy()
+    expect(screen.getByText(/‘수행 중’ 상태까지 확인/)).toBeTruthy()
+    expect(screen.getByText('‘완료’ 또는 ‘중단’ 여부는 ‘미확인’입니다.')).toBeTruthy()
+    expect(screen.getByText('선정 결과가 ‘예’인가요?')).toBeTruthy()
   })
   it('loads the selected result automatically after the application StrictMode remount', async () => {
     mount('/app/combination-reviews/12/runs/30', true)

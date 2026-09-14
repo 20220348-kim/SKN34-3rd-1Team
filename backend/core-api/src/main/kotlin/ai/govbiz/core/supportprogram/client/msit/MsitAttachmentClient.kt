@@ -84,7 +84,7 @@ class MsitAttachmentClient(
                 totalBytes += bytes.size
             }
             if (files.isEmpty()) fail(if (skippedForSize) Reason.TOO_LARGE else Reason.UNSUPPORTED)
-            return SupportProgramAttachments(title, files, warnings.distinct())
+            return SupportProgramAttachments(title, files, warnings.distinct(), sourceUri.toString())
         } catch (error: SupportProgramDocumentException) {
             throw error
         } catch (error: Exception) {

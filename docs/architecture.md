@@ -71,7 +71,8 @@ AI Service의 명시적 근거 검증 실패(`422 / APPLICATION_FORM_AI_INVALID_
    `CnTradeNoticeAttachmentClient`를 통해 검증된 공식 상세의 직접 연결 첨부를 수집. 충남은 API 제목·본문과 게시판 상세를 교차 검증.
 3. `SupportProgramDocumentParser`: PDFBox, Apache Tika HWP5 또는 HWPX ZIP/XML로 텍스트·위치를 추출. 신청 문서 발견과 중복 지원 검토가 같은 안전 경계를 사용.
    공고별로 읽을 수 있는 문서가 있으면 크기 제한 초과·텍스트 추출 불가 첨부는 경고와 함께 제외하고, 모두 제외되면 실행을 실패 처리.
-4. `CombinationReviewRunRepository`: 원문 바이트·해시·메타데이터·텍스트를 짧은 transaction에서 보존.
+4. `CombinationReviewRunRepository`: 원문 바이트·해시·메타데이터·텍스트를 짧은 transaction에서 보존. 검증한 공식 공고 상세 주소와
+   첨부 다운로드 주소를 서로 다른 필드로 저장해 화면의 공고 페이지 이동과 보관 원본 다운로드를 구분.
 5. `AiCombinationReviewFacade → AiCombinationReviewClient → AI Router → CombinationReviewService → CombinationReviewAgent → OpenAI` 단일 호출.
 6. AI와 Core에서 사업쌍·단계·인용을 검증하고 실행 성공/실패 저장. AI는 서버가 원문에서 만든 인용 선택지 번호만 고르고,
    코드가 정확한 원문과 근거 ID를 복원한다. 다른 사업쌍의 선택지나 범위 밖 번호는 실패 처리. 현재 입력은 덮어쓰지 않음.
@@ -796,7 +797,9 @@ QUEUED/RUNNING은 3초 간격 GET으로 상태를 확인하고 새로고침 후�
 FAILED/INTERRUPTED 역시 정상 근거 부족과 구분한다.
 
 결과의 사업 순서·참여 상태·인용은 해당 Run의 스냅샷으로 표시한다. 여섯 단계의 판단 범위·질문·기관 확인·수집 한계와
-자동 수집/사람 미검수 상태를 표시한다. 여섯 단계는 반응형 2·3열 선택 보드에서 판단 상태를 먼저 비교하고 선택한 한 단계의 상세만 아래에서 확인한다. 원본은 세션을 포함한 GET으로 내려받는다. 5-2의 비로그인 선택 유지·작업 이어보기,
+자동 수집/사람 미검수 상태를 표시한다. 모델이 사용자 표시 문장에 반환한 참여 상태 코드는 한국어로 표시하고, 분석 한계가
+참여 상태·추가 사실·공식 원문 수집 범위에서 확정할 수 없는 내용임을 안내한다. 여섯 단계는 반응형 2·3열 선택 보드에서 판단 상태를
+먼저 비교하고 선택한 한 단계의 상세만 아래에서 확인한다. 공식 공고 상세는 외부 페이지로 열고, 보관 원본은 세션을 포함한 GET으로 내려받는다. 5-2의 비로그인 선택 유지·작업 이어보기,
 신청서 작성 도우미, 실제 OpenAI 품질 평가는 포함하지 않는다.
 
 HWP 체크박스의 FORM_OBJECT Caption은 주변 문항과 함께 별도 근거 블록으로 보존한다. 공식 신청 문항의 단일 선택지는 AI Service가 원문 인용에 포함된 `options`로 추출하고, Core API가 다시 검증한 뒤 양식 스냅샷과 공개 응답에 보존한다. Frontend는 선택지를 라디오 버튼으로 표시한다. 기존 스냅샷에서 `options`가 없으면 빈 목록으로 읽으며, 선택형 문항의 선택지를 확인하지 못한 경우 공식 원문 확인을 안내한다.

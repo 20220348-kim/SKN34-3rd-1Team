@@ -57,7 +57,7 @@ class KStartupAttachmentClient(
             if (candidates.isEmpty()) fail(Reason.UNSUPPORTED)
             if (candidates.size > MAX_FILES || warnings.distinct().size > MAX_WARNINGS) fail(Reason.TOO_LARGE)
             val files = downloadWithinLimits(candidates.values, detailUri, warnings)
-            SupportProgramAttachments(title, files, warnings.distinct())
+            SupportProgramAttachments(title, files, warnings.distinct(), detailUri.toString())
         } catch (error: SupportProgramDocumentException) {
             throw error
         } catch (error: Exception) {

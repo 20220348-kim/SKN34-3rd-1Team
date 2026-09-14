@@ -12,6 +12,8 @@ data class SupportProgramAttachments(
     val programTitle: String,
     val files: List<SupportProgramAttachment>,
     val warnings: List<String>,
+    /** 첨부 다운로드 주소와 구분되는, 검증을 마친 공식 공고 상세 주소입니다. */
+    val sourcePageUrl: String? = null,
 )
 
 const val MAX_SUPPORT_PROGRAM_ATTACHMENT_BYTES = 16 * 1024 * 1024

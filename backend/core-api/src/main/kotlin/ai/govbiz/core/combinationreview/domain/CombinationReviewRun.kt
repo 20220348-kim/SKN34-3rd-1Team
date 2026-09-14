@@ -25,6 +25,8 @@ data class ReviewSourceDocument(
     val textHash: String,
     val parserVersion: String,
     val fetchedAt: LocalDateTime,
+    /** 기존 실행 JSON에는 없을 수 있으며, sourceUrl(첨부 파일 주소)과 역할이 다릅니다. */
+    val sourcePageUrl: String? = null,
 )
 data class ReviewEvidenceSnapshot(
     val documents: List<ReviewSourceDocument>,

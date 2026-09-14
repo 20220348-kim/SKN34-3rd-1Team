@@ -20,7 +20,7 @@ export type ReviewRun = RunSummary & {
   reviewId: number; requestKey: string
   input: ReviewDraft & { additionalFacts: string; asOfDate: string }
   evidence: null | {
-    documents: { programIndex: number; sourceUrl: string; fileName: string; format: string; rawHash: string; textHash: string; parserVersion: string; fetchedAt: string }[]
+    documents: { programIndex: number; sourceUrl: string; sourcePageUrl: string | null; fileName: string; format: string; rawHash: string; textHash: string; parserVersion: string; fetchedAt: string }[]
     blocks: { id: string; programIndex: number; documentHash: string; locator: string; text: string }[]
     coverageWarnings: string[]; reviewStatus: 'AUTOMATIC_UNREVIEWED'
   }
