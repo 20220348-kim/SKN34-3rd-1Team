@@ -330,6 +330,11 @@ v5에서는 자격 `UNKNOWN`을 관련도와 분리해 확인 필요로 표시�
 
 ### 색인·검색 모듈과의 차이
 
+중복 지원 검토는 `Router → CombinationReviewService → CombinationReviewAgent → LangChain ChatOpenAI → OpenAI Responses API`를 사용합니다.
+LangChain 메시지와 실행 객체는 Agent 내부에 두고 기존 Pydantic 결과를 Service에 반환합니다.
+Service가 인용·사업쌍·단계를 검증하며, `bootstrap.py`가 모델과 제한 시간·재시도 설정을 연결합니다.
+신청 문서 등 다른 기능의 Agents SDK 호출은 유지합니다.
+
 색인·검색은 `HTTP API → Router → Index Service → OpenAI 임베딩·Qdrant → Response` 흐름입니다.
 `support_program_index/service.py`가 문서 버전 확인·임베딩 생성·Qdrant 저장·검색을 직접 수행합니다.
 기업마당 수집이나 MySQL 조회는 Core가 맡으며 AI Service는 전달받은 문서·ID·해시를 사용합니다.

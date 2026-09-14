@@ -1,4 +1,5 @@
 from dataclasses import replace
+from types import SimpleNamespace
 
 import pytest
 from agents.testing import ScriptedModel
@@ -18,6 +19,10 @@ SETTINGS = Settings(
 class FakeOpenAIClient:
     def __init__(self) -> None:
         self.closed = False
+        self.chat = SimpleNamespace(completions=object())
+
+    def with_options(self, **kwargs):
+        return SimpleNamespace(chat=self.chat, **kwargs)
 
     async def close(self) -> None:
         self.closed = True
@@ -29,6 +34,9 @@ class FakeChatOpenAI:
     def __init__(self, **kwargs) -> None:
         self.kwargs = kwargs
         FakeChatOpenAI.instances.append(self)
+
+    def with_structured_output(self, *args, **kwargs):
+        return object()  # Bootstrap tests must never call the model.
 
 
 @pytest.mark.anyio
@@ -43,7 +51,9 @@ async def test_agent_models_tool_client_and_service_are_wired_and_closed(monkeyp
     try:
         assert isinstance(container.assistant_agent_service, AssistantAgentService)
         assert container.assistant_agent_service._timeout_seconds == 15.0
-        classify, agent = FakeChatOpenAI.instances
+        combination, classify, agent = FakeChatOpenAI.instances
+        assert combination.kwargs["max_tokens"] == 6000
+        assert combination.kwargs["timeout"] == 60
         # 분류는 도우미와 같은 싼 모델·low, 계획·답은 전용 모델. 둘 다 저장 안 함·재시도 없음·도우미 제한 시간.
         assert classify.kwargs == {"model": "gpt-5-nano", "api_key": "private-key", "use_responses_api": True, "store": False,
                                    "reasoning": {"effort": "low"}, "timeout": 1.25, "max_retries": 0}
@@ -71,7 +81,8 @@ async def test_supplied_agent_service_skips_model_and_client_construction(monkey
     try:
         assert container.assistant_agent_service is service
         assert container.assistant_tool_client is None
-        assert FakeChatOpenAI.instances == []
+        assert len(FakeChatOpenAI.instances) == 1
+        assert FakeChatOpenAI.instances[0].kwargs["max_tokens"] == 6000
     finally:
         await container.close()
     assert client.closed
