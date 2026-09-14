@@ -111,6 +111,18 @@ class DocumentValidationError(ValueError):
 
 
 def validate_document(request: DocumentRequest, output: DocumentSelection) -> None:
+    validate_placements(request, output)
+    targets = {t.id for t in request.targets}
+    examples = validate_example_classification(request, output)
+    for p in output.placements:
+        if p.targetId in examples and p.targetId not in output.clearExampleTargetIds:
+            raise DocumentValidationError("EXAMPLE_CLEANUP_MISSING")
+        if p.targetId not in targets:
+            raise DocumentValidationError("INSERTION_TARGET")
+
+
+def validate_placements(request: DocumentRequest, output: DocumentSelection) -> None:
+    """Validate fact coverage and insertion geometry without interpreting example cleanup semantics."""
     ids = [p.factId for p in output.placements] + output.unmappedFactIds
     if len(ids) != len(set(ids)) or set(ids) != {f.id for f in request.facts}:
         raise DocumentValidationError("FACT_COVERAGE")
@@ -118,17 +130,7 @@ def validate_document(request: DocumentRequest, output: DocumentSelection) -> No
     text_targets = [p.targetId for p in output.placements if not request.pageImages]
     if len(text_targets) != len(set(text_targets)):
         raise DocumentValidationError("SHARED_ANSWER_TARGET")
-    examples = {t.id for t in request.targets if t.exampleText.strip()}
-    cleanup = output.clearExampleTargetIds
-    if len(cleanup) != len(set(cleanup)) or not set(cleanup) <= examples or (request.pageImages and cleanup):
-        raise DocumentValidationError("EXAMPLE_CLEANUP_TARGET")
-    preserved = output.preserveExampleTargetIds
-    if (len(preserved) != len(set(preserved)) or set(cleanup) & set(preserved)
-            or set(cleanup) | set(preserved) != examples):
-        raise DocumentValidationError("EXAMPLE_CLASSIFICATION_COVERAGE")
     for p in output.placements:
-        if p.targetId in examples and p.targetId not in cleanup:
-            raise DocumentValidationError("EXAMPLE_CLEANUP_MISSING")
         if p.targetId not in targets or (p.box is not None) != bool(request.pageImages):
             raise DocumentValidationError("INSERTION_TARGET")
         if p.box and (p.box.x + p.box.width > 1 or p.box.y + p.box.height > 1):
@@ -138,3 +140,16 @@ def validate_document(request: DocumentRequest, output: DocumentSelection) -> No
             a, b = p.box, other.box
             if p.targetId == other.targetId and a and b and max(a.x, b.x) < min(a.x + a.width, b.x + b.width) and max(a.y, b.y) < min(a.y + a.height, b.y + b.height):
                 raise DocumentValidationError("BOX_OVERLAP")
+
+
+def validate_example_classification(request: DocumentRequest, output: DocumentSelection) -> set[str]:
+    """Validate example cleanup independently so a placement-only repair can retain a safe classification."""
+    examples = {t.id for t in request.targets if t.exampleText.strip()}
+    cleanup = output.clearExampleTargetIds
+    if len(cleanup) != len(set(cleanup)) or not set(cleanup) <= examples or (request.pageImages and cleanup):
+        raise DocumentValidationError("EXAMPLE_CLEANUP_TARGET")
+    preserved = output.preserveExampleTargetIds
+    if (len(preserved) != len(set(preserved)) or set(cleanup) & set(preserved)
+            or set(cleanup) | set(preserved) != examples):
+        raise DocumentValidationError("EXAMPLE_CLASSIFICATION_COVERAGE")
+    return examples

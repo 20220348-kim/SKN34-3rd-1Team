@@ -35,6 +35,7 @@ Frontend는 `/app/application-preparations`의 목록·삭제, `/new`의 지연 
 ApplicationDocumentEditor → AiApplicationPreparationClient → AI Service Router → Service → 위치 선택 Agent → OpenAI`로 이어집니다.
 공식 첨부 SHA-256이 선택한 양식 버전과 일치할 때 원본의 문단·표 셀 또는 PDF 페이지를 분석합니다.
 AI는 답변을 다시 쓰지 않고 기입 위치만 선택합니다. Core가 답변 전체의 매핑을 검증하고 원본에 사용자 값을 기입합니다.
+서로 다른 답변이 같은 HWP/HWPX 텍스트 칸을 선택한 AI 응답은 그대로 사용하지 않습니다. AI Service가 칸마다 첫 답변과 충돌하지 않은 위치를 고정하고 나머지 충돌 답변을 고정된 칸을 금지한 한 번의 요청으로 다시 배치하며, 필요하면 답변 없는 예시 분류 요청을 분리한 뒤 전체 계약을 다시 검증합니다. 교정 실패는 정상 결과로 숨기지 않습니다.
 HWP/HWPX는 파란 텍스트 후보와 표 문맥을 함께 전달하여 예시 삭제 대상도 선택합니다. Core는 후보 ID를 검증하고 선택된 파란 예시만 제거한 뒤 검은 글씨로 기입합니다. PDF의 기존 텍스트 삭제는 지원하지 않습니다.
 
 HWP/HWPX의 모든 파란 문구 후보는 답변 유무와 관계없이 `clearExampleTargetIds`(예시·작성 힌트 삭제) 또는 `preserveExampleTargetIds`(제목·항목명·필수 안내 보존)에 정확히 한 번 포함되어야 합니다. AI Service와 Core API 양쪽에서 누락·중복·교집합·알 수 없는 ID를 거절합니다. 체크박스 답변을 Core가 모두 처리한 경우에도 예시 후보가 있으면 빈 facts로 분류를 요청합니다. 파일 편집 후 삭제 대상으로 선택한 문단에 파란 문구가 남았는지 다시 검사합니다. 의미 분류의 정확도와 실제 한글 조판 품질은 별도 검수가 필요하며, PDF의 기존 문구 삭제는 지원하지 않습니다.

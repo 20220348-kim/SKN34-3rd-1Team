@@ -1,4 +1,4 @@
-"""Exercise the demo-data seed script guards with a fake Docker command and check the SQL only touches demo rows."""
+"""Exercise the demo-data seed script guards and check the SQL only replaces scoped local demo data."""
 
 from pathlib import Path
 import os
@@ -76,12 +76,13 @@ class SeedDemoDataTest(unittest.TestCase):
     def test_seed_sql_only_deletes_demo_rows(self):
         sql = SEED_FILE.read_text(encoding="utf-8")
         deletes = re.findall(r"^DELETE[^;]*;", sql, flags=re.MULTILINE | re.DOTALL)
-        self.assertEqual(len(deletes), 4, deletes)
+        self.assertEqual(len(deletes), 6, deletes)
         self.assertIn("email LIKE '%@demo.govbiz.local'", deletes[0])
-        self.assertIn("'admin@govbiz.local', 'member@govbiz.local'", deletes[1])
-        self.assertIn("email = 'admin@govbiz.local'", deletes[2])
-        self.assertIn("saved_support_program", deletes[3])
-        self.assertIn("'admin@govbiz.local', 'member@govbiz.local'", deletes[3])
+        for table in ("combination_review", "application_preparation", "company", "saved_support_program"):
+            statement = next(delete for delete in deletes if f"DELETE {table}" in delete)
+            self.assertIn("'admin@govbiz.local', 'member@govbiz.local'", statement)
+        admin_actions = next(delete for delete in deletes if "account_admin_action" in delete)
+        self.assertIn("email = 'admin@govbiz.local'", admin_actions)
         # 모집글은 실제 공고 행에 붙으므로 공고 테이블은 읽기만 합니다.
         self.assertNotRegex(sql, r"(?i)(INSERT INTO|DELETE FROM|UPDATE)\s+support_program\b")
         demo_emails = set(re.findall(r"'([a-z.]+@demo\.govbiz\.local)'", sql))
@@ -89,6 +90,19 @@ class SeedDemoDataTest(unittest.TestCase):
         # 직접 가입한 실제 이메일은 데모 자료에 넣지 않습니다. 허용 도메인은 govbiz.local뿐입니다.
         for email in re.findall(r"[A-Za-z0-9._+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}", sql):
             self.assertTrue(email.endswith("govbiz.local"), email)
+
+    def test_seed_includes_working_review_and_application_preparation_scenarios(self):
+        sql = SEED_FILE.read_text(encoding="utf-8")
+        self.assertIn("INSERT INTO combination_review (", sql)
+        self.assertIn("INSERT INTO combination_review_run (", sql)
+        self.assertIn("INSERT INTO combination_review_run_source", sql)
+        self.assertIn("'demo-seed-no-paid-call'", sql)
+        for stage in ("APPLICATION", "SELECTION", "COMMITMENT", "AGREEMENT", "EXECUTION", "FUNDING"):
+            self.assertIn(f"'stage', '{stage}'", sql)
+        self.assertIn("INSERT INTO application_preparation (", sql)
+        self.assertIn("INSERT INTO application_preparation_fact (", sql)
+        self.assertIn("INSERT INTO application_preparation_content (", sql)
+        self.assertIn("bizinfo-pbln-000000000118979-innovation-voucher-2026-v1", sql)
 
     def test_compose_entrypoint_waits_for_programs_and_respects_the_switch(self):
         entrypoint = SCRIPT.with_name("seed-demo-data-entrypoint.sh").read_text(encoding="utf-8")

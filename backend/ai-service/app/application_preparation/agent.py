@@ -19,7 +19,7 @@ from app.application_preparation.document import DOCUMENT_INSTRUCTIONS, Document
 
 
 class ApplicationPreparationAgent:
-    """One structured interpretation call with no tools, handoffs, retries or fallback."""
+    """Structured application calls with no tools or handoffs."""
 
     def __init__(self, *, model: Model, model_timeout_seconds: float, run_timeout_seconds: float):
         self._run_timeout_seconds = run_timeout_seconds
@@ -67,8 +67,40 @@ class ApplicationPreparationAgent:
             ),
         )
 
-    async def place_document(self, request: DocumentRequest) -> DocumentSelection:
-        content = [{"type": "input_text", "text": json.dumps(request.model_dump(exclude={"pageImages"}), ensure_ascii=False)}]
+    async def place_document(
+        self,
+        request: DocumentRequest,
+        excluded_target_ids: set[str] | None = None,
+        rejected_output: DocumentSelection | None = None,
+    ) -> DocumentSelection:
+        prompt: dict = request.model_dump(exclude={"pageImages"})
+        content = [{"type": "input_text", "text": json.dumps(prompt, ensure_ascii=False)}]
+        if not request.facts:
+            classification = {
+                "classificationOnly": {
+                    "validExampleTargetIds": [target.id for target in request.targets if target.exampleText.strip()],
+                    "instruction": (
+                        "Return no placements and no unmapped facts. Partition every validExampleTargetId exactly "
+                        "once between clearExampleTargetIds and preserveExampleTargetIds. Never add another ID."
+                    ),
+                },
+            }
+            content.append({"type": "input_text", "text": json.dumps(classification, ensure_ascii=False)})
+        if excluded_target_ids is not None:
+            repair = {
+                "repair": {
+                    "rejectedSelection": rejected_output.model_dump() if rejected_output is not None else None,
+                    "excludedPlacementTargetIds": sorted(excluded_target_ids),
+                    "validExampleTargetIds": [target.id for target in request.targets if target.exampleText.strip()],
+                    "instruction": (
+                        "Return a complete selection for the supplied repair facts. Never place an answer in an "
+                        "excludedPlacementTargetId. Use a distinct remaining target for each fact or mark it "
+                        "unmapped. Independently partition every validExampleTargetId exactly once between the "
+                        "clear and preserve lists, and never add another example ID."
+                    ),
+                },
+            }
+            content.append({"type": "input_text", "text": json.dumps(repair, ensure_ascii=False)})
         content.extend({"type": "input_image", "image_url": f"data:image/png;base64,{page}", "detail": "high"} for page in request.pageImages)
         try:
             async with asyncio.timeout(self._run_timeout_seconds):

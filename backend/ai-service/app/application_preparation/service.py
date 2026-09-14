@@ -16,7 +16,13 @@ from app.application_preparation.models import (
 from app.application_preparation.prompt import PROMPT_VERSION
 from app.application_preparation.draft_prompt import DRAFT_PROMPT_VERSION
 from app.application_preparation.models import DraftRequest, validate_draft
-from app.application_preparation.document import DocumentRequest, DocumentValidationError, validate_document
+from app.application_preparation.document import (
+    DocumentRequest,
+    DocumentValidationError,
+    validate_document,
+    validate_example_classification,
+    validate_placements,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -39,6 +45,72 @@ class ApplicationPreparationService:
         try:
             output = await self.agent.place_document(request)
             stage = "validation"
+            repair_example_classification: tuple[list[str], list[str]] | None = None
+            try:
+                validate_placements(request, output)
+            except DocumentValidationError as error:
+                if error.reason != "SHARED_ANSWER_TARGET":
+                    raise
+                assignments: dict[str, list[str]] = {}
+                for placement in output.placements:
+                    assignments.setdefault(placement.targetId, []).append(placement.factId)
+                shared_target_ids = {target_id for target_id, fact_ids in assignments.items() if len(fact_ids) > 1}
+                shared_fact_ids = {
+                    fact_id for target_id in shared_target_ids for fact_id in assignments[target_id]
+                }
+                kept_shared_fact_ids = {
+                    assignments[target_id][0] for target_id in shared_target_ids
+                }
+                repair_fact_ids = shared_fact_ids - kept_shared_fact_ids
+                base_placements = [
+                    placement for placement in output.placements if placement.factId not in repair_fact_ids
+                ]
+                excluded_target_ids = {placement.targetId for placement in base_placements}
+                repair_request = request.model_copy(update={
+                    "facts": [fact for fact in request.facts if fact.id in repair_fact_ids],
+                })
+                rejected_repair = output.model_copy(update={
+                    "placements": [placement for placement in output.placements if placement.factId in repair_fact_ids],
+                    "unmappedFactIds": [],
+                })
+                stage = "repair-model"
+                repaired = await self.agent.place_document(repair_request, excluded_target_ids, rejected_repair)
+                stage = "repair-validation"
+                validate_placements(repair_request, repaired)
+                if any(placement.targetId in excluded_target_ids for placement in repaired.placements):
+                    raise DocumentValidationError("REPAIR_EXCLUDED_TARGET")
+                try:
+                    validate_example_classification(request, repaired)
+                    repair_example_classification = (
+                        repaired.clearExampleTargetIds,
+                        repaired.preserveExampleTargetIds,
+                    )
+                except DocumentValidationError:
+                    pass
+                output = output.model_copy(update={
+                    "placements": [*base_placements, *repaired.placements],
+                    "unmappedFactIds": [*output.unmappedFactIds, *repaired.unmappedFactIds],
+                })
+            try:
+                validate_example_classification(request, output)
+                example_classification = (output.clearExampleTargetIds, output.preserveExampleTargetIds)
+            except DocumentValidationError:
+                if repair_example_classification is not None:
+                    example_classification = repair_example_classification
+                else:
+                    stage = "example-classification-model"
+                    classification_request = request.model_copy(update={"facts": []})
+                    classification = await self.agent.place_document(classification_request)
+                    stage = "example-classification-validation"
+                    validate_document(classification_request, classification)
+                    example_classification = (
+                        classification.clearExampleTargetIds,
+                        classification.preserveExampleTargetIds,
+                    )
+            output = output.model_copy(update={
+                "clearExampleTargetIds": example_classification[0],
+                "preserveExampleTargetIds": example_classification[1],
+            })
             validate_document(request, output)
             return {"contractVersion": "application-document-v1", **output.model_dump()}
         except TimeoutError as error:
