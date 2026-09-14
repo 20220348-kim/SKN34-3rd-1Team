@@ -37,6 +37,9 @@ export CNTRADE_NOTICE_SYNC_INITIAL_DELAY="PT0S"
 export CNTRADE_NOTICE_SYNC_FIXED_DELAY="PT2S"
 export OPENAI_API_KEY="compose-verification-key-never-sent"
 export OPENAI_BASE_URL="http://openai-stub:8002/v1"
+# Smoke scenarios create their own records and must start without optional demo data.
+export DEMO_SEED_ENABLED="false"
+export DEMO_SEED_FORCE="false"
 # 개발자 .env에 리포트가 켜져 있어도 검증 스택에서 외부 메일을 보내지 않는다.
 export DAILY_REPORT_ENABLED="false"
 export DAILY_REPORT_QUEUE_ENABLED="true"

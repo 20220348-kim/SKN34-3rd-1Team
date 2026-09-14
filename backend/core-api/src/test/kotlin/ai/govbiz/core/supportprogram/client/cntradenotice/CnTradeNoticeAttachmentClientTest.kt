@@ -37,7 +37,7 @@ class CnTradeNoticeAttachmentClientTest {
         val result = client.collect("CNTRADE_NOTICE", "3862", title, "공식 본문 내용")
 
         assertEquals(title, result.programTitle)
-        assertEquals(detail, result.sourcePageUrl)
+        assertEquals(detail.toString(), result.sourcePageUrl)
         assertEquals("신청서.pdf", result.files.single().fileName)
         assertEquals("PDF", result.files.single().format)
         assertArrayEquals(byteArrayOf(4, 5, 6), result.files.single().bytes)
