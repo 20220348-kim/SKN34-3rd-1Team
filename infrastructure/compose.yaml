@@ -242,6 +242,30 @@ services:
       retries: 12
       start_period: 20s
 
+  # 데모 데이터 적재. core-api가 healthy(마이그레이션 완료)된 뒤 실행되며, 데모 계정이 이미 있으면 건너뜁니다(최초 1회).
+  # DEMO_SEED_ENABLED=false면 바로 종료하고, DEMO_SEED_FORCE=true면 데모 자료를 지우고 다시 넣습니다.
+  demo-seed:
+    image: mysql:8.4
+    init: true
+    restart: "no"
+    depends_on:
+      mysql:
+        condition: service_healthy
+      core-api:
+        condition: service_healthy
+    environment:
+      DEMO_SEED_ENABLED: ${DEMO_SEED_ENABLED:-true}
+      DEMO_SEED_FORCE: ${DEMO_SEED_FORCE:-false}
+      DEMO_SEED_WAIT_SECONDS: ${DEMO_SEED_WAIT_SECONDS:-600}
+      MYSQL_HOST: mysql
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-govbiz}
+      MYSQL_USER: ${MYSQL_USER:-govbiz}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-govbiz-local}
+    volumes:
+      - ./seed:/seed:ro
+      - ./scripts/seed-demo-data-entrypoint.sh:/seed-entrypoint.sh:ro
+    entrypoint: ["sh", "/seed-entrypoint.sh"]
+
   web:
     build:
       context: ../frontend

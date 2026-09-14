@@ -127,6 +127,9 @@ OPENAI_API_KEY=발급받은_OpenAI_API_키
 | `ACCOUNT_SESSION_IDLE_TTL` | `P7D` | 마지막 사용 뒤 세션을 끝내는 유휴 기간 |
 | `ACCOUNT_JWT_SECRET` | 로컬 개발용 문자열 | 세션 JWT 서명 비밀키(32자 이상). Core API 코드에는 기본값이 없으며 운영 환경에서는 반드시 교체 |
 | `ACCOUNT_COOKIE_SECURE` | `false` | 세션 쿠키 `Secure` 속성. Compose는 http라 끄고, HTTPS 운영에서는 `true` |
+| `DEMO_SEED_ENABLED` | `true` | 첫 기동 때 `demo-seed` 서비스가 [데모 데이터](#데모-데이터)를 넣을지 여부. 데모 계정이 이미 있으면 건너뛰며 직접 가입한 계정은 건드리지 않음 |
+| `DEMO_SEED_FORCE` | `false` | `true`면 데모 계정이 있어도 데모 자료를 지우고 다시 넣음. 보통 `DEMO_SEED_FORCE=true docker compose run --rm demo-seed`로 한 번만 씀 |
+| `DEMO_SEED_WAIT_SECONDS` | `600` | 데모 모집글을 붙일 기업마당 공고(접수 마감 3주 이상 남은 것 6건)가 동기화될 때까지 기다리는 최대 시간 |
 | `ACCOUNT_DEV_LOGIN_ENABLED` | `true` | Compose 개발 환경에서는 `POST /api/v1/auth/dev-login`으로 관리자(`admin@govbiz.local`) 또는 회원(`member@govbiz.local`) 시드 세션을 바로 발급. 운영에서는 `false` |
 | `ACCOUNT_DEV_LOGIN_EMAIL` | `admin@govbiz.local` | 개발용 관리자 시드 계정 이메일 |
 | `ACCOUNT_DEV_LOGIN_MEMBER_EMAIL` | `member@govbiz.local` | 개발용 회원 시드 계정 이메일 |
@@ -348,6 +351,29 @@ docker compose --env-file .env --file infrastructure/compose.yaml down --remove-
 ```bash
 docker compose --env-file .env --file infrastructure/compose.yaml down --volumes --remove-orphans
 ```
+
+
+### 데모 데이터
+
+`docker compose up -d`를 하면 `demo-seed` 서비스가 `core-api`가 healthy(Flyway 마이그레이션 완료)된 뒤 실행되어 **데모 계정이 없을 때만**
+[`infrastructure/seed/demo-data.sql`](seed/demo-data.sql)을 MySQL에 넣고 끝납니다. 계정 22개(개발용 시드 admin·member 포함, 소셜 전용 3개),
+기업 16개(협업·파트너 설정 12개), 파트너 모집글 6개(마감 1·기한 지남 1), 제안 11개(대기·수락·거절·철회·만료), 관심 공고 5개, 관리자 조치 기록 2건입니다.
+모집글은 접수 마감이 3주 이상 남은 기업마당 공고 6건에 붙이므로 공고 동기화가 끝날 때까지(최대 `DEMO_SEED_WAIT_SECONDS`) 기다렸다가 넣고,
+공고가 부족하면 이유를 남기고 실패합니다(`BIZINFO_API_KEY` 확인). `DEMO_SEED_ENABLED=false`면 아무것도 하지 않습니다.
+
+`jihoon.park@demo.govbiz.local` 계정이 있으면 이미 적재된 것으로 보고 건너뛰므로 이후 기동에서는 데모 자료가 유지됩니다.
+초기 상태로 되돌리거나 마감일을 오늘 기준으로 다시 맞추려면 `DEMO_SEED_FORCE=true docker compose run --rm demo-seed`를 실행합니다.
+이때 `@demo.govbiz.local` 계정과 시드 계정의 기업·모집글·제안·관심 공고를 지우고 다시 넣으며,
+**그 밖의 계정(직접 가입한 실제 이메일 등)은 읽지도 지우지도 않습니다.** 스택을 띄운 채 호스트에서 직접 넣으려면
+`./infrastructure/scripts/seed-demo-data.sh`를 씁니다(이 스크립트는 건너뛰기 없이 항상 다시 넣습니다).
+
+| 계정 | 비밀번호 | 용도 |
+|---|---|---|
+| `member@govbiz.local` | `govbiz-admin1`(개발용 로그인도 가능) | 모집글 2개(모집 중·마감), 받은 제안 3건, 보낸 제안 2건, 관심 공고 5건 |
+| `admin@govbiz.local` | `govbiz-admin1` | 관리자 계정 관리 화면(요약·목록·조치 기록), 가상 기업 1개와 보낸 제안 1건 |
+| `*@demo.govbiz.local` 20개 | `govbiz-demo1` | 일반 회원. `woojin.han`·`chaewon.song`·`jiwoo.seo`는 소셜 전용이라 비밀번호가 없음 |
+
+기업명·사업자등록번호·이메일은 모두 가상입니다. 로컬 데이터를 초기화(`down --volumes`)하면 다음 기동 때 다시 들어갑니다.
 
 ## 통합 smoke
 
