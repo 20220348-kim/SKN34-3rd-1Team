@@ -214,17 +214,96 @@ def _canonical_display_text(value: str, maximum: int, path: str) -> str:
     return normalized
 
 
-def _canonical_source_quote(source: str, proposed: str) -> str | None:
+def _source_spans(source: str, proposed: str, *, allow_layout_variants: bool = True) -> list[tuple[int, int]]:
     trimmed = proposed.strip()
     if not trimmed:
-        return None
-    if trimmed in source:
-        return trimmed
+        return []
+
+    exact = [match.span() for match in re.finditer(re.escape(trimmed), source)]
+    if exact:
+        return exact
+
     parts = re.split(r"\s+", trimmed)
-    match = re.search(r"\s+".join(re.escape(part) for part in parts), source)
-    if match is None or len(match.group(0)) > 300:
+    whitespace_tolerant = [
+        match.span() for match in re.finditer(r"\s*".join(re.escape(part) for part in parts), source)
+    ]
+    if whitespace_tolerant:
+        return whitespace_tolerant
+    if not allow_layout_variants:
+        return []
+
+    # Official forms frequently split labels across table runs or use visually equivalent brackets and bullets.
+    # Align only letters and numbers, then return the original source span so downstream evidence stays verbatim.
+    source_key: list[str] = []
+    source_indexes: list[int] = []
+    for index, character in enumerate(source):
+        for normalized in unicodedata.normalize("NFKC", character).casefold():
+            if normalized.isalnum():
+                source_key.append(normalized)
+                source_indexes.append(index)
+    proposed_key = "".join(
+        normalized
+        for character in trimmed
+        for normalized in unicodedata.normalize("NFKC", character).casefold()
+        if normalized.isalnum()
+    )
+    if len(proposed_key) < 2:
+        return []
+
+    joined_source = "".join(source_key)
+    spans: list[tuple[int, int]] = []
+    offset = 0
+    while (found := joined_source.find(proposed_key, offset)) >= 0:
+        spans.append((source_indexes[found], source_indexes[found + len(proposed_key) - 1] + 1))
+        offset = found + 1
+    return list(dict.fromkeys(spans))
+
+
+def _canonical_source_quote(
+    source: str,
+    proposed: str,
+    *,
+    label: str | None = None,
+    options: list[str] | None = None,
+) -> str | None:
+    proposed_spans = [
+        span for span in _source_spans(source, proposed, allow_layout_variants=False)
+        if span[1] - span[0] <= 300
+    ]
+    if proposed_spans:
+        start, end = min(proposed_spans, key=lambda span: (span[1] - span[0], span[0]))
+        return source[start:end]
+
+    if label is not None:
+        option_values = options or []
+        option_spans = {option: _source_spans(source, option) for option in option_values}
+        candidates: list[tuple[int, int]] = []
+        for label_start, label_end in _source_spans(source, label):
+            start, end = label_start, label_end
+            for option in option_values:
+                nearby = [
+                    span for span in option_spans[option]
+                    if max(end, span[1]) - min(start, span[0]) <= 300
+                ]
+                if not nearby:
+                    break
+                option_start, option_end = min(
+                    nearby,
+                    key=lambda span: (max(end, span[1]) - min(start, span[0]), span[0]),
+                )
+                start, end = min(start, option_start), max(end, option_end)
+            else:
+                if end - start <= 300:
+                    candidates.append((start, end))
+        if candidates:
+            start, end = min(candidates, key=lambda span: (span[1] - span[0], span[0]))
+            return source[start:end]
+
+    relaxed_spans = [span for span in _source_spans(source, proposed) if span[1] - span[0] <= 300]
+    if not relaxed_spans:
         return None
-    return match.group(0)
+    start, end = min(relaxed_spans, key=lambda span: (span[1] - span[0], span[0]))
+    return source[start:end]
 
 
 def _unique_key(key: str, used: set[str]) -> str:
@@ -275,7 +354,12 @@ def validate_discovery(request: DiscoverFormsRequest, output: FormDiscoverySelec
                     raise FormDiscoveryValidationError("UNKNOWN_EVIDENCE_BLOCK", path=f"{field_path}.evidenceBlockId")
                 field.label = _canonical_display_text(field.label, 100, f"{field_path}.label")
                 field.guidance = _canonical_display_text(field.guidance, 500, f"{field_path}.guidance")
-                canonical_quote = _canonical_source_quote(block.text, field.evidenceQuote)
+                canonical_quote = _canonical_source_quote(
+                    block.text,
+                    field.evidenceQuote,
+                    label=field.label,
+                    options=field.options,
+                )
                 if canonical_quote is None:
                     raise FormDiscoveryValidationError(
                         "EVIDENCE_QUOTE_MISMATCH",
@@ -283,11 +367,17 @@ def validate_discovery(request: DiscoverFormsRequest, output: FormDiscoverySelec
                         code_point_count=len(field.evidenceQuote),
                     )
                 field.evidenceQuote = canonical_quote
-                if len(field.options) != len(set(field.options)) or len(field.options) == 1:
-                    raise FormDiscoveryValidationError("INVALID_CHOICE_OPTIONS", path=f"{field_path}.options")
+                canonical_options: list[str] = []
                 for option in field.options:
-                    if not option or len(option) > 100 or option != option.strip() or option not in canonical_quote:
+                    if not option or len(option) > 100 or option != option.strip():
                         raise FormDiscoveryValidationError("CHOICE_OPTION_NOT_IN_SOURCE", path=f"{field_path}.options")
+                    canonical_option = _canonical_source_quote(canonical_quote, option)
+                    if canonical_option is None or len(canonical_option) > 100:
+                        raise FormDiscoveryValidationError("CHOICE_OPTION_NOT_IN_SOURCE", path=f"{field_path}.options")
+                    canonical_options.append(canonical_option)
+                if len(canonical_options) != len(set(canonical_options)) or len(canonical_options) == 1:
+                    raise FormDiscoveryValidationError("INVALID_CHOICE_OPTIONS", path=f"{field_path}.options")
+                field.options = canonical_options
 
 
 def validate_selection(request: InterpretRequest, output: InterpretationSelection) -> None:

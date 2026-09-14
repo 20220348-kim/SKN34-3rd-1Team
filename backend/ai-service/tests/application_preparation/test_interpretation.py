@@ -204,9 +204,38 @@ def test_discovery_merges_repeated_document_candidates_and_makes_generated_keys_
     assert [section["sectionKey"] for section in forms[0]["sections"]] == ["business-plan", "business-plan-2"]
 
 
-def test_discovery_rejects_a_field_without_exact_source_evidence():
+def test_discovery_recovers_a_verbatim_quote_from_the_grounded_field_label():
     output = discovery_selection_data()
     output["forms"][0]["sections"][0]["fields"][0]["evidenceQuote"] = "문서에 없는 항목"
+    agent = SimpleNamespace(discover=AsyncMock(return_value=FormDiscoverySelection.model_validate(output)))
+
+    result = asyncio.run(ApplicationPreparationService(agent, "test-model").discover(
+        DiscoverFormsRequest.model_validate(discovery_request_data()),
+    ))
+
+    assert result["forms"][0]["sections"][0]["fields"][0]["evidenceQuote"] == "사업\n개요"
+
+
+def test_discovery_recovers_the_original_punctuation_in_a_field_quote():
+    request = discovery_request_data()
+    output = discovery_selection_data()
+    block = request["documents"][0]["blocks"][0]
+    field = output["forms"][0]["sections"][0]["fields"][0]
+    block["text"] += "\n사업명(국문)을 작성해 주세요."
+    field.update(label="사업명(국문)", evidenceQuote="사업명【국문】")
+    agent = SimpleNamespace(discover=AsyncMock(return_value=FormDiscoverySelection.model_validate(output)))
+
+    result = asyncio.run(ApplicationPreparationService(agent, "test-model").discover(
+        DiscoverFormsRequest.model_validate(request),
+    ))
+
+    assert result["forms"][0]["sections"][0]["fields"][0]["evidenceQuote"] == "사업명(국문)"
+
+
+def test_discovery_still_rejects_a_field_without_any_source_anchor():
+    output = discovery_selection_data()
+    field = output["forms"][0]["sections"][0]["fields"][0]
+    field.update(label="원문에 없는 문항", evidenceQuote="원문에 없는 근거")
     agent = SimpleNamespace(discover=AsyncMock(return_value=FormDiscoverySelection.model_validate(output)))
     with pytest.raises(ApplicationPreparationError, match="APPLICATION_PREPARATION_FAILED"):
         asyncio.run(ApplicationPreparationService(agent, "test-model").discover(
@@ -312,7 +341,8 @@ def test_discovery_execution_errors_are_not_reported_as_confirmed_validation_fai
 
 def test_discovery_evidence_mismatch_returns_confirmed_validation_failure():
     output = discovery_selection_data()
-    output["forms"][0]["sections"][0]["fields"][0]["evidenceQuote"] = "원문에 없는 근거"
+    field = output["forms"][0]["sections"][0]["fields"][0]
+    field.update(label="원문에 없는 문항", evidenceQuote="원문에 없는 근거")
     app = create_app(settings=Settings(openai_api_key="unused", openai_model="test-model", llm_model_timeout_seconds=2, llm_run_timeout_seconds=3))
     app.state.container.application_preparation_service = ApplicationPreparationService(
         SimpleNamespace(discover=AsyncMock(return_value=FormDiscoverySelection.model_validate(output))), "test-model",
@@ -341,3 +371,25 @@ def test_discovery_choices_must_be_present_in_the_exact_field_quote(options, val
     else:
         with pytest.raises(FormDiscoveryValidationError):
             validate_discovery(request, output)
+
+
+def test_discovery_recovers_a_choice_quote_from_the_grounded_label_and_options():
+    from app.application_preparation.models import validate_discovery
+    request = discovery_request_data()
+    output = discovery_selection_data()
+    field = output["forms"][0]["sections"][0]["fields"][0]
+    block = next(block for block in request["documents"][0]["blocks"] if block["blockId"] == field["evidenceBlockId"])
+    block["text"] += "\n신청 유형: 신규 / 계속"
+    field.update(
+        label="신청 유형",
+        options=["신규", "계속"],
+        evidenceQuote="신청 유형은 신규 또는 계속 중 선택",
+    )
+    request = DiscoverFormsRequest.model_validate(request)
+    output = FormDiscoverySelection.model_validate(output)
+
+    validate_discovery(request, output)
+
+    repaired = output.forms[0].sections[0].fields[0]
+    assert repaired.evidenceQuote == "신청 유형: 신규 / 계속"
+    assert repaired.options == ["신규", "계속"]
