@@ -1,4 +1,5 @@
 import type { SavedSupportProgram } from '../../../../domain/entities/SavedSupportProgram'
+import type { SupportProgramStatus } from '../../../../domain/entities/SupportProgram'
 
 /** 회원이 저장한 공고를 달력과 목록에 표시하기 위한 화면 모델입니다. */
 export type CalendarProgram = {
@@ -9,6 +10,8 @@ export type CalendarProgram = {
   organization: string
   startDate: string | null
   endDate: string | null
+  /** 서버가 계산한 접수 상태입니다. 날짜로 다시 계산하지 않습니다. */
+  status: SupportProgramStatus
   region: string
   regionValues?: readonly string[]
   category: string
@@ -63,6 +66,7 @@ export function toCalendarPrograms(savedPrograms: readonly SavedSupportProgram[]
       organization: program.organization,
       startDate: program.applicationStartDate,
       endDate: program.applicationEndDate,
+      status: program.status,
       region: program.regions.join(' · ') || '지역 미분류',
       regionValues: program.regions,
       category: program.categories.join(' · ') || '분야 미분류',
@@ -92,6 +96,7 @@ export function createCalendarPreview(today: string): CalendarProgram[] {
       organization: organizations[index % organizations.length]!,
       startDate: `${month}-${String(startDay).padStart(2, '0')}`,
       endDate: `${month}-${String(endDay).padStart(2, '0')}`,
+      status: 'OPEN',
       region: regions[index % regions.length]!,
       category: categories[index % categories.length]!,
       target: targets[index % targets.length]!,

@@ -63,6 +63,25 @@ it('관심 공고를 내부 스크롤 없이 달력과 페이지 목록으로 �
   expect(screen.getByRole('table', { name: '2028년 1월 접수 일정' })).toBeTruthy()
 })
 
+it('관심 공고 목록은 날짜가 아니라 서버 접수 상태를 표시한다', () => {
+  const base = createCalendarPreview('2026-09-10')[0]!
+  const programs = (['OPEN', 'UPCOMING', 'CLOSED', 'UNKNOWN'] as const).map((status, index) => ({
+    ...base,
+    id: `${base.id}-${index}`,
+    startDate: '2099-01-01',
+    endDate: '2099-12-31',
+    status,
+  }))
+  render(<MemoryRouter><SavedProgramsPage initial={{ today: '2026-09-10', programs }} /></MemoryRouter>)
+
+  fireEvent.click(screen.getByRole('tab', { name: '목록 보기' }))
+
+  expect(screen.getByText('접수 중')).toBeTruthy()
+  expect(screen.getByText('접수 예정')).toBeTruthy()
+  expect(screen.getByText('접수 마감')).toBeTruthy()
+  expect(screen.getByText('상태 미확인')).toBeTruthy()
+})
+
 it('진행 관리를 열 때 실제 신청 준비 건만 준비 중 단계에 표시한다', async () => {
   const list = vi.fn().mockResolvedValue({
     items: [{
