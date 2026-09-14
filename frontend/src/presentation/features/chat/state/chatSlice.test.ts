@@ -15,12 +15,14 @@ import {
   interpretationCancelled,
   interpretationStarted,
   interpretationSucceeded,
+  outcomeSeen,
   proposalConfirmed,
   searchCancelled,
   searchFailed,
   searchStarted,
   searchSucceeded,
   searchTimedOut,
+  selectChatActivity,
   selectConversationContext,
   selectConversationCount,
 } from './chatSlice'
@@ -313,3 +315,34 @@ function expectClearedConversation(store: AppStore, accountEmail: string | null)
   expect(selectConversationCount(store.getState())).toBe(0)
   expect(selectConversationContext(store.getState())).toEqual(emptyConversationContext)
 }
+
+
+describe('unseen outcome', () => {
+  it('marks arrived results as unseen until the chat screen reports it saw them', () => {
+    const store = createAppStore()
+    const started = searchStarted('서울 AI')
+    store.dispatch(started)
+    expect(store.getState().chat.unseenOutcome).toBeNull()
+    store.dispatch(searchSucceeded(completeSearchResult({ requestId: started.payload.requestId, programs: [] })))
+    expect(store.getState().chat.unseenOutcome).toBe('search-succeeded')
+    expect(selectChatActivity(store.getState())).toEqual({ kind: 'unseen', outcome: 'search-succeeded', resultCount: 0 })
+    store.dispatch(outcomeSeen())
+    expect(store.getState().chat.unseenOutcome).toBeNull()
+    expect(selectChatActivity(store.getState())).toBeNull()
+
+    const failing = searchStarted('부산')
+    store.dispatch(failing)
+    expect(selectChatActivity(store.getState())).toEqual({ kind: 'searching' })
+    store.dispatch(searchFailed({ query: '부산', requestId: failing.payload.requestId }))
+    expect(store.getState().chat.unseenOutcome).toBe('search-failed')
+
+    store.dispatch(conversationReset())
+    const interpreted = interpretationStarted({ message: '경기', context: emptyConversationContext, pendingClarification: null })
+    store.dispatch(interpreted)
+    expect(selectChatActivity(store.getState())).toEqual({ kind: 'interpreting' })
+    store.dispatch(interpretationSucceeded({ requestId: interpreted.payload.requestId, result: readyConversationProposal(seoulConversationContext) }))
+    expect(store.getState().chat.unseenOutcome).toBe('interpretation-ready')
+    store.dispatch(conversationReset())
+    expect(store.getState().chat.unseenOutcome).toBeNull()
+  })
+})

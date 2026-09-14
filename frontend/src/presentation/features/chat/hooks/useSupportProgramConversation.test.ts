@@ -208,7 +208,26 @@ describe('해석 → 명시적 확인 → 기존 검색', () => {
     expect(search).not.toHaveBeenCalled()
   })
 
-  it.each(['reset', 'unmount'] as const)('%s는 진행 중 해석과 타이머를 취소하고 늦은 제안을 무시한다', async (operation) => {
+  it('unmount는 진행 중 해석을 끊지 않고 늦게 도착한 제안을 보지 않은 결과로 남긴다', async () => {
+    vi.useFakeTimers()
+    const pending = deferred<SupportProgramInterpretation>()
+    const interpret = vi.fn().mockReturnValue(pending.promise)
+    const { result, store, unmount, search } = renderConversation(interpret)
+    act(() => result.current.updateDraft('서울 SW'))
+    let request!: Promise<void>
+    act(() => { request = result.current.submitMessage() })
+    act(() => unmount())
+    expect(interpret.mock.calls[0][1].aborted).toBe(false)
+    expect(vi.getTimerCount()).toBe(1)
+    pending.resolve(readyConversationProposal(seoulConversationContext))
+    await act(async () => request)
+    expect(vi.getTimerCount()).toBe(0)
+    expect(store.getState().chat.interpretation.status).toBe('ready')
+    expect(store.getState().chat.unseenOutcome).toBe('interpretation-ready')
+    expect(search).not.toHaveBeenCalled()
+  })
+
+  it.each(['reset'] as const)('%s는 진행 중 해석과 타이머를 취소하고 늦은 제안을 무시한다', async (operation) => {
     vi.useFakeTimers()
     const pending = deferred<SupportProgramInterpretation>()
     const interpret = vi.fn().mockReturnValue(pending.promise)

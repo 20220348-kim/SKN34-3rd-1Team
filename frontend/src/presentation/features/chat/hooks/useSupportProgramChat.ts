@@ -1,8 +1,8 @@
-import { useEffect, useRef } from 'react'
+import { useEffect } from 'react'
 
 import { appContainer } from '../../../../app/appContainer'
 import { useAppDispatch, useAppSelector } from '../../../../app/hooks'
-import type { AppDispatch, RootState } from '../../../../app/store'
+import type { AppDispatch, AppThunkExtra, RootState } from '../../../../app/store'
 import type { RestoreSupportProgramSearchUseCase } from '../../../../domain/usecases/RestoreSupportProgramSearchUseCase'
 import { SupportProgramSearchRestoreError } from '../../../../domain/errors/SupportProgramSearchRestoreError'
 import type { SearchSupportProgramsUseCase } from '../../../../domain/usecases/SearchSupportProgramsUseCase'
@@ -21,6 +21,7 @@ import {
   interpretationFailed,
   interpretationDismissed,
   interpretationCancelled,
+  outcomeSeen,
   proposalConfirmed,
   selectConversationContext,
   maximumSupportProgramSearchQueryLength,
@@ -36,6 +37,7 @@ import {
   selectChatSearchError,
   selectChatState,
   selectConversationCount,
+  selectChatUnseenOutcome,
   selectIsChatSearching,
   selectIsReadyToSubmit,
 } from '../state/chatSlice'
@@ -52,22 +54,16 @@ export const supportProgramInterpretationTimeoutMilliseconds = 40_000
 
 type SupportProgramSearchUseCase = Pick<SearchSupportProgramsUseCase, 'execute'>
 
-/** 채팅의 Redux 상태와 검색 요청·취소 수명을 관리하는 내부 훅입니다. */
+/**
+ * 채팅의 Redux 상태를 읽고 검색·해석 요청을 시작·취소하는 내부 훅입니다. 진행 중인 HTTP 요청은 이 훅이 아니라
+ * 스토어의 `ChatRequestRegistry`가 쥐고 있어 화면을 떠나도 끊기지 않고, 결과는 Redux로 돌아옵니다.
+ */
 export function useSupportProgramChat(
   searchSupportProgramsUseCase: SupportProgramSearchUseCase = appContainer.resolve('searchSupportProgramsUseCase'),
   interpretConversationUseCase: Pick<InterpretSupportProgramConversationUseCase, 'execute'> = appContainer.resolve('interpretSupportProgramConversationUseCase'),
   restoreSearchUseCase: Pick<RestoreSupportProgramSearchUseCase, 'execute'> = appContainer.resolve('restoreSupportProgramSearchUseCase'),
 ) {
   const dispatchToStore = useAppDispatch()
-  const activeSearchRequest = useRef<{
-    controller: AbortController
-    query: string
-    requestId: string
-    timeoutId: ReturnType<typeof setTimeout>
-  } | null>(null)
-  const activeInterpretationRequest = useRef<{
-    controller: AbortController; requestId: string; timeoutId: ReturnType<typeof setTimeout>
-  } | null>(null)
   const conversationCount = useAppSelector(selectConversationCount)
   const draft = useAppSelector(selectChatDraft)
   const isReadyToSubmit = useAppSelector(selectIsReadyToSubmit)
@@ -78,7 +74,6 @@ export function useSupportProgramChat(
   const searchError = useAppSelector(selectChatSearchError)
   const inputError = useAppSelector((state) => state.chat.searchStatus === 'failed' ? null : state.chat.searchError)
   const searchOptions = useAppSelector((state) => state.chat.searchOptions)
-  const searchRequestId = useAppSelector((state) => state.chat.activeRequestId)
   const interpretation = useAppSelector((state) => state.chat.interpretation)
   const pendingClarification = useAppSelector((state) => state.chat.pendingClarification)
   const conversationQuery = useAppSelector((state) => state.chat.conversationQuery)
@@ -90,84 +85,47 @@ export function useSupportProgramChat(
       supportPurpose: searchOptions.companyConditions?.supportPurpose ?? null },
   }
   const isInterpreting = interpretation.status === 'pending'
+  const unseenOutcome = useAppSelector(selectChatUnseenOutcome)
+  const searchRequestId = useAppSelector((state) => state.chat.activeRequestId)
 
   useEffect(() => {
-    // 로그아웃 등으로 Redux의 요청이 초기화되면 화면이 유지되어도 이전 요청을 취소합니다.
-    const search = activeSearchRequest.current
-    if (search && search.requestId !== searchRequestId) {
-      activeSearchRequest.current = null
-      clearTimeout(search.timeoutId)
-      search.controller.abort()
-    }
-    const interpreting = activeInterpretationRequest.current
-    if (interpreting && interpreting.requestId !== interpretation.requestId) {
-      activeInterpretationRequest.current = null
-      clearTimeout(interpreting.timeoutId)
-      interpreting.controller.abort()
-    }
-  }, [searchRequestId, interpretation.requestId])
+    // 로그아웃·계정 변경으로 Redux의 요청이 초기화되면 스토어가 쥔 이전 요청을 끊습니다. 앱 최상단의 useChatRequestLifecycle과 같은 규칙입니다.
+    dispatchToStore((_dispatch: AppDispatch, _getState: () => RootState, requests: AppThunkExtra) => {
+      if (requests.search && requests.search.requestId !== searchRequestId) requests.takeSearch()
+      if (requests.interpretation && requests.interpretation.requestId !== (interpretation.requestId ?? null)) requests.takeInterpretation()
+    })
+  }, [dispatchToStore, searchRequestId, interpretation.requestId])
 
-  useEffect(() => () => {
-    const interpreting = activeInterpretationRequest.current
-    activeInterpretationRequest.current = null
-    if (interpreting) {
-      clearTimeout(interpreting.timeoutId)
-      interpreting.controller.abort()
-      dispatchToStore(interpretationCancelled(interpreting.requestId))
-    }
-    const currentRequest = activeSearchRequest.current
-    activeSearchRequest.current = null
-    if (!currentRequest) return
-
-    clearTimeout(currentRequest.timeoutId)
-    currentRequest.controller.abort()
-    dispatchToStore(searchCancelled({
-      query: currentRequest.query,
-      requestId: currentRequest.requestId,
-    }))
-  }, [dispatchToStore])
+  // 이 화면이 열려 있으면 도착한 결과는 바로 본 것입니다. 배지·알림을 지웁니다.
+  useEffect(() => {
+    if (unseenOutcome !== null) dispatchToStore(outcomeSeen())
+  }, [dispatchToStore, unseenOutcome])
 
   function startNewConversation() {
-    stopInterpretationRequest()
-    const currentRequest = activeSearchRequest.current
-    activeSearchRequest.current = null
-    if (currentRequest) {
-      clearTimeout(currentRequest.timeoutId)
-      currentRequest.controller.abort()
-    }
-    dispatchToStore(conversationReset())
+    dispatchToStore((dispatch: AppDispatch, _getState: () => RootState, requests: AppThunkExtra) => {
+      requests.takeInterpretation()
+      requests.takeSearch()
+      dispatch(conversationReset())
+    })
   }
 
   function cancelSearch() {
-    if (activeInterpretationRequest.current) {
-      cancelInterpretation()
-      return
-    }
-    const currentRequest = activeSearchRequest.current
-    activeSearchRequest.current = null
-    if (!currentRequest) return
-
-    clearTimeout(currentRequest.timeoutId)
-    currentRequest.controller.abort()
-    dispatchToStore(searchCancelled({
-      query: currentRequest.query,
-      requestId: currentRequest.requestId,
-    }))
-  }
-
-  function stopInterpretationRequest() {
-    const current = activeInterpretationRequest.current
-    activeInterpretationRequest.current = null
-    if (current) {
-      clearTimeout(current.timeoutId)
-      current.controller.abort()
-    }
+    dispatchToStore((dispatch: AppDispatch, _getState: () => RootState, requests: AppThunkExtra) => {
+      if (requests.interpretation) {
+        cancelInterpretation()
+        return
+      }
+      const currentRequest = requests.takeSearch()
+      if (!currentRequest) return
+      dispatch(searchCancelled({ query: currentRequest.query ?? '', requestId: currentRequest.requestId }))
+    })
   }
 
   function cancelInterpretation() {
-    const current = activeInterpretationRequest.current
-    stopInterpretationRequest()
-    dispatchToStore(current ? interpretationCancelled(current.requestId) : interpretationDismissed())
+    dispatchToStore((dispatch: AppDispatch, _getState: () => RootState, requests: AppThunkExtra) => {
+      const current = requests.takeInterpretation()
+      dispatch(current ? interpretationCancelled(current.requestId) : interpretationDismissed())
+    })
   }
 
   function selectSuggestion(suggestion: string) {
@@ -182,6 +140,7 @@ export function useSupportProgramChat(
     async function runSupportProgramSearch(
       dispatchAction: AppDispatch,
       readCurrentState: () => RootState,
+      requests: AppThunkExtra,
     ): Promise<void> {
       const currentState = readCurrentState()
       const currentChatState = selectChatState(currentState)
@@ -204,13 +163,13 @@ export function useSupportProgramChat(
 
       dispatchAction(searchStartedAction)
       const timeoutId = setTimeout(() => {
-        if (activeSearchRequest.current?.requestId !== requestId) return
+        if (requests.search?.requestId !== requestId) return
 
-        activeSearchRequest.current = null
+        requests.search = null
         dispatchAction(searchTimedOut({ query: searchQuery, requestId }))
         requestController.abort()
       }, supportProgramSearchTimeoutMilliseconds)
-      activeSearchRequest.current = {
+      requests.search = {
         controller: requestController,
         query: searchQuery,
         requestId,
@@ -263,11 +222,7 @@ export function useSupportProgramChat(
         })
         dispatchAction(searchFailedAction)
       } finally {
-        const currentRequest = activeSearchRequest.current
-        if (currentRequest?.requestId === requestId) {
-          clearTimeout(currentRequest.timeoutId)
-          activeSearchRequest.current = null
-        }
+        requests.releaseSearch(requestId)
       }
     }
 
@@ -275,7 +230,7 @@ export function useSupportProgramChat(
   }
 
   function runInterpretation(request: SupportProgramInterpretRequest, messageId?: string) {
-    return dispatchToStore(async (dispatch: AppDispatch, getState: () => RootState) => {
+    return dispatchToStore(async (dispatch: AppDispatch, getState: () => RootState, requests: AppThunkExtra) => {
       const state = getState().chat
       if (state.searchStatus === 'pending' || state.interpretation.status === 'pending') return
       const started = interpretationStarted(request, messageId)
@@ -283,12 +238,12 @@ export function useSupportProgramChat(
       const controller = new AbortController()
       dispatch(started)
       const timeoutId = setTimeout(() => {
-        if (activeInterpretationRequest.current?.requestId !== requestId) return
-        activeInterpretationRequest.current = null
+        if (requests.interpretation?.requestId !== requestId) return
+        requests.interpretation = null
         dispatch(interpretationFailed({ requestId, message: '조건 해석 시간이 초과되었습니다. 다시 해석해 주세요.' }))
         controller.abort()
       }, supportProgramInterpretationTimeoutMilliseconds)
-      activeInterpretationRequest.current = { controller, requestId, timeoutId }
+      requests.interpretation = { controller, requestId, timeoutId }
       try {
         const result = await interpretConversationUseCase.execute(request, controller.signal)
         if (!controller.signal.aborted) dispatch(interpretationSucceeded({ requestId, result }))
@@ -302,10 +257,7 @@ export function useSupportProgramChat(
               : '메시지의 조건 변경을 해석하지 못했습니다. 다시 해석해 주세요.',
         }))
       } finally {
-        if (activeInterpretationRequest.current?.requestId === requestId) {
-          clearTimeout(timeoutId)
-          activeInterpretationRequest.current = null
-        }
+        requests.releaseInterpretation(requestId)
       }
     })
   }

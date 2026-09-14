@@ -4,7 +4,11 @@ import { useEffect, useId, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router'
 
 import type { Account } from '../../../domain/entities/Account'
+import { useAppSelector } from '../../../app/hooks'
+import { selectChatActivity } from '../../features/chat/state/chatSlice'
 import { useAuthSession } from '../auth/hooks/useAuthSession'
+import { ChatActivityDot } from '../chat-activity/ChatActivityDot'
+import { ChatActivityPanel } from '../chat-activity/ChatActivityPanel'
 import { usePendingReceivedProposalCount } from '../partner-proposal/useReceivedProposals'
 import { appPaths, publicPaths } from '../routes/appPaths'
 import { appSidebarStyles, sidebarMenuItemClassName } from './AppSidebar.styles'
@@ -133,24 +137,27 @@ function tierLabel(account: Account): string {
  * 계정 정보는 세션에서 읽고, 관리자 메뉴는 관리자에게만 그리며, 화면이 없는 메뉴는 링크로 만들지 않습니다.
  * 로그인한 사용자는 `/app` 아래에만 머무르므로 공개 화면으로 가는 링크는 두지 않습니다.
  */
-export function AppSidebar({ onClose, onNewChat, closeLabel, onNavigate, history, onOpenHistory }: {
+export function AppSidebar({ onClose, onNewChat, closeLabel, onNavigate, history, onOpenHistory, onDeleteHistory }: {
   onClose: () => void
   onNewChat: () => void
   closeLabel: string
   onNavigate: () => void
   history: ChatHistoryViewModel
   onOpenHistory: (id: string) => void
+  /** 삭제 확인 대화상자는 모바일 메뉴 <dialog> 밖에 떠야 하므로 레이아웃이 띄웁니다. */
+  onDeleteHistory: (id: string, title: string) => void
 }) {
   const { pathname } = useLocation()
   const { account, logOut } = useAuthSession()
   const navigate = useNavigate()
   const pendingProposalCount = usePendingReceivedProposalCount()
+  // 진행 중인 검색과 아직 보지 않은 결과는 아래 고정 패널과 해당 대화 기록 항목의 점으로 알립니다.
+  const chatActivity = useAppSelector(selectChatActivity)
   const isSearchPage = pathname === appPaths.chat || pathname.startsWith(appPaths.supportProgramDetail)
   // 계정 카드를 누르면 내 프로필·로그아웃과 관리자 전용 회원·기업 메뉴가 열립니다.
   // 화면을 옮기거나 Esc·바깥 클릭이면 닫힙니다.
   const accountMenuId = useId()
   const accountRef = useRef<HTMLDivElement>(null)
-  const newChatRef = useRef<HTMLButtonElement>(null)
   const [isAccountMenuOpen, setIsAccountMenuOpen] = useState(false)
 
   useEffect(() => {
@@ -189,11 +196,6 @@ export function AppSidebar({ onClose, onNewChat, closeLabel, onNavigate, history
     return item.badge
   }
 
-  async function deleteHistory(id: string, title: string) {
-    if (!window.confirm(`“${title}” 대화를 삭제할까요?\n저장된 질문·답변·검색 결과가 삭제되며 복구할 수 없습니다.`)) return
-    if (await history.remove(id)) newChatRef.current?.focus()
-  }
-
   return (
     <aside className={appSidebarStyles.sidebar} aria-label="작업 사이드바"
       onClick={(event) => { if ((event.target as Element).closest('a')) onNavigate() }}>
@@ -207,7 +209,7 @@ export function AppSidebar({ onClose, onNewChat, closeLabel, onNavigate, history
       </div>
 
       <div className={appSidebarStyles.scrollArea}>
-        <button ref={newChatRef} type="button" className={`${appSidebarStyles.newChatButton} ${sidebarMenuItemClassName(isSearchPage ? 'active' : 'inactive')}`}
+        <button type="button" className={`${appSidebarStyles.newChatButton} ${sidebarMenuItemClassName(isSearchPage ? 'active' : 'inactive')}`}
           aria-current={isSearchPage ? 'page' : undefined} title="대화와 적용 조건을 초기화합니다" onClick={onNewChat}>
           <MenuIconGraphic name="search" /><span>지원사업 새검색</span>
         </button>
@@ -252,11 +254,13 @@ export function AppSidebar({ onClose, onNewChat, closeLabel, onNavigate, history
             aria-current={history.activeId === item.id && pathname === appPaths.chat ? 'page' : undefined}
             onClick={() => onOpenHistory(item.id)}>
             <span className="min-w-0 flex-1 truncate font-normal">{item.title}</span>
+            {/* 검색 중이거나 결과가 도착한 대화는 글자 대신 점으로 표시해 좁은 폭에서도 잘리지 않습니다. */}
+            {chatActivity && history.activeId === item.id ? <ChatActivityDot activity={chatActivity} /> : null}
             {history.openingId === item.id ? <span className="shrink-0 text-xs">여는 중</span> : null}
             </button>
             <button type="button" className={`${appSidebarStyles.iconButton} min-h-11 min-w-11 hover:text-red-700 disabled:cursor-wait disabled:opacity-40`}
               disabled={history.deletingId !== null} aria-label={`대화 삭제: ${item.title}`} title="대화 삭제"
-              onClick={() => { void deleteHistory(item.id, item.title) }}><MenuIconGraphic name="trash" /></button>
+              onClick={() => onDeleteHistory(item.id, item.title)}><MenuIconGraphic name="trash" /></button>
           </div>)}
           {history.deletingId !== null ? <p className="px-3 text-xs text-[#888]" role="status">대화 삭제 중…</p> : null}
           {history.deleteError ? <p className="px-3 text-xs text-red-700" role="alert">{history.deleteError}</p> : null}
@@ -271,6 +275,8 @@ export function AppSidebar({ onClose, onNewChat, closeLabel, onNavigate, history
           </div> : history.saving ? <p className="px-3 text-xs text-[#888]" role="status">대화 저장 중…</p> : null}
         </section> : null}
       </div>
+
+      <ChatActivityPanel />
 
       {account ? (
         <div className={appSidebarStyles.account} ref={accountRef}>

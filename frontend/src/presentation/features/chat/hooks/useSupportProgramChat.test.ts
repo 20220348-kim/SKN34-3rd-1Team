@@ -284,7 +284,7 @@ describe('Redux chat flow', () => {
     expect(store.getState().chat.messages.at(-1)?.programs?.[0]?.id).toBe('fixture-seoul-ai-business')
   })
 
-  it('aborts a pending request and clears pending state on unmount', async () => {
+  it('keeps a pending request alive after unmount and stores the result as unseen until the screen returns', async () => {
     const pending = deferredSearchResult()
     let requestSignal: AbortSignal | undefined
     const execute = vi.fn((_command: unknown, signal?: AbortSignal) => {
@@ -301,13 +301,39 @@ describe('Redux chat flow', () => {
     })
     await waitFor(() => expect(execute).toHaveBeenCalledOnce())
 
+    // 화면을 떠나도 요청은 스토어가 쥐고 있어 끊기지 않습니다.
     unmount()
-    expect(requestSignal?.aborted).toBe(true)
-    expect(store.getState().chat.searchStatus).toBe('idle')
+    expect(requestSignal?.aborted).toBe(false)
+    expect(store.getState().chat.searchStatus).toBe('pending')
 
     pending.resolve(completeSearchResult({ query: '창업', programs: [supportPrograms[1]] }))
     await search
-    expect(store.getState().chat.messages).toHaveLength(2)
+    expect(store.getState().chat.searchStatus).toBe('idle')
+    expect(store.getState().chat.messages.at(-1)?.programs?.[0]?.id).toBe(supportPrograms[1]!.id)
+    expect(store.getState().chat.unseenOutcome).toBe('search-succeeded')
+
+    // 화면이 다시 열리면 결과를 본 것으로 표시합니다.
+    renderChatHook(store, createSearchUseCase(execute))
+    await waitFor(() => expect(store.getState().chat.unseenOutcome).toBeNull())
+  })
+
+  it('logging out aborts the request the store still holds', async () => {
+    const pending = deferredSearchResult()
+    let requestSignal: AbortSignal | undefined
+    const execute = vi.fn((_command: unknown, signal?: AbortSignal) => {
+      requestSignal = signal
+      return pending.promise
+    })
+    const store = createAppStore()
+    const { result } = renderChatHook(store, createSearchUseCase(execute))
+    act(() => store.dispatch(draftChanged('창업')))
+    act(() => { void result.current.submitMessage() })
+    await waitFor(() => expect(execute).toHaveBeenCalledOnce())
+
+    act(() => result.current.startNewConversation())
+    expect(requestSignal?.aborted).toBe(true)
+    expect(store.getState().chat.searchStatus).toBe('idle')
+    expect(store.getState().chat.messages).toHaveLength(1)
   })
 })
 
