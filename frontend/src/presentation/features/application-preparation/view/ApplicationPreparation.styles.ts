@@ -36,5 +36,4 @@ export const applicationPreparationStyles = {
   suggestion: 'flex flex-col gap-2 rounded-xl border border-sky-200 bg-sky-50 p-3',
   checkboxLabel: 'flex items-start gap-2 text-sm font-bold text-slate-900',
   quote: 'm-0 border-l-2 border-sky-300 pl-3 text-xs leading-5 text-slate-600',
-  locator: 'm-0 text-xs leading-5 text-slate-500',
 } as const

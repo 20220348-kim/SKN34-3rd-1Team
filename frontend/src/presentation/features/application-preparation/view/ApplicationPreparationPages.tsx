@@ -66,22 +66,21 @@ function OfficialFormSummary({ form }: { form: ApplicationForm }) {
     <h2 className={s.cardTitle} id="official-form-summary-title">공고 및 공식 양식</h2>
     <dl className={s.details}>
       <div><dt>공고명</dt><dd>{form.programTitle}</dd></div>
-      <div><dt>양식명</dt><dd>{form.formTitle}</dd></div>
       <div><dt>공식 첨부</dt><dd>{form.attachmentFileName}</dd></div>
-      <div><dt>파일 SHA-256</dt><dd className="break-all font-mono text-xs">{form.attachmentSha256}</dd></div>
     </dl>
     <p className={s.muted}>{form.verificationStatus === 'SOURCE_DOCUMENT_EXTRACTED'
-      ? '공식 첨부에서 AI가 추출한 작성 문항입니다. 문항 위치와 원문을 직접 대조해 주세요.'
-      : '공식 파일 해시와 문항 위치를 확인한 양식입니다.'} 기관 검수 완료나 선정 가능성을 뜻하지 않습니다.</p>
+      ? '공식 첨부에서 AI가 추출한 작성 문항입니다. 작성 문항과 원문을 직접 대조해 주세요.'
+      : '공식 첨부와 작성 문항을 확인한 양식입니다.'} 기관 검수 완료나 선정 가능성을 뜻하지 않습니다.</p>
     <a className={s.officialLink} href={form.sourceUrl} target="_blank" rel="noreferrer">
       공식 공고 열기<span className="sr-only">: {form.programTitle} (새 창)</span>
     </a>
   </section>
 }
 
-function SectionInputEditor({ section, vm }: {
+function SectionInputEditor({ section, vm, isLastSection }: {
   section: ApplicationFormSection
   vm: ReturnType<typeof useApplicationPreparationEditorViewModel>
+  isLastSection: boolean
 }) {
   const [questionIndex, setQuestionIndex] = useState(0)
   const field = section.fields[questionIndex]
@@ -136,14 +135,15 @@ function SectionInputEditor({ section, vm }: {
       <button className={s.primary} type="button" disabled={questionIndex >= section.fields.length - 1} onClick={() => setQuestionIndex((index) => index + 1)}>다음 질문</button>
     </div>
     <p className={s.muted}>답변은 질문을 이동해도 유지됩니다. 모르는 내용은 미정이라고 적거나 건너뛰세요. 입력을 마치면 문서 답변 저장을 눌러주세요.</p>
+    {isLastSection && <p className={s.notice}>마지막 항목입니다. 목록에서 저장 전 답변이나 아직 확인하지 않은 항목을 살펴보세요.</p>}
     <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4">
-      <p className="mb-3 text-sm text-emerald-950">이 문서에 입력한 답변을 한 번에 저장합니다. 입력한 내용 그대로 저장됩니다.</p>
+      <p className="text-sm text-emerald-950">이 문서에 입력한 답변을 한 번에 저장합니다. 입력한 내용 그대로 저장됩니다.</p>
+      <p className="mt-2 mb-3 text-sm text-emerald-950">저장 전 답변은 이 화면에서 항목을 이동할 때 유지됩니다. 화면을 나가기 전에는 문서 답변 저장을 눌러주세요.</p>
       <button className={s.primary} type="button" disabled={vm.busySection !== null || !section.fields.some((value) => vm.sectionMessages[`${section.key}:${value.key}`]?.trim())} onClick={() => { void vm.saveDocumentAnswers(section) }}>
         {busy && vm.busySection?.action === 'save' ? '문서 답변 저장 중…' : '문서 답변 저장'}
       </button>
       {section.facts.length > 0 && <p className="mt-2 text-sm text-emerald-800" role="status">저장된 답변 {section.facts.length}개</p>}
     </div>
-    <p className={s.locator}>공식 양식 위치: {section.locator}</p>
   </section>
 }
 
@@ -198,14 +198,12 @@ function SectionWritingWorkspace({ vm }: { vm: ReturnType<typeof useApplicationP
         </ol>
       </nav>
       {activeSection && <div className="min-w-0 space-y-3">
-        <p ref={headingRef} tabIndex={-1} className="text-sm font-semibold text-emerald-800 focus:outline-none" aria-live="polite">{activeIndex + 1} / {sections.length} · {activeSection.title}</p>
-        <SectionInputEditor key={activeSection.key} section={activeSection} vm={vm} />
-        <p className={s.muted}>저장 전 답변은 이 화면에서 항목을 이동할 때 유지됩니다. 화면을 나가기 전에는 문서 답변 저장을 눌러주세요.</p>
+        <p ref={headingRef} tabIndex={-1} className="text-sm font-semibold text-emerald-800 focus:outline-none" aria-live="polite">{activeIndex + 1}. {activeSection.title}</p>
+        <SectionInputEditor key={activeSection.key} section={activeSection} vm={vm} isLastSection={activeIndex === sections.length - 1} />
         <div className="flex items-center justify-between gap-3">
           <button className={s.button} type="button" disabled={activeIndex === 0} onClick={() => selectSection(activeIndex - 1)}>이전 항목</button>
           <button className={s.primary} type="button" disabled={activeIndex === sections.length - 1} onClick={() => selectSection(activeIndex + 1)}>다음 항목</button>
         </div>
-        {activeIndex === sections.length - 1 && <p className={s.notice}>마지막 항목입니다. 목록에서 저장 전 답변이나 아직 확인하지 않은 항목을 살펴보세요.</p>}
         <DocumentGenerationAction vm={vm} />
       </div>}
     </div>
@@ -272,7 +270,7 @@ export function ApplicationPreparationEditorPage({ create = false }: { create?: 
   if (!account) return null
   if (!create && (id === null || !Number.isSafeInteger(id) || id <= 0)) {
     return <>
-      <WorkspacePageHeader parent={{ to: appPaths.applicationPreparations, label: listTitle }} title="신청 문서" />
+      <WorkspacePageHeader parent={{ to: appPaths.applicationPreparations, label: listTitle }} title="신청 문서 / 답변 입력" />
       <main className={workspacePageStyles.content}><ErrorNotice message="올바른 신청 준비 주소가 아닙니다." /></main>
     </>
   }
@@ -312,7 +310,7 @@ function ApplicationPreparationEditor({ id, initialSourceCode, initialSourceProg
   return <>
     <WorkspacePageHeader
       parent={{ to: appPaths.applicationPreparations, label: listTitle }}
-      title={id === null ? '새 신청 문서' : '신청 문서'}
+      title={id === null ? '새 신청 문서' : '신청 문서 / 답변 입력'}
     />
     <main className={workspacePageStyles.content}>
       {vm.loading && <p className={s.status} role="status" aria-live="polite">
@@ -520,14 +518,6 @@ function ApplicationPreparationEditor({ id, initialSourceCode, initialSourceProg
 
       {detail && <>
         <OfficialFormSummary form={detail.form} />
-        <section className={s.card} aria-labelledby="preparation-info-title">
-          <h2 className={s.cardTitle} id="preparation-info-title">신청 준비 정보</h2>
-          <dl className={s.details}>
-            <div><dt>선택 분야</dt><dd>{applicationServiceFieldLabels[detail.serviceField]}</dd></div>
-            <div><dt>입력 버전</dt><dd>{detail.inputRevision}</dd></div>
-            <div><dt>신청 준비 번호</dt><dd>{detail.id}</dd></div>
-          </dl>
-        </section>
         <SectionWritingWorkspace key={detail.id} vm={vm} />
       </>}
     </main>

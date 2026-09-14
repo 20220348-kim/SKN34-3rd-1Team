@@ -112,9 +112,11 @@ function DocumentResults({ id }: { id: number }) {
   }
 
   return <>
-    <WorkspacePageHeader parent={{ to: back, label: '답변 입력' }} title="신청 문서 초안" />
+    <WorkspacePageHeader parent={[
+      { to: appPaths.applicationPreparations, label: '신청 문서 작성 도우미' },
+      { to: back, label: '신청 문서 / 답변 입력' },
+    ]} title="신청 문서 초안" />
     <main className={workspacePageStyles.content}>
-      <p className={s.muted}>문서를 다운로드해 내용을 확인하세요. 내려받은 파일에서 직접 수정하거나, 답변 입력으로 돌아가 정보를 고친 뒤 다시 생성할 수 있습니다.</p>
       {busy && <p className={s.notice} role="status">공식 양식을 확인하고 저장된 답변으로 문서를 준비하고 있습니다…</p>}
       {error && <div className={s.warning} role="alert"><p>{error}</p>{!busy && <button type="button" className={s.button} onClick={() => setAttempt((n) => n + 1)}>다시 시도</button>}</div>}
       {!busy && !error && files.length === 0 && <p className={s.notice}>현재 답변으로 생성된 문서가 없습니다. 답변 입력에서 초안 생성하기를 눌러 주세요.</p>}
@@ -124,6 +126,7 @@ function DocumentResults({ id }: { id: number }) {
         <p className={s.muted}>원본과 같은 {file.fileName.split('.').pop()?.toUpperCase()} 형식 · 답변 버전 {file.inputRevision} · {Math.ceil(file.size / 1024)} KB</p>
         {preparation && <><p className={s.label}>문서에 포함된 작성 항목</p><ul className={s.fieldList}>{preparation.form.sections.map((section) => <li key={section.key}>{section.title}</li>)}</ul></>}
         <button type="button" className={s.primary} disabled={downloading !== null} onClick={() => { void download(file) }}>{downloading === file.id ? '다운로드 중…' : `신청문서 ${index + 1} 다운로드`}</button>
+        <p className={s.muted}>문서를 다운로드해 내용을 확인하세요. 내려받은 파일에서 직접 수정하거나, 답변 입력으로 돌아가 정보를 고친 뒤 다시 생성할 수 있습니다.</p>
       </section>)}
       {!busy && files.length > 0 && unanswered.length > 0 && <section className={s.warning} aria-label="답변이 없어 기입하지 않은 항목">
         <h2 className={s.cardTitle}>답변이 없어 기입하지 않은 항목</h2>
