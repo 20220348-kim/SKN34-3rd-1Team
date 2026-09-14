@@ -15,7 +15,10 @@ data class StartCombinationReviewRunRequest(
 )
 data class ReviewRunInputResponse(val title: String, val programs: List<SelectedReviewProgramResponse>, val additionalFacts: String, val asOfDate: String)
 data class ReviewEvidenceBlockResponse(val id: String, val programIndex: Int, val documentHash: String, val locator: String, val text: String)
-data class ReviewDocumentResponse(val programIndex: Int, val sourceUrl: String, val fileName: String, val format: String, val rawHash: String, val textHash: String, val parserVersion: String, val fetchedAt: OffsetDateTime)
+data class ReviewDocumentResponse(
+    val programIndex: Int, val sourceUrl: String, val sourcePageUrl: String?, val fileName: String, val format: String,
+    val rawHash: String, val textHash: String, val parserVersion: String, val fetchedAt: OffsetDateTime,
+)
 data class ReviewEvidenceResponse(val documents: List<ReviewDocumentResponse>, val blocks: List<ReviewEvidenceBlockResponse>, val coverageWarnings: List<String>, val reviewStatus: String = "AUTOMATIC_UNREVIEWED")
 data class ReviewConfigurationResponse(val contractVersion: String, val model: String, val promptVersion: String)
 data class ReviewCitationResponse(val evidenceId: String, val quote: String)
@@ -32,7 +35,7 @@ data class CombinationReviewRunResponse(
             run.id, run.reviewId, run.inputRevision, run.requestKey, run.status.name,
             ReviewRunInputResponse(run.input.title, run.input.programs.map(SelectedReviewProgramResponse::from), run.input.additionalFacts, run.input.asOfDate.toString()),
             run.evidence?.let { e -> ReviewEvidenceResponse(
-                e.documents.map { ReviewDocumentResponse(it.programIndex, it.sourceUrl, it.fileName, it.format, it.rawHash, it.textHash, it.parserVersion, it.fetchedAt.offset()) },
+                e.documents.map { ReviewDocumentResponse(it.programIndex, it.sourceUrl, it.sourcePageUrl, it.fileName, it.format, it.rawHash, it.textHash, it.parserVersion, it.fetchedAt.offset()) },
                 e.blocks.map { ReviewEvidenceBlockResponse(it.id, it.programIndex, it.documentHash, it.locator, it.text) }, e.coverageWarnings,
             ) },
             run.configuration?.let { ReviewConfigurationResponse(it.contractVersion, it.model, it.promptVersion) },

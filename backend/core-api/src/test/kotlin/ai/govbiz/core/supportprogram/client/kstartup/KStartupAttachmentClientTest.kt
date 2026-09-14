@@ -40,6 +40,7 @@ class KStartupAttachmentClientTest {
         val result = client.collect("KSTARTUP", id, current)
 
         assertEquals("K-Startup 공식 공고", result.programTitle)
+        assertEquals(closed, result.sourcePageUrl)
         assertEquals("신청양식.hwp", result.files.single().fileName)
         assertEquals("HWP", result.files.single().format)
         assertArrayEquals(byteArrayOf(1, 2, 3), result.files.single().bytes)

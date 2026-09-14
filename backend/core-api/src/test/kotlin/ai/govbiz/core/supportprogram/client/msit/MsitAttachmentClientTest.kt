@@ -37,6 +37,7 @@ class MsitAttachmentClientTest {
         val result = client.collect("MSIT", sourceProgramId, pageUrl)
 
         assertEquals("과기정통부 지원사업", result.programTitle)
+        assertEquals(pageUrl, result.sourcePageUrl)
         assertEquals("신청양식.hwpx", result.files.single().fileName)
         assertEquals("HWPX", result.files.single().format)
         assertArrayEquals(byteArrayOf(0x50, 0x4b, 0x03, 0x04), result.files.single().bytes)

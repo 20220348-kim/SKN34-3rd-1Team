@@ -41,6 +41,7 @@ class BizInfoAttachmentClientTest {
         server.expect(requestTo(download)).andRespond(withSuccess(byteArrayOf(1,2,3), MediaType.APPLICATION_PDF))
         val result = client.collect("BIZINFO", sourceProgramId)
         assertEquals("검증 공고", result.programTitle)
+        assertEquals(pageUrl, result.sourcePageUrl)
         assertEquals(1, result.files.size)
         assertArrayEquals(byteArrayOf(1,2,3), result.files.single().bytes)
         assertTrue(result.warnings.isNotEmpty())

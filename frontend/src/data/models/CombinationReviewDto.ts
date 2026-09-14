@@ -23,7 +23,12 @@ export const runSchema = runSummarySchema.extend({
   reviewId: id, requestKey: runRequestSchema.shape.requestKey,
   input: z.object({ title: z.string(), programs, additionalFacts: z.string(), asOfDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/) }),
   evidence: z.object({
-    documents: z.array(z.object({ programIndex: index, sourceUrl: z.string().url().refine((s) => s.startsWith('https://')), fileName: z.string(), format: z.string(), rawHash: z.string(), textHash: z.string(), parserVersion: z.string(), fetchedAt: time })),
+    documents: z.array(z.object({
+      programIndex: index,
+      sourceUrl: z.string().url().refine((s) => s.startsWith('https://')),
+      sourcePageUrl: z.string().url().refine((s) => s.startsWith('https://')).nullable(),
+      fileName: z.string(), format: z.string(), rawHash: z.string(), textHash: z.string(), parserVersion: z.string(), fetchedAt: time,
+    })),
     blocks: z.array(z.object({ id: z.string(), programIndex: index, documentHash: z.string(), locator: z.string(), text: z.string() })),
     coverageWarnings: z.array(z.string()), reviewStatus: z.literal('AUTOMATIC_UNREVIEWED'),
   }).nullable(),

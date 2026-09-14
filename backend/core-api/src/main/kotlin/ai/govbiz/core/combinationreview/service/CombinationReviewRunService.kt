@@ -113,6 +113,7 @@ class CombinationReviewRunService(
                         CombinationReviewHashHelper.sha256(parsed.joinToString("\n") { it.text }),
                         SupportProgramDocumentParser.VERSION,
                         LocalDateTime.now(clock).truncatedTo(ChronoUnit.MICROS),
+                        fetched.sourcePageUrl,
                     )
                     documents.add(document)
                     parsed.forEach { block -> blocks.add(ReviewEvidenceBlock("E${blocks.size}", index, document.rawHash, block.locator, block.text)) }

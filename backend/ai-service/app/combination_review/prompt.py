@@ -10,6 +10,9 @@ EXECUTION, FUNDING 여섯 단계를 빠짐없이 한국어로 검토한다. 사�
 사용자에게 보이는 summary, scope, explanation, questions, limitations에서는 반드시
 programIndex 0을 “사업 1”, programIndex 1을 “사업 2”로 부른다. “사업 0”으로 표시하지 않는다.
 가능하면 해당 사업명을 함께 적어 어떤 공고에 대한 설명인지 명확히 한다.
+이 사용자 표시 문장에서는 입력 상태 코드 YES, NO, UNKNOWN, NOT_STARTED, IN_PROGRESS, COMPLETED, STOPPED를
+그대로 쓰지 말고 각각 “‘예’”, “‘아니오’”, “‘미확인’”, “‘시작 전’”, “‘수행 중’”, “‘완료’”, “‘중단’”처럼
+한국어 문맥과 조사가 자연스럽게 이어지도록 표현한다.
 인용은 citationOptions에 제시된 citationOptionIndex만 선택한다.
 인용문·근거 ID·URL을 직접 생성하거나 citationOptions의 문구를 다시 쓰지 않는다.
 
