@@ -30,6 +30,13 @@ const programStatusLabels = {
   CLOSED: '접수 종료',
   UNKNOWN: '접수 상태 미확인',
 } as const
+const discoveryJobStatusLabels = {
+  QUEUED: '분석 대기',
+  RUNNING: '분석 중',
+  SUCCEEDED: '분석 완료',
+  FAILED: '분석 실패',
+  UNKNOWN: '확인 필요',
+} as const
 const supportedDocumentSources = ['BIZINFO', 'KSTARTUP', 'MSIT', 'CNTRADE_NOTICE']
 const directInputLabels: Record<string, string> = {
   BIZINFO: '기업마당 공식 공고 URL 또는 공고 ID',
@@ -316,6 +323,7 @@ function ApplicationPreparationEditor({ id, initialSourceCode, initialSourceProg
       {vm.loading && <p className={s.status} role="status" aria-live="polite">
         {id === null ? '지원 가능한 공식 양식을 불러오는 중입니다.' : '신청 문서 정보를 불러오는 중입니다.'}
       </p>}
+      {id === null && vm.discoveryJobsLoading && <p className={s.status} role="status" aria-live="polite">최근 공식 문서 분석 작업을 확인하는 중입니다.</p>}
       {vm.error && <ErrorNotice
         message={vm.error.message}
         onRetry={noDiscoveredForm || vm.submitting || vm.discovering ? undefined : id === null ? vm.discoverForms : vm.load}
@@ -337,6 +345,34 @@ function ApplicationPreparationEditor({ id, initialSourceCode, initialSourceProg
         </ol>
 
         {vm.creationStep === 'PROGRAM' && <>
+        {vm.discoveryJobsError && <section aria-label="최근 공식 문서 분석 작업">
+          <ErrorNotice message={vm.discoveryJobsError.message} retryLabel="최근 작업 다시 불러오기" onRetry={() => vm.loadDiscoveryJobs()} />
+        </section>}
+        {vm.discoveryJobs.length > 0 && <section className={s.card} aria-labelledby="recent-discovery-jobs-title">
+          <div>
+            <h2 className={s.cardTitle} id="recent-discovery-jobs-title">최근 공식 문서 분석 작업</h2>
+            <p className={s.muted}>다른 화면을 다녀오거나 새로고침해도 서버에 저장된 진행 상태와 결과를 이어서 확인할 수 있습니다.</p>
+          </div>
+          <ul className={s.jobList}>
+            {vm.discoveryJobs.map((job) => {
+              const selected = vm.activeDiscoveryJob?.id === job.id
+              return <li className={s.jobItem} key={job.id}>
+                <div className="min-w-0">
+                  <strong className={s.jobTitle}>{job.programTitle}</strong>
+                  <div className={s.jobMeta}>
+                    <span>{catalogSourceLabels[job.sourceCode as keyof typeof catalogSourceLabels] ?? job.sourceCode}</span>
+                    <span>{readableTime(job.createdAt)}</span>
+                    <span className={s.jobStatus}>{discoveryJobStatusLabels[job.status]}</span>
+                  </div>
+                </div>
+                <button className={s.button} type="button" disabled={vm.discovering || vm.submitting || selected}
+                  onClick={() => { void vm.loadDiscoveryJob(job.id) }}>
+                  {selected ? '확인 중' : job.status === 'SUCCEEDED' ? '결과 보기' : '작업 이어보기'}
+                </button>
+              </li>
+            })}
+          </ul>
+        </section>}
         {vm.selectedProgram && <section className={s.card} aria-labelledby="selected-application-program-title">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="min-w-0 flex-1">

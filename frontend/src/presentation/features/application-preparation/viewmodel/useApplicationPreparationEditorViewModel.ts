@@ -36,8 +36,12 @@ export function useApplicationPreparationEditorViewModel(id: number | null, init
   const [discoveryWarnings, setDiscoveryWarnings] = useState<string[]>([])
   const [activeDiscoveryJob, setActiveDiscoveryJob] = useState<ApplicationFormDiscoveryJob | null>(null)
   const [discoveryPollingPaused, setDiscoveryPollingPaused] = useState(false)
+  const [discoveryJobs, setDiscoveryJobs] = useState<ApplicationFormDiscoveryJob[]>([])
+  const [discoveryJobsLoading, setDiscoveryJobsLoading] = useState(false)
+  const [discoveryJobsError, setDiscoveryJobsError] = useState<Error | null>(null)
   const discoveryRequestKey = useRef<string | null>(null)
   const discoveryLookupId = useRef<number | null>(null)
+  const discoveryRestoreAllowed = useRef(true)
   const [catalog, setCatalog] = useState<SupportProgramCatalog | null>(null)
   const [catalogKeyword, setCatalogKeyword] = useState('')
   const [appliedCatalogKeyword, setAppliedCatalogKeyword] = useState('')
@@ -52,6 +56,7 @@ export function useApplicationPreparationEditorViewModel(id: number | null, init
   const loadController = useRef<AbortController | null>(null)
   const createController = useRef<AbortController | null>(null)
   const discoveryController = useRef<AbortController | null>(null)
+  const discoveryJobsController = useRef<AbortController | null>(null)
   const catalogController = useRef<AbortController | null>(null)
   const loadSequence = useRef(0)
   const submittingGuard = useRef(false)
@@ -101,6 +106,7 @@ export function useApplicationPreparationEditorViewModel(id: number | null, init
   useEffect(() => () => {
     createController.current?.abort()
     discoveryController.current?.abort()
+    discoveryJobsController.current?.abort()
     catalogController.current?.abort()
     actionController.current?.abort()
     submittingGuard.current = false
@@ -157,29 +163,13 @@ export function useApplicationPreparationEditorViewModel(id: number | null, init
   const selectProgram = useCallback((program: SupportProgram) => {
     if (discoveryController.current || (activeDiscoveryJob && ['QUEUED', 'RUNNING'].includes(activeDiscoveryJob.status) && !discoveryPollingPaused)) return
     if (!supportedDocumentSources.includes(program.sourceCode)) return
+    discoveryRestoreAllowed.current = false
     applyProgramSelection(program)
   }, [activeDiscoveryJob, applyProgramSelection, discoveryPollingPaused])
 
-  useEffect(() => {
-    if (id !== null || !initialSourceCode || !initialSourceProgramId) return
-    const controller = new AbortController()
-    setLoading(true)
-    setError(null)
-    void programDetailUseCase.execute({ sourceCode: initialSourceCode, sourceProgramId: initialSourceProgramId }, controller.signal)
-      .then((program) => {
-        if (!controller.signal.aborted && program) applyProgramSelection(program, true)
-      })
-      .catch((caught: unknown) => {
-        if (!controller.signal.aborted) setError(asError(caught))
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setLoading(false)
-      })
-    return () => controller.abort()
-  }, [applyProgramSelection, id, initialSourceCode, initialSourceProgramId, programDetailUseCase])
-
   const setManualDiscoveryInput = useCallback((value: string) => {
     if (discoveryController.current || (activeDiscoveryJob && ['QUEUED', 'RUNNING'].includes(activeDiscoveryJob.status) && !discoveryPollingPaused)) return
+    discoveryRestoreAllowed.current = false
     setSelectedProgram(null)
     setDiscoveryInput(value)
     setCreationStep('PROGRAM')
@@ -202,6 +192,8 @@ export function useApplicationPreparationEditorViewModel(id: number | null, init
 
   const acceptDiscoveryJob = useCallback((job: ApplicationFormDiscoveryJob) => {
     setActiveDiscoveryJob(job)
+    setDiscoveryJobs((current) => [job, ...current.filter(({ id }) => id !== job.id)]
+      .sort((left, right) => right.id - left.id).slice(0, 20))
     if (job.status === 'SUCCEEDED' && job.result) {
       const result = job.result
       const firstForm = result.items[0]
@@ -247,6 +239,60 @@ export function useApplicationPreparationEditorViewModel(id: number | null, init
     }
   }, [useCase, acceptDiscoveryJob])
 
+  const loadDiscoveryJobs = useCallback((restoreLatest = false) => {
+    discoveryJobsController.current?.abort()
+    const controller = new AbortController()
+    discoveryJobsController.current = controller
+    setDiscoveryJobsLoading(true)
+    setDiscoveryJobsError(null)
+
+    void (async () => {
+      let jobs: ApplicationFormDiscoveryJob[] | null = null
+      try {
+        jobs = await useCase.discoveryJobs(controller.signal)
+        if (controller.signal.aborted || discoveryJobsController.current !== controller) return
+        setDiscoveryJobs(jobs)
+      } catch (caught) {
+        if (!controller.signal.aborted && discoveryJobsController.current === controller) setDiscoveryJobsError(asError(caught))
+      }
+
+      if (controller.signal.aborted || !restoreLatest || !discoveryRestoreAllowed.current) return
+      const matchingJob = initialSourceCode && initialSourceProgramId
+        ? jobs?.find((job) => job.sourceCode === initialSourceCode && job.sourceProgramId === initialSourceProgramId)
+        : jobs?.[0]
+      if (matchingJob) {
+        await loadDiscoveryJob(matchingJob.id)
+        return
+      }
+      if (!initialSourceCode || !initialSourceProgramId) return
+
+      setLoading(true)
+      setError(null)
+      try {
+        const program = await programDetailUseCase.execute({ sourceCode: initialSourceCode, sourceProgramId: initialSourceProgramId }, controller.signal)
+        if (!controller.signal.aborted && discoveryJobsController.current === controller && program) applyProgramSelection(program, true)
+      } catch (caught) {
+        if (!controller.signal.aborted && discoveryJobsController.current === controller) setError(asError(caught))
+      } finally {
+        if (!controller.signal.aborted && discoveryJobsController.current === controller) setLoading(false)
+      }
+    })().finally(() => {
+      if (discoveryJobsController.current === controller) {
+        discoveryJobsController.current = null
+        if (!controller.signal.aborted) setDiscoveryJobsLoading(false)
+      }
+    })
+
+    return controller
+  }, [applyProgramSelection, initialSourceCode, initialSourceProgramId, loadDiscoveryJob, programDetailUseCase, useCase])
+
+  useEffect(() => {
+    if (id !== null) return
+    discoveryRestoreAllowed.current = true
+    const controller = loadDiscoveryJobs(true)
+    return () => controller.abort()
+  }, [id, loadDiscoveryJobs])
+
   const activeDiscoveryId = activeDiscoveryJob && ['QUEUED', 'RUNNING'].includes(activeDiscoveryJob.status) ? activeDiscoveryJob.id : null
   useEffect(() => {
     if (!activeDiscoveryId || discoveryPollingPaused) return
@@ -270,6 +316,7 @@ export function useApplicationPreparationEditorViewModel(id: number | null, init
   }, [activeDiscoveryId, discoveryPollingPaused, useCase, acceptDiscoveryJob])
 
   const discoverForms = useCallback(async () => {
+    discoveryRestoreAllowed.current = false
     const lookupId = discoveryLookupId.current ?? activeDiscoveryJob?.id
     if (lookupId) { await loadDiscoveryJob(lookupId); return }
     if (discoveryController.current) return
@@ -406,6 +453,10 @@ export function useApplicationPreparationEditorViewModel(id: number | null, init
     discovering: discovering || (activeDiscoveryId !== null && !discoveryPollingPaused),
     activeDiscoveryJob,
     loadDiscoveryJob,
+    discoveryJobs,
+    discoveryJobsLoading,
+    discoveryJobsError,
+    loadDiscoveryJobs,
     discoveryPollingPaused,
     discoveryWarnings,
     catalog,
