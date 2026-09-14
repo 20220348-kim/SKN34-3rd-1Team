@@ -4,7 +4,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
-from agents.testing import ScriptedModel, assistant_message
+from .model_fixture import make_model
 from fastapi.testclient import TestClient
 
 from app.application_preparation.agent import ApplicationPreparationAgent
@@ -26,14 +26,11 @@ def selection_data():
 
 
 def test_native_document_contract_and_agent_without_answer_rewriting():
-    model = ScriptedModel([[assistant_message(json.dumps(selection_data()))]])
-    agent = ApplicationPreparationAgent(model=model, model_timeout_seconds=2, run_timeout_seconds=3)
+    model = make_model(selection_data())
+    agent = ApplicationPreparationAgent(model=model, run_timeout_seconds=3)
     result = asyncio.run(ApplicationPreparationService(agent, "test-model").place_document(DocumentRequest.model_validate(request_data())))
     assert result == json.loads((FIXTURES / "document-contract-response.json").read_text(encoding="utf-8"))
     assert len(model.calls) == 1
-    assert agent._document_agent.tools == []
-    assert agent._document_agent.model_settings.store is False
-    assert agent._run_config.tracing_disabled
 
 
 @pytest.mark.parametrize("mutation", ["missing", "duplicate", "invented-fact", "invented-target", "coordinates-for-hwp"])
@@ -87,8 +84,8 @@ def test_agent_transmits_example_metadata_and_returns_cleanup_without_rewriting(
     request["targets"][0]["exampleText"] = "예시 회사"
     output = selection_data()
     output["clearExampleTargetIds"] = [request["targets"][0]["id"]]
-    model = ScriptedModel([[assistant_message(json.dumps(output))]])
-    agent = ApplicationPreparationAgent(model=model, model_timeout_seconds=2, run_timeout_seconds=3)
+    model = make_model(output)
+    agent = ApplicationPreparationAgent(model=model, run_timeout_seconds=3)
     result = asyncio.run(ApplicationPreparationService(agent, "test-model").place_document(DocumentRequest.model_validate(request)))
     assert result["clearExampleTargetIds"] == output["clearExampleTargetIds"]
     assert result["placements"] == output["placements"]

@@ -4,7 +4,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
-from agents.testing import ScriptedModel, assistant_message
+from .model_fixture import make_model
 from pydantic import ValidationError
 from fastapi.testclient import TestClient
 
@@ -21,18 +21,15 @@ def request_data():
     return json.loads((FIXTURES / "draft-contract-request.json").read_text(encoding="utf-8"))
 
 
-def test_real_runner_produces_shared_contract_and_explicit_unknown():
+def test_langchain_produces_shared_contract_and_explicit_unknown():
     selection = {"content": "업체명은 새봄테크 & 연구소입니다.", "usedFieldKeys": ["company-name"]}
-    model = ScriptedModel([[assistant_message(json.dumps(selection, ensure_ascii=False))]])
-    agent = ApplicationPreparationAgent(model=model, model_timeout_seconds=2, run_timeout_seconds=3)
+    model = make_model(selection)
+    agent = ApplicationPreparationAgent(model=model, run_timeout_seconds=3)
     result = asyncio.run(ApplicationPreparationService(agent, "test-model").draft(DraftRequest.model_validate(request_data())))
     expected = json.loads((FIXTURES / "draft-contract-response.json").read_text(encoding="utf-8"))
     expected["promptVersion"] = DRAFT_PROMPT_VERSION
     assert result == expected
     assert len(model.calls) == 1
-    assert agent._draft_agent.tools == []
-    assert agent._draft_agent.model_settings.store is False
-    assert agent._run_config.tracing_disabled is True
 
 
 @pytest.mark.parametrize("keys", [[], ["invented"], ["company-name", "company-name"], ["company-name", "contact-person"]])

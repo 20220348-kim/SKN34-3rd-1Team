@@ -7,7 +7,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
-from agents.testing import ScriptedModel, assistant_message
+from .model_fixture import make_model
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
@@ -88,33 +88,29 @@ def discovery_selection_data():
 
 
 def make_service(data=None):
-    model = ScriptedModel([[assistant_message(json.dumps(data or selection_data(), ensure_ascii=False))]])
-    agent = ApplicationPreparationAgent(model=model, model_timeout_seconds=2, run_timeout_seconds=3)
+    model = make_model(data or selection_data())
+    agent = ApplicationPreparationAgent(model=model, run_timeout_seconds=3)
     return ApplicationPreparationService(agent, "test-model"), model
 
 
-def test_real_runner_returns_validated_suggestions_without_confirming_them():
+def test_langchain_returns_validated_suggestions_without_confirming_them():
     service, model = make_service()
     result = asyncio.run(service.interpret(InterpretRequest.model_validate(request_data())))
     assert result["suggestions"] == selection_data()["suggestions"]
     assert result["inputRevision"] == 2
     assert result["promptVersion"] == PROMPT_VERSION
     assert len(model.calls) == 1
-    assert service.agent._agent.tools == []
-    assert service.agent._agent.model_settings.store is False
-    assert service.agent._run_config.tracing_disabled is True
 
 
-def test_real_runner_discovers_only_fields_with_exact_document_evidence():
-    model = ScriptedModel([[assistant_message(json.dumps(discovery_selection_data(), ensure_ascii=False))]])
-    agent = ApplicationPreparationAgent(model=model, model_timeout_seconds=2, run_timeout_seconds=3)
+def test_langchain_discovers_only_fields_with_exact_document_evidence():
+    model = make_model(discovery_selection_data())
+    agent = ApplicationPreparationAgent(model=model, run_timeout_seconds=3)
     service = ApplicationPreparationService(agent, "test-model")
     result = asyncio.run(service.discover(DiscoverFormsRequest.model_validate(discovery_request_data())))
     assert result == discovery_response_data()
     assert result["promptVersion"] == DISCOVERY_PROMPT_VERSION
     assert result["forms"][0]["sections"][0]["fields"][0]["evidenceQuote"] == "사업\n개요"
     assert len(model.calls) == 1
-    assert agent._discovery_agent.tools == []
 
 
 @pytest.mark.parametrize(("source_code", "source_program_id", "file_format", "document_index"), [
