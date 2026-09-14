@@ -9,7 +9,7 @@ import { useReviewEditorViewModel } from '../viewmodel/useReviewEditorViewModel'
 import { ReviewParticipation } from './ReviewParticipation'
 import { ReviewRunResult } from './ReviewRunResult'
 import { SavedSupportProgramPickerDialog } from '../../../shared/support-program/SavedSupportProgramPickerDialog'
-import { runLabels } from './reviewLabels'
+import { formatReviewDateTime, runLabels } from './reviewLabels'
 import { reviewStyles as s } from './CombinationReview.styles'
 import { workspacePageStyles } from '../../../shared/workspace/WorkspacePage.styles'
 import { WorkspacePageHeader } from '../../../shared/workspace/WorkspacePageHeader'
@@ -49,7 +49,7 @@ function ReviewList({ account }: { account: string }) {
     {vm.busy.length > 0 && <p role="status">검토 목록을 불러오는 중입니다.</p>}
     {vm.page?.items.length === 0 && <div className={s.card}><h2 className="font-semibold">아직 저장한 검토가 없습니다.</h2><p className={s.muted}>새 검토에서 공고 2개와 참여 상태를 입력하면 분석을 시작할 수 있습니다.</p></div>}
     <ul className="space-y-3">{vm.page?.items.map((item) => <li className={`${s.card} flex flex-wrap items-center justify-between gap-3`} key={item.id}>
-      <Link className="min-w-0 flex-1 hover:text-brand-primary" to={`${appPaths.combinationReviews}/${item.id}`}><strong>{item.title}</strong><p className={s.muted}>입력 버전 {item.inputRevision} · 수정 {item.updatedAt}</p></Link>
+      <Link className="min-w-0 flex-1 hover:text-brand-primary" to={`${appPaths.combinationReviews}/${item.id}`}><strong>{item.title}</strong><p className={s.muted}>입력 버전 {item.inputRevision} · 수정 {formatReviewDateTime(item.updatedAt)}</p></Link>
       {confirmingId === item.id ? <div className="flex flex-wrap items-center gap-2" role="group" aria-label={`${item.title} 삭제 확인`}><span className="text-sm text-red-800">검토와 분석 이력을 삭제할까요?</span><button type="button" className={s.danger} disabled={vm.busy.includes('delete')} onClick={() => void vm.deleteReview(item.id)}>정말 삭제</button><button type="button" className={s.button} disabled={vm.busy.includes('delete')} onClick={() => setConfirmingId(null)}>취소</button></div>
         : <div className="flex items-center gap-2"><Link className={s.primary} to={`${appPaths.combinationReviews}/${item.id}?step=analysis`}>결과 보기</Link><button type="button" className={s.button} disabled={vm.busy.includes('delete')} onClick={() => setConfirmingId(item.id)}>삭제</button></div>}
     </li>)}</ul>
@@ -99,7 +99,7 @@ function RunResultPage({ reviewId, runId, account }: { reviewId: number; runId: 
       <label className="block text-sm font-semibold">실행 결과 선택
         <select className={s.input} value={String(runId)} onChange={(event) => navigate(combinationReviewRunResultPath(reviewId, Number(event.target.value)))}>
           {!currentRunInOptions && <option value={runId}>실행 #{runId} · 현재 결과</option>}
-          {runOptions.map((run) => <option key={run.id} value={run.id}>실행 #{run.id} · {runLabels[run.status]} · {run.startedAt}</option>)}
+          {runOptions.map((run) => <option key={run.id} value={run.id}>실행 #{run.id} · {runLabels[run.status]} · {formatReviewDateTime(run.startedAt)}</option>)}
         </select>
       </label>
       {vm.runs?.nextBeforeId && <button className={s.button} type="button" disabled={vm.busy.includes('history')} onClick={() => vm.history(vm.runs!.nextBeforeId!)}>이전 실행 더 보기</button>}
@@ -214,7 +214,7 @@ function ReviewEditor({ id, account }: { id: number | null; account: string }) {
         </section>
         <section className={`${s.card} space-y-3`}><h2 className="text-lg font-bold">실행 이력</h2><button className={s.button} disabled={vm.busy.includes('history')} onClick={() => vm.history()}>실행 이력 새로고침</button>
           {vm.runs?.items.length === 0 && <p className={s.muted}>아직 분석을 실행하지 않았습니다.</p>}
-          <ul className="space-y-2">{vm.runs?.items.map((run) => <li key={run.id}><Link className={`${s.button} w-full justify-start text-left`} to={combinationReviewRunResultPath(id, run.id)}>#{run.id} · 입력 버전 {run.inputRevision} · {runLabels[run.status]} · {run.startedAt}</Link></li>)}</ul>
+          <ul className="space-y-2">{vm.runs?.items.map((run) => <li key={run.id}><Link className={`${s.button} w-full justify-start text-left`} to={combinationReviewRunResultPath(id, run.id)}>#{run.id} · 입력 버전 {run.inputRevision} · {runLabels[run.status]} · {formatReviewDateTime(run.startedAt)}</Link></li>)}</ul>
           {vm.runs?.nextBeforeId && <button className={s.button} disabled={vm.busy.includes('history')} onClick={() => vm.history(vm.runs!.nextBeforeId!)}>이전 실행 더 보기</button>}
         </section>
       </>}

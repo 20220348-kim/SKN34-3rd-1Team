@@ -17,3 +17,26 @@ export function reviewFailureMessage(error: unknown): string {
   if (error.status === 503) return '원문 수집 또는 분석 서비스의 기술 오류입니다. 근거 부족이나 허용 판단을 의미하지 않습니다.'
   return '서버 응답을 안전하게 해석하지 못했습니다. 저장된 실행 이력을 확인해 주세요.'
 }
+
+const runFailureMessages: Record<string, string> = {
+  INPUT_PROGRAM_COUNT_UNSUPPORTED: '선택한 공고 수가 현재 분석 조건과 맞지 않아 분석해 드릴 수 없습니다. 서로 다른 공고를 정확히 2개 선택해 주세요.',
+  SOURCE_UNSUPPORTED: '선택한 공고의 공식 첨부 문서를 자동으로 읽을 수 없어 분석해 드릴 수 없습니다. 첨부 문서가 없거나 이미지·암호화 문서 또는 지원하지 않는 형식일 수 있습니다. 다른 공고를 선택하거나 공식 원문을 직접 확인해 주세요.',
+  SOURCE_NOT_FOUND: '선택한 공고의 공식 원문 또는 첨부 문서를 찾을 수 없어 분석해 드릴 수 없습니다. 공고가 삭제되거나 첨부 주소가 변경되었을 수 있으니 공식 공고 페이지를 확인해 주세요.',
+  SOURCE_UNAVAILABLE: '공식 공고 제공처에 일시적으로 연결할 수 없어 분석해 드릴 수 없습니다. 잠시 후 다시 시도해 주세요.',
+  SOURCE_INVALID: '선택한 공고의 공식 원문 또는 첨부 문서를 정상적으로 확인할 수 없어 분석해 드릴 수 없습니다. 공식 공고 페이지에서 원문을 직접 확인해 주세요.',
+  SOURCE_TOO_LARGE: '공식 첨부 문서의 수나 분량이 자동 분석 한도를 초과해 분석해 드릴 수 없습니다. 공식 원문을 직접 확인해 주세요.',
+  ANALYSIS_UNAVAILABLE: '분석 서비스에 일시적으로 연결할 수 없어 분석해 드릴 수 없습니다. 잠시 후 다시 시도해 주세요.',
+  ANALYSIS_INVALID: '분석 결과를 안전하게 확인할 수 없어 결과를 제공하지 않았습니다. 잠시 후 다시 시도해 주세요.',
+  RUN_FAILED: '분석 처리 중 일시적인 시스템 오류가 발생해 분석해 드릴 수 없습니다. 잠시 후 다시 시도해 주세요.',
+  RUN_CAPACITY_EXCEEDED: '현재 처리 중인 분석 요청이 많아 실행하지 못했습니다. 잠시 후 다시 시도해 주세요.',
+  RUN_RATE_LIMITED: '짧은 시간에 분석 요청이 많이 접수되어 실행하지 못했습니다. 잠시 후 다시 시도해 주세요.',
+  RUN_QUEUE_UNAVAILABLE: '현재 분석 요청을 접수할 수 없어 실행하지 못했습니다. 잠시 후 다시 시도해 주세요.',
+  QUEUE_EXPIRED: '분석 요청이 대기 시간 안에 처리되지 않아 종료되었습니다. 잠시 후 새 분석을 실행해 주세요.',
+  ACCOUNT_INACTIVE: '계정 상태가 변경되어 분석을 진행할 수 없습니다. 로그인 및 계정 상태를 확인해 주세요.',
+}
+
+export function reviewRunFailureMessage(failureCode: string | null): string {
+  return failureCode
+    ? runFailureMessages[failureCode] ?? '분석 처리 중 오류가 발생해 분석해 드릴 수 없습니다. 잠시 후 다시 시도해 주세요.'
+    : '분석 처리 중 오류가 발생해 분석해 드릴 수 없습니다. 잠시 후 다시 시도해 주세요.'
+}
