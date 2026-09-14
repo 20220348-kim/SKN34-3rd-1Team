@@ -37,7 +37,7 @@ def test_real_app_with_mock_http_enforces_budget_and_records_only_safe_data(tmp_
     _, prepared, _ = evaluate.load_fixture(evaluate.HERE / "fixture.json")
     request = prepared[0][1]
     calls = []
-    original_client = httpx2.AsyncClient
+    original_init = httpx2.AsyncClient.__init__
     original_write = Path.write_text
 
     def write_with_legacy_default(path, text, encoding=None, **kwargs):
@@ -62,11 +62,12 @@ def test_real_app_with_mock_http_enforces_budget_and_records_only_safe_data(tmp_
             "usage": {"input_tokens": 100, "output_tokens": 30, "total_tokens": 130},
         })
 
-    class MockClient(original_client):
-        def __init__(self, **kwargs):
-            super().__init__(transport=httpx2.MockTransport(respond), **kwargs)
+    def init_with_mock_transport(self, *args, **kwargs):
+        kwargs["transport"] = httpx2.MockTransport(respond)
+        original_init(self, *args, **kwargs)
 
-    monkeypatch.setattr(httpx2, "AsyncClient", MockClient)
+    # Keep class identity: SDK/LangChain subclasses must still pass isinstance checks.
+    monkeypatch.setattr(httpx2.AsyncClient, "__init__", init_with_mock_transport)
     monkeypatch.setenv("OPENAI_API_KEY", "fake-key-never-sent")
     # An ambient base URL must not redirect the key or fixture outside the official endpoint.
     monkeypatch.setenv("OPENAI_BASE_URL", "https://not-openai.invalid/v1")
@@ -92,16 +93,16 @@ def test_real_app_with_mock_http_enforces_budget_and_records_only_safe_data(tmp_
 
 def test_unexpected_service_error_stops_the_run_and_preserves_http_500(tmp_path, monkeypatch):
     _, prepared, _ = evaluate.load_fixture(evaluate.HERE / "fixture.json")
-    original_client = httpx2.AsyncClient
+    original_init = httpx2.AsyncClient.__init__
 
     def forbidden(request):
         pytest.fail("a service error test must not invoke an external API")
 
-    class MockClient(original_client):
-        def __init__(self, **kwargs):
-            super().__init__(transport=httpx2.MockTransport(forbidden), **kwargs)
+    def init_with_mock_transport(self, *args, **kwargs):
+        kwargs["transport"] = httpx2.MockTransport(forbidden)
+        original_init(self, *args, **kwargs)
 
-    monkeypatch.setattr(httpx2, "AsyncClient", MockClient)
+    monkeypatch.setattr(httpx2.AsyncClient, "__init__", init_with_mock_transport)
     monkeypatch.setenv("OPENAI_API_KEY", "offline-test-key")
     output = tmp_path / "run"
     app = serve_flow.build_evaluation_app(output, "http://127.0.0.1:1", 1)
