@@ -283,6 +283,13 @@ services:
     working_dir: /app
     environment:
       CHOKIDAR_USEPOLLING: "true"
+      # 바인드 마운트(Windows/macOS)는 파일 stat이 느려 폴링 간격을 너무 줄이면 Vite 프록시까지 느려진다. 기본 1000ms.
+      CHOKIDAR_INTERVAL: ${CHOKIDAR_INTERVAL:-1000}
+      # pnpm 저장소를 바인드 마운트 밖에 두어 감시·stat 대상에서 뺀다. 컨테이너 안 pnpm install이 /app/.pnpm-store를 만들지 않는다.
+      # (pnpm 10+는 npm_config_* 대신 pnpm_config_* 환경변수를 읽는다.)
+      pnpm_config_store_dir: /home/node/.pnpm-store
+      # TTY 없이도 lockfile 변경 뒤 node_modules 정리를 묻지 않고 진행한다.
+      CI: "true"
       VITE_CORE_API_BASE_URL: /
       VITE_DEV_PROXY_TARGET: http://core-api:8080
       VITE_KAKAO_CHANNEL_ID: ${KAKAO_CHANNEL_ID:-}
