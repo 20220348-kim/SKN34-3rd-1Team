@@ -10,6 +10,7 @@ import unittest
 
 SCRIPT = Path(__file__).with_name("seed-demo-data.sh")
 SEED_FILE = Path(__file__).parents[1] / "seed" / "demo-data.sql"
+APPLICATION_SEED_FILE = SEED_FILE.with_name("application-preparations.sql")
 BASH = Path(os.environ.get("ProgramFiles", "C:/Program Files")) / "Git/bin/bash.exe" if os.name == "nt" else Path("/bin/bash")
 FAKE_DOCKER = r"""#!/usr/bin/env bash
 printf '%s\n' "$*" >> "$SEED_DOCKER_CALLS"
@@ -56,7 +57,7 @@ class SeedDemoDataTest(unittest.TestCase):
         result, calls, stdin = self.run_script()
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("exec --no-TTY mysql sh -c", calls)
-        self.assertEqual(stdin, SEED_FILE.read_text(encoding="utf-8"))
+        self.assertEqual(stdin, "SET @reset_application_preparations = 1;\n" + SEED_FILE.read_text(encoding="utf-8") + APPLICATION_SEED_FILE.read_text(encoding="utf-8"))
         # 자격 증명은 컨테이너 환경 변수로만 읽고 호스트 명령줄에 싣지 않습니다.
         self.assertNotIn("--password=", calls.replace('--password="$MYSQL_PASSWORD"', ""))
 
@@ -82,6 +83,8 @@ class SeedDemoDataTest(unittest.TestCase):
             statement = next(delete for delete in deletes if f"DELETE {table}" in delete)
             self.assertIn("'admin@govbiz.local', 'member@govbiz.local'", statement)
         admin_actions = next(delete for delete in deletes if "account_admin_action" in delete)
+        applications = next(delete for delete in deletes if "DELETE application_preparation" in delete)
+        self.assertIn("COALESCE(@reset_application_preparations, 0) = 1", applications)
         self.assertIn("email = 'admin@govbiz.local'", admin_actions)
         # 모집글은 실제 공고 행에 붙으므로 공고 테이블은 읽기만 합니다.
         self.assertNotRegex(sql, r"(?i)(INSERT INTO|DELETE FROM|UPDATE)\s+support_program\b")
@@ -92,7 +95,7 @@ class SeedDemoDataTest(unittest.TestCase):
             self.assertTrue(email.endswith("govbiz.local"), email)
 
     def test_seed_includes_working_review_and_application_preparation_scenarios(self):
-        sql = SEED_FILE.read_text(encoding="utf-8")
+        sql = SEED_FILE.read_text(encoding="utf-8") + APPLICATION_SEED_FILE.read_text(encoding="utf-8")
         self.assertIn("INSERT INTO combination_review (", sql)
         self.assertIn("INSERT INTO combination_review_run (", sql)
         self.assertIn("INSERT INTO combination_review_run_source", sql)
@@ -109,7 +112,7 @@ class SeedDemoDataTest(unittest.TestCase):
         self.assertNotIn("\r", entrypoint, "entrypoint must stay LF-terminated for the container")
         self.assertIn('if [ "${DEMO_SEED_ENABLED:-false}" != "true" ]', entrypoint)
         self.assertIn("application_end_date >= DATE_ADD(CURDATE(), INTERVAL 21 DAY)", entrypoint)
-        # 최초 1회만 넣습니다. 대표 데모 계정이 있으면 건너뛰고 DEMO_SEED_FORCE=true일 때만 다시 넣습니다.
+        # 기존 계정은 보존하며 신청 준비만 보충합니다. 강제 실행만 전체 초기화합니다.
         self.assertIn('if [ "${DEMO_SEED_FORCE:-false}" != "true" ]', entrypoint)
         self.assertIn("jihoon.park@demo.govbiz.local", entrypoint)
         self.assertIn("jihoon.park@demo.govbiz.local", SEED_FILE.read_text(encoding="utf-8"))
@@ -117,6 +120,62 @@ class SeedDemoDataTest(unittest.TestCase):
         self.assertIn("demo-seed:", compose)
         self.assertIn("DEMO_SEED_ENABLED: ${DEMO_SEED_ENABLED:-true}", compose)
         self.assertIn("DEMO_SEED_FORCE: ${DEMO_SEED_FORCE:-false}", compose)
+
+
+class SeedEntrypointTest(unittest.TestCase):
+    def run_entrypoint(self, existing="1", query_failure=False, load_failure=False, enabled="true", force="false"):
+        with tempfile.TemporaryDirectory(prefix="seed-entrypoint-") as directory:
+            root = Path(directory)
+            mysql = root / "mysql"
+            mysql.write_text('''#!/usr/bin/env bash
+case "$*" in
+  *" -e "*)
+    [ "$QUERY_FAILURE" = true ] && exit 9
+    case "$*" in *"FROM account"*) echo "$EXISTING";; *) echo 6;; esac;;
+  *) cat >> "$CAPTURE"; [ "$LOAD_FAILURE" = true ] && exit 8;;
+esac
+exit 0
+''', encoding="utf-8")
+            mysql.chmod(0o700)
+            capture = root / "capture"
+            env = {
+                "PATH": f"{root}:/usr/bin:/bin", "CAPTURE": str(capture), "EXISTING": existing,
+                "QUERY_FAILURE": str(query_failure).lower(), "LOAD_FAILURE": str(load_failure).lower(),
+                "DEMO_SEED_ENABLED": enabled, "DEMO_SEED_FORCE": force,
+                "DEMO_SEED_FILE": SEED_FILE.as_posix(),
+                "MYSQL_USER": "test", "MYSQL_PASSWORD": "test", "MYSQL_DATABASE": "test",
+            }
+            result = subprocess.run([str(BASH), str(SCRIPT.with_name("seed-demo-data-entrypoint.sh"))],
+                                    env=env, capture_output=True, text=True, timeout=10)
+            return result, capture.read_text(encoding="utf-8") if capture.exists() else ""
+
+    def test_existing_account_loads_only_incremental_seed(self):
+        result, sql = self.run_entrypoint()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(sql, APPLICATION_SEED_FILE.read_text(encoding="utf-8"))
+        self.assertNotIn("DELETE", sql)
+
+    def test_new_database_and_force_load_both_files_in_order(self):
+        for options in ({"existing": "0"}, {"force": "true"}):
+            with self.subTest(options=options):
+                result, sql = self.run_entrypoint(**options)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(sql, SEED_FILE.read_text(encoding="utf-8") + APPLICATION_SEED_FILE.read_text(encoding="utf-8"))
+
+    def test_disabled_does_not_load(self):
+        result, sql = self.run_entrypoint(enabled="false")
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(sql, "")
+
+    def test_query_failure_never_falls_through_to_destructive_seed(self):
+        result, sql = self.run_entrypoint(query_failure=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(sql, "")
+
+    def test_incremental_load_failure_is_reported(self):
+        result, _ = self.run_entrypoint(load_failure=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertNotIn("ready", result.stdout)
 
 
 if __name__ == "__main__":
