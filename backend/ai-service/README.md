@@ -9,9 +9,11 @@ FastAPI, OpenAI 임베딩, Qdrant로 전체 공고에서 관련 후보를 찾고
 
 ## 책임
 
-중복 지원 검토는 `app/combination_review`의 `Router → Service → 구체 Agent → OpenAI → 검증된 응답` 경로를 사용합니다.
-기존 `OPENAI_MODEL`과 중복 검토 전용 `60s` 모델·`70s` 실행 제한을 사용합니다. 도구·handoff 없이 structured output 한 번을 요청하며
-`max_turns=1`, 출력 최대 6,000 tokens, `store=False`, tracing 비활성화를 적용합니다.
+중복 지원 검토는 `app/combination_review`의 `Router → Service → 구체 Agent → LangChain ChatOpenAI → OpenAI Responses API → 검증된 응답` 경로를 사용합니다.
+기존 `OPENAI_MODEL`과 중복 검토 전용 `60s` 모델·`70s` 실행 제한을 사용합니다. 도구·handoff·LangGraph 없이 strict structured output 한 번을 요청하며
+재시도 없음, 출력 최대 6,000 tokens, `store=False`, LangSmith tracing 비활성화를 적용합니다.
+Agent 안에서 API 전송 스키마의 판별 union을 `anyOf`로 변환하고 기존 Pydantic 출력 검증을 유지합니다.
+거절·미완료 응답·파싱 실패는 503, 모델·전체 실행 시간 초과는 504로 반환합니다. Service의 업무 검증과 Core HTTP 계약은 유지합니다.
 입력은 최대 512블록·120,000자이며 이미지에 이미 포함된 cl100k_base로 계산한 JSON 입력이 100,000 tokens를 넘으면 거절합니다.
 모델 컨텍스트에 맞추려고 본문·각주·붙임을 조용히 잘라내지 않습니다. 이 경로는 임베딩/Qdrant를 사용하지 않습니다.
 원문은 800자 이하의 정확한 인용 선택지로 나누고 모델은 선택지 번호만 반환합니다. 근거 ID와 인용문은 코드가 원문에서

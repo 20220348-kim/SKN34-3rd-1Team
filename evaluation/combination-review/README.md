@@ -128,7 +128,10 @@ cd backend/core-api
 - 딥테크: `b478d846bba479aad380e3310e427ea8b91697c9e5e5faec97b94af513ff4f79`
 
 실제 Core → AI HTTP → MySQL까지 확인할 때는 먼저 저장소 루트에서 테스트 전용 서버를 시작한다.
-이 서버는 OpenAI 클라이언트를 만들지 않고 실제 Router·Service·Agent/Runner에 ScriptedModel 응답 한 개만 제공한다.
+이 서버는 OpenAI 클라이언트를 만들지 않고 실제 Router·Service·Agent에 LangChain RunnableLambda 고정 응답 한 개만 제공한다.
+fixture의 인용문을 실제 요청의 인용 선택지에 대응시키며, 일치하는 원문이 없으면 실패한다.
+고정 fixture는 모델 평가 기록이 아니므로 응답의 `promptVersion`은 AI 단위 테스트와 동일하게 현재 Service 설정을 사용한다.
+LangChain ChatOpenAI의 Responses API 전송·파싱은 AI Service의 `tests/combination_review/test_review.py`에서 HTTP 모의 응답으로 별도 검증한다.
 production 앱에 테스트 모드나 fallback을 추가한 것이 아니며 서버를 재사용하면 호출 수 검증이 실패하므로 매 검증마다 새로 시작한다.
 
 ```bash
