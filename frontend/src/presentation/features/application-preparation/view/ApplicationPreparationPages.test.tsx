@@ -831,7 +831,40 @@ describe('application preparation creation and detail', () => {
     fireEvent.click(screen.getByRole('button', { name: '선택' }))
     expect(screen.getByRole('heading', { name: '선택한 공고' })).toBeTruthy()
     expect(repository.discover).not.toHaveBeenCalled()
-    expect(repository.discoveryJobs).not.toHaveBeenCalled()
+    expect(repository.discoveryJobs).toHaveBeenCalledTimes(1)
+  })
+
+  it('restores a running discovery after returning and shows its completed result without another POST', async () => {
+    vi.useFakeTimers()
+    const completed = completedDiscovery({ items: [firstForm], warnings: [], cached: false })
+    const running = { ...completed, status: 'RUNNING' as const, result: null }
+    repository.discoveryJobs.mockResolvedValueOnce([running])
+    repository.discoveryJob.mockResolvedValueOnce(running).mockResolvedValueOnce(completed)
+
+    mount('/app/application-preparations/new')
+    await act(async () => { await Promise.resolve() })
+    expect(screen.getByText('공식 첨부를 수집하고 AI가 문항을 분석하고 있습니다.')).toBeTruthy()
+    expect(within(screen.getByRole('region', { name: '최근 공식 문서 분석 작업' })).getByText('분석 중')).toBeTruthy()
+
+    await act(async () => vi.advanceTimersByTimeAsync(3000))
+
+    expect(screen.getByLabelText('작성할 공식 첨부')).toBeTruthy()
+    expect(repository.discoveryJobs).toHaveBeenCalledTimes(1)
+    expect(repository.discoveryJob).toHaveBeenCalledTimes(2)
+    expect(repository.discover).not.toHaveBeenCalled()
+  })
+
+  it('restores a completed discovery result immediately after returning', async () => {
+    const completed = completedDiscovery({ items: [firstForm], warnings: ['원문 대조 필요'], cached: false })
+    repository.discoveryJobs.mockResolvedValueOnce([{ ...completed, result: null }])
+    repository.discoveryJob.mockResolvedValueOnce(completed)
+
+    mount('/app/application-preparations/new')
+
+    expect(await screen.findByLabelText('작성할 공식 첨부')).toBeTruthy()
+    expect(screen.getByRole('region', { name: '공고 분석 안내' }).textContent).toContain('원문 대조 필요')
+    expect(repository.discoveryJob).toHaveBeenCalledWith(77, expect.any(AbortSignal))
+    expect(repository.discover).not.toHaveBeenCalled()
   })
 
   it('polls an accepted job and shows its saved result without another POST', async () => {
