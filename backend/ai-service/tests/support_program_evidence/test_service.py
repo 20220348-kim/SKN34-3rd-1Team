@@ -210,3 +210,53 @@ async def test_rejects_malformed_embeddings_without_writing_points(evidence_envi
         )
 
     assert (await service.qdrant_client.count(service.collection_name, exact=True)).count == 0
+
+
+@pytest.mark.anyio
+async def test_search_documents_groups_matches_per_document_within_the_allowed_chunks(evidence_environment):
+    service, stub = evidence_environment
+    seoul_apply = chunk("BIZINFO:PBLN:100", 0, "신청 접수 기간은 2026년 3월입니다.")
+    seoul_target = chunk("BIZINFO:PBLN:100", 1, "지원 대상은 서울 소재 AI 중소기업입니다.")
+    gyeonggi = chunk("BIZINFO:PBLN:200", 0, "접수 기간은 2027년 1월입니다.")
+    not_indexed = chunk("BIZINFO:PBLN:300", 0, "색인하지 않은 공고입니다.")
+    await service.index_chunks(SupportProgramEvidenceBatchRequest(chunks=[seoul_apply, seoul_target, gyeonggi]))
+
+    found = await service.search_documents(
+        "접수 기간이 언제인가요?",
+        {
+            "BIZINFO:PBLN:100": [(seoul_apply.id, seoul_apply.content_hash), (seoul_target.id, seoul_target.content_hash)],
+            "BIZINFO:PBLN:200": [(gyeonggi.id, gyeonggi.content_hash)],
+            "BIZINFO:PBLN:300": [(not_indexed.id, not_indexed.content_hash)],
+        },
+        per_document_limit=1,
+    )
+
+    assert set(found) == {"BIZINFO:PBLN:100", "BIZINFO:PBLN:200"}
+    assert [item.id for item in found["BIZINFO:PBLN:100"]] == [seoul_apply.id]
+    assert found["BIZINFO:PBLN:100"][0].text == seoul_apply.text
+    assert found["BIZINFO:PBLN:100"][0].document_id == "BIZINFO:PBLN:100"
+    assert found["BIZINFO:PBLN:200"][0].text == gyeonggi.text
+    # 색인 임베딩 1회 + 질문 임베딩 1회.
+    assert len(stub.requests) == 2
+    assert await service.search_documents("질문", {}, per_document_limit=4) == {}
+
+
+@pytest.mark.anyio
+async def test_index_attaches_text_to_legacy_points_without_re_embedding(evidence_environment):
+    service, stub = evidence_environment
+    legacy = chunk("BIZINFO:PBLN:100", 0, "신청 접수 기간은 2026년 3월입니다.")
+    await service.index_chunks(SupportProgramEvidenceBatchRequest(chunks=[legacy]))
+    point_id = next(iter({service_point.id for service_point in await service.qdrant_client.retrieve(service.collection_name, ids=[
+        __import__("app.support_program_evidence.service", fromlist=["_point_id"])._point_id(legacy)
+    ])}))
+    await service.qdrant_client.overwrite_payload(
+        service.collection_name, payload={"id": legacy.id, "contentHash": legacy.content_hash, "documentId": legacy.document_id, "order": 0},
+        points=[point_id], wait=True,
+    )
+    assert await service.search_documents("접수", {"BIZINFO:PBLN:100": [(legacy.id, legacy.content_hash)]}, per_document_limit=2) == {}
+
+    await service.index_chunks(SupportProgramEvidenceBatchRequest(chunks=[legacy]))
+    found = await service.search_documents("접수", {"BIZINFO:PBLN:100": [(legacy.id, legacy.content_hash)]}, per_document_limit=2)
+    assert found["BIZINFO:PBLN:100"][0].text == legacy.text
+    # 원문만 붙였으므로 청크 임베딩은 처음 한 번뿐이다(나머지는 질문 임베딩).
+    assert sum(1 for request in stub.requests if legacy.text in request["input"]) == 1

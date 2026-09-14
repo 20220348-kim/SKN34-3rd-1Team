@@ -40,8 +40,11 @@ import { assistantMessages } from './assistantMessages'
 type SavedProgramsUseCase = Pick<BrowseSavedSupportProgramsUseCase, 'execute'>
 type AskUseCase = Pick<AskAssistantUseCase, 'execute'>
 
-/** 자유 질문은 이 시간 안에 답이 없으면 끊고 다시 시도를 안내합니다. */
-export const assistantAnswerTimeoutMs = 15_000
+/**
+ * 자유 질문은 이 시간 안에 답이 없으면 끊고 다시 시도를 안내합니다. 도구 에이전트의 관심 공고 질문은 분류 → 원문 확보(최대 6초) →
+ * 근거 판단·답의 두 번 호출이라 20초를 넘길 수 있어 그보다 넉넉히 둡니다.
+ */
+export const assistantAnswerTimeoutMs = 45_000
 
 /** 대화는 브라우저 세션 동안만 남습니다. 탭을 닫으면 사라지고 서버에는 보내지 않습니다. */
 export const assistantConversationStorageKey = 'govbiz.assistant.conversation'
@@ -155,7 +158,7 @@ export function useAssistantViewModel(
 
   /**
    * 자유 질문을 Core에 보냅니다. 최근 대화 6개, 현재 화면 경로와 공고 선택 여부, 챗봇 표면의 도움말 전량을 함께 실어
-   * 서버가 인용을 그 안에서만 인정하게 합니다. 15초 안에 답이 없으면 끊고 다시 시도를 안내합니다.
+   * 서버가 인용을 그 안에서만 인정하게 합니다. 45초 안에 답이 없으면 끊고 다시 시도를 안내합니다.
    */
   const submitText = useCallback(async (text: string) => {
     const trimmed = text.trim()

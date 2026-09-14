@@ -359,7 +359,21 @@ Core는 보내기 전에 사업자등록번호·전화·이메일·주민등록�
 응답 의도는 `PRODUCT_HELP`(답+인용 1~3개, 첫 인용 항목의 이동 버튼)·`ACCOUNT_STATE`(`accountTopic`별로 Core가 관심 공고함·받은 제안함·기업을 읽어 답)·
 `SEARCH`(`searchQuery`와 검색 화면 이동)·`PROGRAM_QUESTION`(원문 질문 화면 안내)·`OUT_OF_SCOPE`(기권 답)·`UNCLEAR`(확인 질문)입니다.
 의도별 필드 조합·인용 id·스키마 버전이 어긋나면 답을 고치지 않고 502 `AI_SERVICE_INVALID_RESPONSE`로 끝냅니다.
-이동 버튼의 경로는 Core 상수(`/app/chat`·`/app/saved-programs`·`/app/proposals`·`/app/profile`)와 요청에 실린 도움말 행동 경로만 씁니다.
+이동 버튼의 경로는 Core 상수(`/app/chat`·`/app/saved-programs`·`/app/proposals`·`/app/profile`·`/app/partners`)와 요청에 실린 도움말 행동 경로만 씁니다.
+
+`app.assistant.agent-enabled=true`(`ASSISTANT_AGENT_ENABLED`)면 `AiAssistantClient.agent`로 `/internal/v1/assistant/agent`를 대신 부릅니다.
+로그인 회원이면 `AssistantToolTokenService`가 요청마다 계정 묶음 HMAC 토큰(`app.assistant.tool-token-ttl`, 기본 5분)을 발급해 `principal`로 싣고,
+AI Service의 도구는 그 토큰과 공유 비밀(`app.assistant.tools-secret` = `ASSISTANT_TOOLS_TOKEN`, 32자 이상)로 `AssistantToolController`의
+읽기 전용 내부 API(`GET /internal/v1/assistant/tools/company-profile|recruitments|saved-programs?accountId=`)를 되부릅니다.
+`AssistantToolAuthInterceptor`가 비밀·토큰·계정 일치를 검사하고(401 `ASSISTANT_TOOL_UNAUTHORIZED`, 비밀이 없으면 503 `ASSISTANT_TOOLS_DISABLED`),
+`AssistantToolService`는 연락처·사업자등록번호를 빼고 본문을 마스킹·절단해 돌려줍니다. 새 의도 `PARTNER_MATCH`·`SAVED_PROGRAMS_QUESTION`과
+`ACCOUNT_STATE`의 답·카드(`cards[]`: 모집글 `/app/partners/detail?recruitmentId=`, 공고 `/app/support-programs/detail?sourceCode=&sourceProgramId=`)는
+Core가 형식·경로·중복을 다시 검증하고, 관심 공고 묶음 질문은 첫 응답이 `needsDocuments`면 `AssistantSavedProgramDocumentService`가 관심 공고 최대 10건의
+원문을 `SupportProgramEvidenceService.prepareChunks`로 확보·청킹하고 AI Service에 색인한 뒤(`app.assistant.document-prepare-timeout`, 기본 6초, 넘긴 공고는
+청크 없이) `resumeIntent`로 한 번 더 불러 인용(`quote`)을 청크 원문과 대조합니다. 에이전트 경로는 주소당 분당 `app.assistant.agent-per-client-per-minute`(기본 3)의
+추가 한도를 겁니다. `app.assistant.prefetch-queue-enabled=true`(`ASSISTANT_PREFETCH_QUEUE_ENABLED`, Compose 기본 켜짐)면 관심 공고를 담을 때
+`saved_support_program.source_prefetch_*` outbox(V34)가 RabbitMQ 큐 `govbiz.saved-support-program.prefetch.v1`로 원문 수집·색인을 미리 돌리고
+하루가 지나면 다시 갱신합니다.
 대화 전문은 저장하지 않습니다.
 
 ### 후속 대화 조건 해석

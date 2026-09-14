@@ -101,6 +101,13 @@ class SupportProgramEvidenceSearchRequest(BaseModel):
         return self
 
 
+class SupportProgramEvidenceDocumentChunk(EvidenceChunkIdentity):
+    """문서 묶음 검색(도우미 관심 공고 질문)이 돌려주는 청크. 색인 때 저장한 원문을 함께 준다."""
+
+    text: str = Field(min_length=1, max_length=MAX_CHUNK_TEXT_LENGTH)
+    score: float
+
+
 class SupportProgramEvidenceMatch(EvidenceChunkIdentity):
     score: float = Field(allow_inf_nan=False)
 

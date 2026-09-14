@@ -24,6 +24,11 @@ export const assistantMessages = {
   unavailable: '지금은 AI 답변을 받을 수 없어요. 잠시 뒤 다시 시도해 주세요.',
   profileSource: '내 프로필 기준',
   aiSource: 'AI 답변',
+  /** 도구 에이전트가 회원 자료를 읽어 만든 답의 출처 표기입니다. AI 생성임을 함께 밝힙니다. */
+  aiToolSource: (basis: string) => `AI 생성 · ${basis}`,
+  cardRecruitment: '모집글',
+  cardProgram: '공고',
+  cardQuote: (quote: string) => `원문: “${quote}”`,
   openProgramQuestion: '원문 질문 열기',
   quickSavedPrograms: '관심 공고 마감 확인',
   quickReceivedProposals: '받은 제안 확인',

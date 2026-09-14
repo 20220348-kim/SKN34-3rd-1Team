@@ -1,6 +1,8 @@
 package ai.govbiz.core.supportprogram.repository
 
 import ai.govbiz.core.supportprogram.domain.SavedSupportProgram
+import ai.govbiz.core.supportprogram.domain.SavedSupportProgramPrefetchStatus
+import ai.govbiz.core.supportprogram.domain.SupportProgram
 import ai.govbiz.core.supportprogram.repository.mapper.SavedSupportProgramDbRow
 import ai.govbiz.core.supportprogram.repository.mapper.SavedSupportProgramMapper
 import java.time.Clock
@@ -35,9 +37,43 @@ class SavedSupportProgramRepository(
     fun findByAccountId(accountId: Long): List<SavedSupportProgram> =
         savedSupportProgramMapper.findByAccountId(accountId).map { row -> row.toSavedProgram() }
 
+    /** 원문 선수집 outbox입니다. 발행 뒤 20분 넘게 소비되지 않은 행과 준비된 지 하루 지난 행을 다시 대기로 돌립니다. */
+    @Transactional
+    fun expireStalePrefetch() {
+        val now = LocalDateTime.now(clock)
+        savedSupportProgramMapper.expirePublishedPrefetch(now.minusMinutes(20))
+        savedSupportProgramMapper.requeueStalePrefetch(now.minusHours(24), REQUEUE_BATCH)
+    }
+
+    fun publishablePrefetch(): List<Long> = savedSupportProgramMapper.findPublishablePrefetch(LocalDateTime.now(clock))
+
+    @Transactional
+    fun reservePrefetchPublication(id: Long): Boolean {
+        val now = LocalDateTime.now(clock)
+        return savedSupportProgramMapper.reservePrefetchPublication(id, now, now.plusMinutes(1)) == 1
+    }
+
+    @Transactional
+    fun markPrefetchPublished(id: Long) {
+        check(savedSupportProgramMapper.markPrefetchPublished(id, LocalDateTime.now(clock)) == 1)
+    }
+
+    fun findPublishedProgram(id: Long): SupportProgram? =
+        savedSupportProgramMapper.findPublishedProgram(id)?.toSavedProgram()?.program
+
+    @Transactional
+    fun finishPrefetch(id: Long, status: SavedSupportProgramPrefetchStatus): Boolean {
+        require(status == SavedSupportProgramPrefetchStatus.DONE || status == SavedSupportProgramPrefetchStatus.FAILED)
+        return savedSupportProgramMapper.finishPrefetch(id, status.name, LocalDateTime.now(clock)) == 1
+    }
+
     private fun SavedSupportProgramDbRow.toSavedProgram(): SavedSupportProgram =
         SavedSupportProgram(
             savedAt = requireNotNull(savedAt) { "saved program savedAt must not be null" },
             program = supportProgramRepository.toProgram(requireNotNull(program) { "saved program row must include the program" }),
         )
+
+    private companion object {
+        const val REQUEUE_BATCH = 50
+    }
 }

@@ -20,7 +20,7 @@ const question: AssistantQuestion = {
 }
 const answer = {
   intent: 'PRODUCT_HELP', answer: '점수는 관련도입니다.', citations: ['search-score-meaning'],
-  clarificationQuestion: null, searchQuery: null, accountTopic: null, navigation: { label: '검색 화면 열기', to: '/app/chat' },
+  clarificationQuestion: null, searchQuery: null, accountTopic: null, navigation: { label: '검색 화면 열기', to: '/app/chat' }, cards: [],
 }
 
 describe('askAssistantApi', () => {
@@ -41,6 +41,19 @@ describe('askAssistantApi', () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({ ...answer, navigation: { label: '열기', to: 'https://evil.example' } })))
     await expect(askAssistantApi(question)).rejects.toThrow()
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({ ...answer, intent: 'ELIGIBILITY' })))
+    await expect(askAssistantApi(question)).rejects.toThrow()
+  })
+
+  it('accepts agent cards with internal detail routes and rejects other card routes', async () => {
+    const card = { kind: 'RECRUITMENT', id: '21', title: 'AI 실증 참여기관 구합니다', subtitle: null, reason: '지역이 맞아요.', quote: null, to: '/app/partners/detail?recruitmentId=21' }
+    const agentAnswer = { ...answer, intent: 'PARTNER_MATCH', citations: [], navigation: { label: '파트너 모집 열기', to: '/app/partners' }, cards: [card] }
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(agentAnswer)))
+    await expect(askAssistantApi(question)).resolves.toEqual(agentAnswer)
+    for (const to of ['https://evil.example/x', '/login', '/app/partners/detail?next=<script>']) {
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({ ...agentAnswer, cards: [{ ...card, to }] })))
+      await expect(askAssistantApi(question)).rejects.toThrow()
+    }
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({ ...agentAnswer, cards: Array(6).fill(card) })))
     await expect(askAssistantApi(question)).rejects.toThrow()
   })
 

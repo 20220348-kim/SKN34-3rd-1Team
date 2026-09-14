@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""도우미 자유 질문 의도 분류 회귀 평가. 기본 실행은 모델 호출 없는 입력 검증이고 `--live`만 OpenAI를 호출한다."""
+"""도우미 자유 질문 의도 분류·도구 에이전트 회귀 평가. 기본 실행은 모델 호출 없는 입력 검증이고 `--live`만 OpenAI를 호출한다.
+
+`--agent`는 LangGraph 에이전트 경로(`/internal/v1/assistant/agent`)를 가짜 Core 도구 서버·가짜 근거 검색과 함께 돌린다.
+회원 자료와 공고 원문은 `agent_fixtures.py`의 고정값이고 모델만 실제로 부른다.
+"""
 
 import argparse
 import asyncio
@@ -18,12 +22,16 @@ ROOT = HERE.parents[1]
 sys.path.insert(0, str(ROOT / "backend/ai-service"))
 
 from app.assistant.models import AssistantAnswerRequest, SCHEMA_VERSION  # noqa: E402
+from app.assistant_agent.models import SCHEMA_VERSION as AGENT_SCHEMA_VERSION, AssistantAgentRequest  # noqa: E402
 
 HELP_CONTENT = ROOT / "frontend/src/presentation/shared/help/helpContent.ts"
 APP_PATHS = ROOT / "frontend/src/presentation/shared/routes/appPaths.ts"
 QUESTIONS = HERE / "questions.json"
 ABSTAIN_INTENTS = {"OUT_OF_SCOPE", "UNCLEAR"}
 INTENTS = ["PRODUCT_HELP", "ACCOUNT_STATE", "SEARCH", "PROGRAM_QUESTION", "OUT_OF_SCOPE", "UNCLEAR"]
+# 도구 에이전트 경로에서만 나오는 의도. `mode: "agent"` 문항만 이 의도를 기대할 수 있다.
+AGENT_ONLY_INTENTS = ["PARTNER_MATCH", "SAVED_PROGRAMS_QUESTION"]
+TOOL_NAMES = {"get_my_company_profile", "search_partner_recruitments", "list_saved_programs"}
 
 
 def require(condition: bool, message: str) -> None:
@@ -87,7 +95,7 @@ def load_help_entries(path: Path = HELP_CONTENT, surface: str = "chatbot") -> li
 
 def load_questions(path: Path = QUESTIONS) -> dict:
     fixture = json.loads(path.read_text(encoding="utf-8"))
-    require(fixture.get("schemaVersion") == "assistant-intent-eval-v1", "unsupported questions schema")
+    require(fixture.get("schemaVersion") == "assistant-intent-eval-v2", "unsupported questions schema")
     require(fixture.get("dataType") == "synthetic", "this fixture must be explicitly synthetic")
     require(fixture.get("referenceSource") == "ai-authored", "reference source must be disclosed")
     cases = fixture.get("cases")
@@ -95,13 +103,25 @@ def load_questions(path: Path = QUESTIONS) -> dict:
     ids = [case["id"] for case in cases]
     require(len(set(ids)) == len(ids), "case ids must be unique")
     for case in cases:
-        require(case.get("expectedIntent") in INTENTS, f"{case['id']}: unknown expectedIntent")
+        mode = case.get("mode", "classify")
+        require(mode in ("classify", "agent"), f"{case['id']}: mode must be classify or agent")
+        require(case.get("expectedIntent") in INTENTS + (AGENT_ONLY_INTENTS if mode == "agent" else []), f"{case['id']}: unknown expectedIntent")
         require(case.get("split") in ("dev", "heldout"), f"{case['id']}: split must be dev or heldout")
         if case["expectedIntent"] == "PRODUCT_HELP":
             require(isinstance(case.get("expectedCitation"), str), f"{case['id']}: PRODUCT_HELP needs expectedCitation")
         if case["expectedIntent"] == "ACCOUNT_STATE":
             require(case.get("expectedAccountTopic") in ("SAVED_PROGRAMS", "RECEIVED_PROPOSALS", "COMPANY_PROFILE"), f"{case['id']}: bad expectedAccountTopic")
+        if mode == "agent":
+            tools = case.get("expectedTools")
+            require(isinstance(tools, list) and set(tools) <= TOOL_NAMES, f"{case['id']}: agent cases need expectedTools within {sorted(TOOL_NAMES)}")
+            require(case.get("session", {}).get("authenticated") is True, f"{case['id']}: agent cases are asked with a logged-in session")
+            cards = case.get("expectedCards", [])
+            require(isinstance(cards, list) and all(isinstance(item, str) for item in cards), f"{case['id']}: expectedCards must be a list of ids")
     return fixture
+
+
+def is_agent_case(case: dict) -> bool:
+    return case.get("mode", "classify") == "agent"
 
 
 def build_requests(fixture: dict, help_entries: list[dict]) -> list[tuple[dict, AssistantAnswerRequest]]:
@@ -110,6 +130,9 @@ def build_requests(fixture: dict, help_entries: list[dict]) -> list[tuple[dict, 
     defaults = fixture.get("defaults", {})
     prepared = []
     for case in fixture["cases"]:
+        if is_agent_case(case):
+            # 분류 경로는 에이전트 전용 의도를 낼 수 없으므로 에이전트 문항은 --agent에서만 평가한다.
+            continue
         citation = case.get("expectedCitation")
         require(citation is None or citation in help_ids, f"{case['id']}: expectedCitation {citation} is not a chatbot help entry")
         request = AssistantAnswerRequest.model_validate({
@@ -119,6 +142,31 @@ def build_requests(fixture: dict, help_entries: list[dict]) -> list[tuple[dict, 
             "session": case.get("session", defaults.get("session")),
             "context": case.get("context", defaults.get("context")),
             "helpEntries": help_entries,
+        })
+        prepared.append((case, request))
+    return prepared
+
+
+def build_agent_requests(fixture: dict, help_entries: list[dict]) -> list[tuple[dict, AssistantAgentRequest]]:
+    """모든 문항을 에이전트 계약으로 만든다. 로그인 세션이면 가짜 도구 서버가 받는 고정 principal을 싣는다."""
+    from agent_fixtures import ACCOUNT_ID, TOKEN
+
+    help_ids = {entry["id"] for entry in help_entries}
+    defaults = fixture.get("defaults", {})
+    prepared = []
+    for case in fixture["cases"]:
+        citation = case.get("expectedCitation")
+        require(citation is None or citation in help_ids, f"{case['id']}: expectedCitation {citation} is not a chatbot help entry")
+        session = case.get("session", defaults.get("session"))
+        principal = {"accountId": ACCOUNT_ID, "toolToken": TOKEN, "hasCompany": bool(session.get("hasCompany"))} if session.get("authenticated") else None
+        request = AssistantAgentRequest.model_validate({
+            "schemaVersion": AGENT_SCHEMA_VERSION,
+            "message": case["message"],
+            "history": case.get("history", []),
+            "session": session,
+            "context": case.get("context", defaults.get("context")),
+            "helpEntries": help_entries,
+            "principal": principal,
         })
         prepared.append((case, request))
     return prepared
@@ -141,6 +189,49 @@ def score(case: dict, output: dict | None) -> dict:
     if expected == "ACCOUNT_STATE":
         result["accountTopicCorrect"] = output.get("accountTopic") == case["expectedAccountTopic"]
     return result
+
+
+def score_agent(case: dict, first: dict | None, final: dict | None, tool_calls: list[str], chunk_texts: dict[str, list[str]], valid_ids: set[str]) -> dict:
+    """에이전트 문항의 판정. first는 첫 응답(의도), final은 답·카드가 담긴 마지막 응답이다."""
+    result = score(case, first)
+    result["mode"] = "agent"
+    if final is None:
+        return result
+    expected_tools = set(case.get("expectedTools", []))
+    result["tools"] = sorted(tool_calls)
+    result["toolsCorrect"] = set(tool_calls) == expected_tools if is_agent_case(case) else None
+    cards = final.get("cards") or []
+    result["cardCount"] = len(cards)
+    result["cardsValid"] = all(card.get("id") in valid_ids for card in cards)
+    expected_cards = set(case.get("expectedCards", []))
+    result["expectedCardsIncluded"] = expected_cards <= {card.get("id") for card in cards} if expected_cards else None
+    quotes = [card.get("quote") for card in cards if card.get("quote")]
+    result["quoteCount"] = len(quotes)
+    result["quotesVerified"] = all(any(quote in text for text in chunk_texts.get(card.get("id"), [])) for card in cards for quote in [card.get("quote")] if quote)
+    result["needsDocuments"] = bool(first and first.get("needsDocuments"))
+    result["answered"] = bool(final.get("answer"))
+    return result
+
+
+def summarize_agent(results: list[dict]) -> dict:
+    scored = [item for item in results if item.get("error") is None]
+    agent_cases = [item for item in scored if item.get("toolsCorrect") is not None]
+    with_expected_cards = [item for item in agent_cases if item.get("expectedCardsIncluded") is not None]
+    with_quotes = [item for item in agent_cases if item.get("quoteCount", 0) > 0]
+    return {
+        "cases": len(results), "scored": len(scored), "errors": len(results) - len(scored),
+        "intentAccuracy": _rate([item["intentCorrect"] for item in scored]),
+        "agentCases": len(agent_cases),
+        "toolSelectionAccuracy": _rate([item["toolsCorrect"] for item in agent_cases]),
+        "cardValidityRate": _rate([item["cardsValid"] for item in agent_cases]),
+        "expectedCardsIncludedRate": _rate([item["expectedCardsIncluded"] for item in with_expected_cards]),
+        "quoteVerificationRate": _rate([item["quotesVerified"] for item in with_quotes]),
+        "answeredRate": _rate([item["answered"] for item in agent_cases]),
+    }
+
+
+def _rate(values: list) -> float | None:
+    return round(sum(1 for value in values if value) / len(values), 4) if values else None
 
 
 def summarize(results: list[dict]) -> dict:
@@ -226,9 +317,70 @@ async def run_live(prepared: list[tuple[dict, AssistantAnswerRequest]]) -> tuple
     return results, {"model": model_name, "reasoningEffort": reasoning_effort, "meanLatencyMs": round(sum(latencies) / len(latencies) * 1000) if latencies else None}
 
 
+async def run_agent(prepared: list[tuple[dict, AssistantAgentRequest]]) -> tuple[list[dict], dict]:
+    """에이전트 그래프를 실제 모델·가짜 도구 서버·가짜 근거 검색으로 돌린다. 관심 공고 질문은 Core처럼 두 번 부른다."""
+    from app.assistant.errors import AssistantAnswerError
+    from app.assistant_agent.graph import build_assistant_agent_graph
+    from app.assistant_agent.service import AssistantAgentService
+    from app.assistant_agent.tools import CoreToolClient
+    from app.bootstrap import _chat_model
+    from app.config import Settings
+    from agent_fixtures import RECRUITMENT_IDS, SAVED_PROGRAM_IDS, SECRET, FakeCoreTools, FakeRetriever, chunk_texts, saved_program_documents
+
+    require(bool(os.environ.get("OPENAI_API_KEY")), "OPENAI_API_KEY is required for --live")
+    settings = Settings.from_environment()
+    fake = FakeCoreTools()
+    tool_client = CoreToolClient(base_url="http://core-api.eval", secret=SECRET, timeout_seconds=3, transport=fake.transport())
+    graph = build_assistant_agent_graph(
+        classify_model=_chat_model(settings, settings.openai_assistant_model, settings.openai_assistant_reasoning_effort),
+        agent_model=_chat_model(settings, settings.openai_assistant_agent_model, settings.openai_assistant_agent_reasoning_effort),
+        tool_client=tool_client, max_tool_calls=settings.assistant_agent_max_tool_calls, retriever=FakeRetriever(),
+    )
+    service = AssistantAgentService(graph=graph, timeout_seconds=30)
+    valid_ids = RECRUITMENT_IDS | SAVED_PROGRAM_IDS
+    results, latencies = [], []
+    try:
+        for case, request in prepared:
+            started = perf_counter()
+            first = final = None
+            tool_calls: list[str] = []
+            error_kind = None
+            try:
+                response = await service.answer(request)
+                first = final = response.model_dump(by_alias=True)
+                tool_calls = [call["name"] for call in first["toolCalls"]]
+                if first["needsDocuments"]:
+                    resumed = await service.answer(request.model_copy(update={
+                        "saved_program_documents": request.model_validate({**request.model_dump(by_alias=True), "savedProgramDocuments": saved_program_documents(), "resumeIntent": "SAVED_PROGRAMS_QUESTION"}).saved_program_documents,
+                        "resume_intent": "SAVED_PROGRAMS_QUESTION",
+                    }))
+                    final = resumed.model_dump(by_alias=True)
+                    tool_calls += [call["name"] for call in final["toolCalls"]]
+            except AssistantAnswerError as error:
+                # 예외 이름과 계약 위반 사유만 남긴다. 질문·모델 문장은 담기지 않는다.
+                cause = error.__cause__
+                error_kind = type(error).__name__ + (f": {error}" if str(error) else "") + (f" <- {type(cause).__name__}: {str(cause)[:120]}" if cause is not None else "")
+            latencies.append(perf_counter() - started)
+            result = score_agent(case, first, final, tool_calls, chunk_texts(), valid_ids)
+            if error_kind is not None:
+                result["error"] = error_kind
+            elif first is None:
+                result["error"] = "no output"
+            result["latencyMs"] = round(latencies[-1] * 1000)
+            results.append(result)
+    finally:
+        await tool_client.aclose()
+    return results, {
+        "classifyModel": settings.openai_assistant_model, "classifyReasoningEffort": settings.openai_assistant_reasoning_effort,
+        "agentModel": settings.openai_assistant_agent_model, "agentReasoningEffort": settings.openai_assistant_agent_reasoning_effort,
+        "meanLatencyMs": round(sum(latencies) / len(latencies) * 1000) if latencies else None,
+    }
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--live", action="store_true", help="OpenAI를 실제로 호출한다. OPENAI_API_KEY가 필요하다.")
+    parser.add_argument("--agent", action="store_true", help="도구 에이전트 경로로 평가한다(가짜 Core 도구·가짜 근거 검색). 모든 문항을 돌린다.")
     parser.add_argument("--split", choices=["dev", "heldout"], help="한 분할만 평가한다.")
     parser.add_argument("--case", action="append", default=[], help="특정 문항 id만 평가한다(반복 가능).")
     parser.add_argument("--report", type=Path, help="결과 JSON을 이 경로에도 저장한다.")
@@ -236,7 +388,7 @@ def main() -> int:
 
     fixture = load_questions()
     help_entries = load_help_entries()
-    prepared = build_requests(fixture, help_entries)
+    prepared = build_agent_requests(fixture, help_entries) if args.agent else build_requests(fixture, help_entries)
     if args.split:
         prepared = [item for item in prepared if item[0]["split"] == args.split]
     if args.case:
@@ -252,9 +404,15 @@ def main() -> int:
         "helpContentSha256": sha256(HELP_CONTENT.read_bytes()).hexdigest(),
         "helpEntryCount": len(help_entries),
         "selectedCases": len(prepared),
-        "mode": "live" if args.live else "dry-run",
+        "mode": ("agent-" if args.agent else "") + ("live" if args.live else "dry-run"),
     }
-    if args.live:
+    if args.live and args.agent:
+        results, run_info = asyncio.run(run_agent(prepared))
+        report.update(run_info)
+        report["summary"] = {**summarize(results), **summarize_agent(results)}
+        report["confusion"] = confusion(results)
+        report["results"] = results
+    elif args.live:
         results, run_info = asyncio.run(run_live(prepared))
         report.update(run_info)
         report["summary"] = summarize(results)

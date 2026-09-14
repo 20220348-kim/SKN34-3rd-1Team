@@ -53,6 +53,77 @@ def conversation_output(payload: dict) -> dict | None:
             "updates": updates, "clarificationQuestion": question}
 
 
+def assistant_agent_output(request: dict, payload: dict) -> tuple[str, object]:
+    """도우미 도구 에이전트(LangGraph)의 분류·계획·답 단계를 문구로 흉내 낸다. 계획 단계는 도구 호출 항목을 돌려준다."""
+    step = payload.get("step")
+    message = payload.get("message", "")
+    if step == "classify":
+        empty = {"answer": None, "citations": [], "clarificationQuestion": None, "searchQuery": None, "accountTopic": None}
+        if "모집글" in message or "파트너" in message or "협업" in message:
+            return "message", {**empty, "intent": "PARTNER_MATCH"}
+        if "담은 공고" in message or "관심 공고들" in message or "담아둔" in message:
+            return "message", {**empty, "intent": "SAVED_PROGRAMS_QUESTION"}
+        return "message", assistant_output(payload)
+    if step == "plan":
+        outputs = [item for item in request["input"] if isinstance(item, dict) and item.get("type") == "function_call_output"]
+        intent = payload.get("intent")
+        if intent == "PARTNER_MATCH":
+            if not outputs:
+                return "tool_calls", [("get_my_company_profile", {})]
+            if len(outputs) == 1:
+                profile = json.loads(outputs[0]["output"])
+                roles = profile.get("roles") or []
+                return "tool_calls", [("search_partner_recruitments", {
+                    "region": None, "seekingRole": "PARTICIPANT" if "PARTICIPANT" in roles or not roles else "LEAD", "keyword": None,
+                })]
+        elif not outputs:
+            tool = "get_my_company_profile" if payload.get("accountTopic") == "COMPANY_PROFILE" else "list_saved_programs"
+            return "tool_calls", [(tool, {})]
+        return "message", "READY"
+    if step == "map":
+        chunks = payload.get("chunks") or []
+        if not chunks:
+            return "message", {"verdict": "UNKNOWN", "value": None, "quote": None, "confidence": "LOW"}
+        # 첫 청크 원문을 글자 그대로 인용해 Core·AI Service의 대조를 통과하게 한다.
+        return "message", {"verdict": "YES", "value": "온라인 접수", "quote": chunks[0]["text"][:200], "confidence": "HIGH"}
+    if step == "reduce":
+        programs = payload.get("programs") or []
+        matched = [program for program in programs if program.get("finding") and program["finding"].get("verdict") == "YES"]
+        unfetched = [program for program in programs if not program.get("fetched")]
+        answer = f"관심 공고 {len(programs)}건 중 {len(matched)}건이 질문에 해당해요."
+        if unfetched:
+            answer += f" {len(unfetched)}건은 원문을 확인하지 못했어요."
+        return "message", {
+            "answer": answer,
+            "cards": [{"documentId": program["documentId"], "reason": f"{program['finding'].get('value') or '해당'}으로 확인됐어요."} for program in matched[:5]],
+            "navigation": "SAVED_PROGRAMS" if programs else "CHAT",
+        }
+    if step == "answer":
+        data = payload.get("data", {})
+        intent = payload.get("intent")
+        if intent == "PARTNER_MATCH":
+            profile = data.get("companyProfile") or {}
+            if not profile.get("registered", False):
+                return "message", {"answer": "먼저 프로필에서 기업을 등록하면 맞는 모집글을 찾아드릴게요.", "cards": [], "navigation": "PROFILE"}
+            recruitments = data.get("recruitments") or []
+            cards = [{"kind": "RECRUITMENT", "id": str(item["id"]), "reason": "테스트 대역이 고른 모집글입니다."} for item in recruitments[:3]]
+            answer = (f"모집 중인 글 {len(recruitments)}건 중 {len(cards)}건을 골랐어요. 카드에서 상세를 확인해 보세요."
+                      if cards else "지금은 맞는 모집글이 없어요. 파트너 모집 화면에서 직접 살펴보거나 조건을 바꿔 물어봐 주세요.")
+            return "message", {"answer": answer, "cards": cards, "navigation": "PARTNERS"}
+        programs = data.get("savedPrograms") or []
+        cards = [{"kind": "PROGRAM", "id": f"{item['sourceCode']}:{item['sourceProgramId']}", "reason": "테스트 대역이 고른 공고입니다."}
+                 for item in programs[:2]]
+        if data.get("errors"):
+            return "message", {"answer": "지금은 자료를 확인하지 못했어요. 잠시 뒤 다시 물어봐 주세요.", "cards": [], "navigation": "NONE"}
+        if payload.get("accountTopic") == "COMPANY_PROFILE":
+            profile = data.get("companyProfile") or {}
+            answer = f"{profile.get('companyName')}이(가) 등록되어 있어요." if profile.get("registered") else "아직 기업이 등록되지 않았어요."
+            return "message", {"answer": answer, "cards": [], "navigation": "PROFILE"}
+        answer = f"관심 공고 {len(programs)}건이 있어요." if programs else "관심 공고함이 비어 있어요."
+        return "message", {"answer": answer, "cards": cards, "navigation": "SAVED_PROGRAMS"}
+    return "message", {"error": "unsupported assistant agent step"}
+
+
 def assistant_output(payload: dict) -> dict:
     """도우미 자유 질문의 의도를 문구로 고른다. 실제 모델처럼 도움말 항목 안에서만 인용한다."""
     message = payload["message"]
@@ -158,6 +229,15 @@ class Handler(BaseHTTPRequestHandler):
                 content = user["content"]
                 text = content if isinstance(content, str) else "".join(part.get("text", "") for part in content)
                 payload = json.loads(text)
+            if payload.get("schemaVersion") == "govbiz-assistant-agent-v1":
+                kind, output = assistant_agent_output(request, payload)
+                if kind == "tool_calls":
+                    self.respond_tool_calls(request, output)
+                elif isinstance(output, str):
+                    self.respond_model_text(request, output)
+                else:
+                    self.respond_model_output(request, output)
+                return
             if payload.get("schemaVersion") == "govbiz-assistant-v1":
                 self.respond_model_output(request, assistant_output(payload))
                 return
@@ -210,6 +290,26 @@ class Handler(BaseHTTPRequestHandler):
             self.respond_model_output(request, {"rankings": rankings})
             return
         self.respond(404, {"error": {"message": "unexpected fixture path"}})
+
+    def respond_model_text(self, request: dict, text: str) -> None:
+        self.respond(200, {
+                "id": "resp_fixture", "created_at": 0, "object": "response", "model": request["model"],
+                "error": None, "incomplete_details": None, "status": "completed", "parallel_tool_calls": False,
+                "tool_choice": "none", "tools": [], "output": [{"id": "msg_fixture", "type": "message",
+                    "role": "assistant", "status": "completed", "content": [{"type": "output_text",
+                    "annotations": [], "text": text}]}],
+            })
+
+    def respond_tool_calls(self, request: dict, calls: list) -> None:
+        self.respond(200, {
+                "id": "resp_fixture", "created_at": 0, "object": "response", "model": request["model"],
+                "error": None, "incomplete_details": None, "status": "completed", "parallel_tool_calls": True,
+                "tool_choice": "auto", "tools": [], "output": [
+                    {"id": f"fc_fixture_{index}", "type": "function_call", "call_id": f"call_fixture_{index}", "name": name,
+                     "arguments": json.dumps(arguments, ensure_ascii=False), "status": "completed"}
+                    for index, (name, arguments) in enumerate(calls)
+                ],
+            })
 
     def respond_model_output(self, request: dict, output: dict) -> None:
         self.respond(200, {

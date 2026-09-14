@@ -180,10 +180,17 @@ function AssistantCard({ card, onNavigate }: { card: AssistantCardModel; onNavig
     <div className={styles.card}>
       {card.rows.map((row, index) => (
         <div className={styles.cardRow} key={`${row.title}-${index}`}>
-          <span className={styles.cardRowTitle}>
-            {row.tag !== null ? <span className={assistantCardTagClassName(row.tag.tone)}>{row.tag.label}</span> : null}
-            {row.title}
-          </span>
+          {row.to === undefined ? (
+            <span className={styles.cardRowTitle}>
+              {row.tag !== null ? <span className={assistantCardTagClassName(row.tag.tone)}>{row.tag.label}</span> : null}
+              {row.title}
+            </span>
+          ) : (
+            <Link className={styles.cardRowLink} to={row.to} onClick={() => onNavigate({ label: row.title, to: row.to ?? '' })}>
+              {row.tag !== null ? <span className={assistantCardTagClassName(row.tag.tone)}>{row.tag.label}</span> : null}
+              {row.title}
+            </Link>
+          )}
           {row.detail !== null ? <span className={styles.cardRowDetail}>{row.detail}</span> : null}
         </div>
       ))}

@@ -1,8 +1,8 @@
 {
-  "schemaVersion": "assistant-intent-eval-v1",
+  "schemaVersion": "assistant-intent-eval-v2",
   "dataType": "synthetic",
   "referenceSource": "ai-authored",
-  "description": "도우미 자유 질문 의도 분류 회귀 세트. 도움말 10항목마다 표현 3개(30문항), 회원 상태·검색·공고 질문 10문항, 답할 수 없어 기권해야 하는 10문항. 실제 사용자 질문이 아니며 사람 검증 정답이 아니다.",
+  "description": "도우미 자유 질문 의도 분류 회귀 세트. 도움말 10항목마다 표현 3개(30문항), 회원 상태·검색·공고 질문 10문항, 답할 수 없어 기권해야 하는 10문항, 도구 에이전트 문항 20개(모집글 매칭 8·관심 공고 묶음 8·도구 상태 4, mode=agent). 실제 사용자 질문이 아니며 사람 검증 정답이 아니다.",
   "defaults": {
     "session": { "authenticated": false, "hasCompany": false },
     "context": { "route": "/", "programSelected": false }
@@ -61,6 +61,29 @@
     { "id": "N07", "split": "heldout", "message": "우리 회사 로고 디자인 좀 해 줄 수 있어?", "expectedIntent": "OUT_OF_SCOPE" },
     { "id": "N08", "split": "dev", "message": "그거 어떻게 해?", "expectedIntent": "UNCLEAR" },
     { "id": "N09", "split": "dev", "message": "안 돼요", "expectedIntent": "UNCLEAR" },
-    { "id": "N10", "split": "heldout", "message": "이거요", "expectedIntent": "UNCLEAR" }
+    { "id": "N10", "split": "heldout", "message": "이거요", "expectedIntent": "UNCLEAR" },
+
+    { "id": "M01", "split": "dev", "mode": "agent", "message": "나한테 맞는 파트너 모집글 있어?", "expectedIntent": "PARTNER_MATCH", "expectedTools": ["get_my_company_profile", "search_partner_recruitments"], "expectedCards": ["21"], "session": { "authenticated": true, "hasCompany": true }, "context": { "route": "/app/chat", "programSelected": false } },
+    { "id": "M02", "split": "dev", "mode": "agent", "message": "우리 회사랑 협업할 만한 모집글 찾아줘", "expectedIntent": "PARTNER_MATCH", "expectedTools": ["get_my_company_profile", "search_partner_recruitments"], "expectedCards": ["21"], "session": { "authenticated": true, "hasCompany": true }, "context": { "route": "/app/partners", "programSelected": false } },
+    { "id": "M03", "split": "dev", "mode": "agent", "message": "참여기관으로 들어갈 수 있는 컨소시엄 모집 있어?", "expectedIntent": "PARTNER_MATCH", "expectedTools": ["get_my_company_profile", "search_partner_recruitments"], "expectedCards": ["21"], "session": { "authenticated": true, "hasCompany": true }, "context": { "route": "/app/chat", "programSelected": false } },
+    { "id": "M04", "split": "dev", "mode": "agent", "message": "라벨링 할 수 있는 기업 찾는 모집글 있으면 알려줘", "expectedIntent": "PARTNER_MATCH", "expectedTools": ["get_my_company_profile", "search_partner_recruitments"], "expectedCards": ["21"], "session": { "authenticated": true, "hasCompany": true }, "context": { "route": "/app/chat", "programSelected": false } },
+    { "id": "M05", "split": "heldout", "mode": "agent", "message": "우리 역량이랑 맞는 파트너 모집 골라줘", "expectedIntent": "PARTNER_MATCH", "expectedTools": ["get_my_company_profile", "search_partner_recruitments"], "expectedCards": ["21"], "session": { "authenticated": true, "hasCompany": true }, "context": { "route": "/app/chat", "programSelected": false } },
+    { "id": "M06", "split": "heldout", "mode": "agent", "message": "서울 쪽 모집글 중에 우리한테 맞는 거 있나?", "expectedIntent": "PARTNER_MATCH", "expectedTools": ["get_my_company_profile", "search_partner_recruitments"], "expectedCards": ["21"], "session": { "authenticated": true, "hasCompany": true }, "context": { "route": "/app/partners", "programSelected": false } },
+    { "id": "M07", "split": "heldout", "mode": "agent", "message": "협업 파트너 매칭 좀 해줘", "expectedIntent": "PARTNER_MATCH", "expectedTools": ["get_my_company_profile", "search_partner_recruitments"], "expectedCards": ["21"], "session": { "authenticated": true, "hasCompany": true }, "context": { "route": "/app/chat", "programSelected": false } },
+    { "id": "M08", "split": "dev", "mode": "agent", "message": "맞는 모집글 있으면 찾아줘", "expectedIntent": "PARTNER_MATCH", "expectedTools": [], "session": { "authenticated": true, "hasCompany": false }, "context": { "route": "/app/chat", "programSelected": false } },
+
+    { "id": "D01", "split": "dev", "mode": "agent", "message": "내가 담은 공고 중에 온라인으로 접수하는 건 어떤 거야?", "expectedIntent": "SAVED_PROGRAMS_QUESTION", "expectedTools": [], "expectedCards": ["BIZINFO:PBLN_000000000000001"], "session": { "authenticated": true, "hasCompany": true }, "context": { "route": "/app/saved-programs", "programSelected": false } },
+    { "id": "D02", "split": "dev", "mode": "agent", "message": "관심 공고들 중 사업계획서 내야 하는 게 뭐야?", "expectedIntent": "SAVED_PROGRAMS_QUESTION", "expectedTools": [], "expectedCards": ["BIZINFO:PBLN_000000000000001"], "session": { "authenticated": true, "hasCompany": true }, "context": { "route": "/app/chat", "programSelected": false } },
+    { "id": "D03", "split": "dev", "mode": "agent", "message": "담아둔 것 중 방문 접수만 되는 공고 있어?", "expectedIntent": "SAVED_PROGRAMS_QUESTION", "expectedTools": [], "expectedCards": ["BIZINFO:PBLN_000000000000002"], "session": { "authenticated": true, "hasCompany": true }, "context": { "route": "/app/chat", "programSelected": false } },
+    { "id": "D04", "split": "dev", "mode": "agent", "message": "관심 공고 중에 재무제표 제출해야 하는 건?", "expectedIntent": "SAVED_PROGRAMS_QUESTION", "expectedTools": [], "expectedCards": ["BIZINFO:PBLN_000000000000001"], "session": { "authenticated": true, "hasCompany": true }, "context": { "route": "/app/chat", "programSelected": false } },
+    { "id": "D05", "split": "heldout", "mode": "agent", "message": "내 관심 공고들 제출 서류 뭐뭐 있어?", "expectedIntent": "SAVED_PROGRAMS_QUESTION", "expectedTools": [], "session": { "authenticated": true, "hasCompany": true }, "context": { "route": "/app/chat", "programSelected": false } },
+    { "id": "D06", "split": "heldout", "mode": "agent", "message": "담아둔 공고 중 서울 소재 기업만 되는 거 있어?", "expectedIntent": "SAVED_PROGRAMS_QUESTION", "expectedTools": [], "expectedCards": ["BIZINFO:PBLN_000000000000001"], "session": { "authenticated": true, "hasCompany": true }, "context": { "route": "/app/chat", "programSelected": false } },
+    { "id": "D07", "split": "heldout", "mode": "agent", "message": "관심 공고들 중 설립 7년 넘으면 못 내는 거 어떤 거야?", "expectedIntent": "SAVED_PROGRAMS_QUESTION", "expectedTools": [], "expectedCards": ["BIZINFO:PBLN_000000000000001"], "session": { "authenticated": true, "hasCompany": true }, "context": { "route": "/app/chat", "programSelected": false } },
+    { "id": "D08", "split": "dev", "mode": "agent", "message": "담은 공고들 접수 방법 비교해줘", "expectedIntent": "SAVED_PROGRAMS_QUESTION", "expectedTools": [], "session": { "authenticated": true, "hasCompany": true }, "context": { "route": "/app/saved-programs", "programSelected": false } },
+
+    { "id": "T01", "split": "dev", "mode": "agent", "message": "관심 공고 몇 개 담아뒀지?", "expectedIntent": "ACCOUNT_STATE", "expectedAccountTopic": "SAVED_PROGRAMS", "expectedTools": ["list_saved_programs"], "session": { "authenticated": true, "hasCompany": true }, "context": { "route": "/app/chat", "programSelected": false } },
+    { "id": "T02", "split": "dev", "mode": "agent", "message": "저장한 공고 마감 제일 빠른 게 언제야?", "expectedIntent": "ACCOUNT_STATE", "expectedAccountTopic": "SAVED_PROGRAMS", "expectedTools": ["list_saved_programs"], "expectedCards": ["BIZINFO:PBLN_000000000000001"], "session": { "authenticated": true, "hasCompany": true }, "context": { "route": "/app/chat", "programSelected": false } },
+    { "id": "T03", "split": "heldout", "mode": "agent", "message": "내 기업 등록돼 있어?", "expectedIntent": "ACCOUNT_STATE", "expectedAccountTopic": "COMPANY_PROFILE", "expectedTools": ["get_my_company_profile"], "session": { "authenticated": true, "hasCompany": true }, "context": { "route": "/app/profile", "programSelected": false } },
+    { "id": "T04", "split": "heldout", "mode": "agent", "message": "받은 제안 몇 개 왔어?", "expectedIntent": "ACCOUNT_STATE", "expectedAccountTopic": "RECEIVED_PROPOSALS", "expectedTools": [], "session": { "authenticated": true, "hasCompany": true }, "context": { "route": "/app/chat", "programSelected": false } }
   ]
 }
