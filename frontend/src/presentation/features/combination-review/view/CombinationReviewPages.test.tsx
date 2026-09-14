@@ -260,6 +260,8 @@ describe('review screens and execution safety', () => {
     await screen.findByText('이전 검토')
     expect(repository.list.mock.calls[1][0]).toBe(12)
     expect(screen.getByText(reviewFixture.title)).toBeTruthy()
+    expect(screen.getAllByText(/수정 2026년 9월 9일 오전 10:00/)).toHaveLength(2)
+    expect(screen.queryByText(/2026-09-09T10:00:00/)).toBeNull()
     expect(screen.getAllByRole('link', { name: '결과 보기' })).toHaveLength(2)
   })
   it('deletes a review only after explicit confirmation and removes it from the list', async () => {
@@ -325,13 +327,36 @@ describe('review screens and execution safety', () => {
     expect(screen.queryByText(/자동 분석은 지원하지 않습니다/)).toBeNull()
   })
   it.each([422, 429, 503])('shows %s as technical error with saved failed run', async (status) => {
+    const failedRun = { ...runFixture, status: 'FAILED' as const, analysis: null, failureCode: 'SOURCE_UNSUPPORTED' }
     repository.start.mockRejectedValue(new CombinationReviewError(status, 'SOURCE_UNSUPPORTED', 30))
-    repository.run.mockResolvedValue({ ...runFixture, status: 'FAILED', analysis: null, failureCode: 'SOURCE_UNSUPPORTED' })
+    repository.run.mockResolvedValue(failedRun)
+    repository.runs.mockResolvedValue({ items: [failedRun], nextBeforeId: null })
     mount(); await screen.findByText('새 분석 실행')
     fireEvent.click(screen.getByText('새 분석 실행'))
     fireEvent.click(await screen.findByText('실패 실행 #30 확인'))
-    await screen.findByText(/분석이 정상 완료되지 않았습니다/)
+    await screen.findByText(/공식 첨부 문서를 자동으로 읽을 수 없어 분석해 드릴 수 없습니다/)
+    expect(screen.getByRole('option', { name: /실행 #30 · 분석 실패/ })).toBeTruthy()
+    expect(screen.queryByText(/SOURCE_UNSUPPORTED/)).toBeNull()
+    expect(screen.queryByText(/기술 실패/)).toBeNull()
     expect(screen.queryByText('공식 근거 부족')).toBeNull()
+  })
+  it.each([
+    ['SOURCE_NOT_FOUND', '공식 원문 또는 첨부 문서를 찾을 수 없어'],
+    ['SOURCE_UNAVAILABLE', '공식 공고 제공처에 일시적으로 연결할 수 없어'],
+    ['SOURCE_INVALID', '공식 원문 또는 첨부 문서를 정상적으로 확인할 수 없어'],
+    ['SOURCE_TOO_LARGE', '공식 첨부 문서의 수나 분량이 자동 분석 한도를 초과해'],
+    ['ANALYSIS_UNAVAILABLE', '분석 서비스에 일시적으로 연결할 수 없어'],
+    ['ANALYSIS_INVALID', '분석 결과를 안전하게 확인할 수 없어'],
+    ['RUN_FAILED', '분석 처리 중 일시적인 시스템 오류가 발생해'],
+    ['QUEUE_EXPIRED', '분석 요청이 대기 시간 안에 처리되지 않아'],
+    ['ACCOUNT_INACTIVE', '계정 상태가 변경되어 분석을 진행할 수 없습니다'],
+  ])('explains the saved %s failure without exposing its internal code', async (failureCode, message) => {
+    repository.run.mockResolvedValue({ ...runFixture, status: 'FAILED', analysis: null, failureCode })
+
+    mount('/app/combination-reviews/12/runs/30')
+
+    expect(await screen.findByText(new RegExp(message))).toBeTruthy()
+    expect(screen.queryByText(new RegExp(failureCode))).toBeNull()
   })
   it('shows auth expiry and clears personal view', async () => {
     repository.get.mockRejectedValue(new CombinationReviewError(401, 'UNAUTHENTICATED'))
@@ -411,6 +436,9 @@ describe('review screens and execution safety', () => {
     const sourceLink = screen.getByRole('link', { name: '공식 공고 페이지 열기' })
     expect(sourceLink.getAttribute('href')).toBe(runFixture.evidence!.documents[0].sourcePageUrl)
     expect(screen.getAllByRole('button', { name: '수집 원본 다운로드' })).toHaveLength(1)
+    expect(screen.queryByText(/SHA-256/)).toBeNull()
+    expect(screen.queryByText(/파서 fixture-v1/)).toBeNull()
+    expect(screen.queryByText(/수집 2026-09-09T09:00:00/)).toBeNull()
     expect(screen.queryByRole('link', { name: '공식 출처 열기' })).toBeNull()
     expect(repository.start).not.toHaveBeenCalled()
   })
@@ -445,6 +473,9 @@ describe('review screens and execution safety', () => {
     repository.run.mockImplementation(async (_reviewId, selectedRunId) => selectedRunId === 29 ? olderRun : runFixture)
     mount('/app/combination-reviews/12/runs/30')
     await screen.findByRole('region', { name: '실행 30 결과' })
+    expect(screen.getByRole('option', { name: /실행 #30 · 분석 완료 · 2026년 9월 9일 오전 9:00/ })).toBeTruthy()
+    expect(screen.getByRole('option', { name: /실행 #29 · 분석 완료 · 2026년 9월 8일 오전 9:00/ })).toBeTruthy()
+    expect(screen.queryByText(/2026-09-0[89]T09:00:00/)).toBeNull()
 
     fireEvent.change(screen.getByLabelText('실행 결과 선택'), { target: { value: '29' } })
 

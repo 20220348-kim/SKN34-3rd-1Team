@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { reviewStages, type ReviewRun } from '../../../../domain/entities/CombinationReview'
+import { reviewRunFailureMessage } from '../viewmodel/reviewMessages'
 import { reviewStyles as s } from './CombinationReview.styles'
 
 const stages = { APPLICATION: '신청', SELECTION: '선정', COMMITMENT: '확약', AGREEMENT: '협약', EXECUTION: '수행', FUNDING: '교부' }
@@ -27,7 +28,7 @@ export function ReviewRunResult({ run, currentRevision, download, downloading }:
       {run.status === 'QUEUED' && <p role="status" className={`${s.warning} mt-3`}>분석 대기 중입니다. 처리 가능한 순서에 따라 시작하며 새로고침해도 작업은 유지됩니다.</p>}
       {run.status === 'RUNNING' && <p role="status" className={`${s.warning} mt-3`}>공식 문서 수집·분석 중입니다. 상태를 자동으로 확인하며 새 분석을 중복 실행하지 않습니다.</p>}
       {run.status === 'UNKNOWN' && <p role="status" className={`${s.warning} mt-3`}>분석 완료 여부를 확인할 수 없습니다. 중복 과금을 방지하기 위해 자동 재실행과 같은 검토의 새 분석을 차단했습니다. 운영자 확인이 필요합니다.</p>}
-      {(run.status === 'FAILED' || run.status === 'INTERRUPTED') && <p className={`${s.warning} mt-3`}>분석이 정상 완료되지 않았습니다. 근거 부족 판단이나 허용 결과가 아닙니다. 오류 코드: {run.failureCode ?? '확인 필요'}</p>}
+      {(run.status === 'FAILED' || run.status === 'INTERRUPTED') && <p className={`${s.warning} mt-3`}>{reviewRunFailureMessage(run.failureCode)}</p>}
     <p className={s.warning}>공식 원문 기준의 AI 분석이며 사람이 검수한 정답이 아닙니다. 제한을 찾지 못한 것은 허용을 뜻하지 않습니다. 범위 내 허용도 전체 신청 자격이나 동시 수혜를 보장하지 않습니다.</p>
     {run.analysis && <>
       <section className={`${s.card} space-y-3`} aria-label="두 사업의 중복 지원 검토 요약">
@@ -86,7 +87,6 @@ export function ReviewRunResult({ run, currentRevision, download, downloading }:
         <strong>사업 {doc.programIndex + 1} · {doc.fileName}</strong> ({doc.format})<br />
         {doc.sourcePageUrl && <><a href={doc.sourcePageUrl} target="_blank" rel="noreferrer" className="text-emerald-800 underline">공식 공고 페이지 열기</a>{' · '}</>}
         <button className={s.button} type="button" disabled={downloading} onClick={() => download(i)}>수집 원본 다운로드</button>
-        <p className="mt-1 text-xs">수집 {doc.fetchedAt} · 파서 {doc.parserVersion} · SHA-256 {doc.rawHash}</p>
       </li>)}</ul>
       <ul className="mt-4 list-disc pl-5 text-sm">{run.evidence.coverageWarnings.map((warning, i) => <li key={i}>{warning}</li>)}</ul>
     </section>}
