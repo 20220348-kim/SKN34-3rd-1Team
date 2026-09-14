@@ -1,7 +1,10 @@
 import { flushSync } from 'react-dom'
 import { Link, useLocation, useNavigate } from 'react-router'
 
+import { useAppSelector } from '../../../app/hooks'
+import { selectChatActivity } from '../../features/chat/state/chatSlice'
 import { useAuthSession } from '../auth/hooks/useAuthSession'
+import { chatActivityHeaderLabel } from '../chat-activity/chatActivityMessages'
 import { appPaths, publicPaths } from '../routes/appPaths'
 import { appHeaderStyles } from './AppHeader.styles'
 
@@ -31,6 +34,9 @@ export function AppHeader() {
   // 검색·파트너 모집·요금제는 로그인 전 공개 화면이라 같은 마케팅 헤더를 공유합니다.
   const isMarketingPage = isLanding || isPricing || isPartners
   const currentTitle = pageTitles.find((page) => page.matches(pathname))?.title ?? null
+  // 검색 화면을 떠나 있는 동안 진행 중인 검색·도착한 결과를 헤더에서 알리고 누르면 검색 화면으로 돌아갑니다.
+  const chatActivity = useAppSelector(selectChatActivity)
+  const activityLabel = isLanding ? null : chatActivityHeaderLabel(chatActivity)
 
   return (
     <div className={appHeaderStyles.shell}>
@@ -62,6 +68,9 @@ export function AppHeader() {
           >
             요금제
           </Link>
+          {activityLabel ? (
+            <Link className={appHeaderStyles.activityChip} to={publicPaths.landing} role="status" aria-label={activityLabel}>{activityLabel}</Link>
+          ) : null}
         </div>
         <AccountMenu isMarketingPage={isMarketingPage} />
       </nav>

@@ -4,6 +4,8 @@ function classes(...groups: string[]) {
 
 // 색상이나 CSS 속성이 아니라 앱 최상단 헤더에서 맡는 UI 역할을 이름으로 사용합니다.
 export const appHeaderStyles = {
+  /** 검색 화면 밖에서 진행 중인 검색·새 결과를 알리는 작은 칩입니다. */
+  activityChip: 'inline-flex items-center gap-1.5 rounded-full border border-brand-accent bg-brand-accent/40 px-3 py-1 text-xs font-semibold text-brand-primary no-underline hover:bg-brand-accent',
   // 헤더 알약을 감싸는 고정 껍데기입니다. 문서가 스크롤되는 공개 화면에서 알약 위 여백으로 본문이 비치던 것을 배경으로 가립니다.
   // 스크롤이 없는 채팅 화면에서는 흰 배경 위의 흰 띠라 보이지 않습니다.
   shell: 'sticky top-0 z-[5] shrink-0 bg-white pt-5 min-[640px]:pt-6',

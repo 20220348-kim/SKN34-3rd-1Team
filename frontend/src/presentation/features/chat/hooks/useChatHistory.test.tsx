@@ -184,6 +184,8 @@ describe('로그인 계정별 대화 기록 수명', () => {
     act(() => { store.dispatch(first); store.dispatch(interpretationSucceeded({ requestId: first.payload.requestId, result: readyConversationProposal(seoulConversationContext) })) })
     const second = interpretationStarted({ message: '부산 AI', context: emptyConversationContext }, 'second')
     act(() => { store.dispatch(conversationReset()); store.dispatch(second) })
+    // 진행 중 해석을 두고 다른 대화를 열면(확인은 화면이 먼저 받음) 해석을 끊고 엽니다.
+    expect(result.current.needsCancelToOpen('first')).toBe(true)
     await act(async () => { await result.current.open('first') })
     expect(store.getState().chat.interpretation.status).toBe('ready')
     expect(store.getState().chat.pendingProposal).toEqual(seoulConversationContext)
@@ -246,5 +248,37 @@ describe('로그인 계정별 대화 기록 수명', () => {
     act(() => result.current.loadMore())
     await waitFor(() => expect(result.current.items.map((item) => item.id)).toEqual(['new', 'old']))
     expect(vi.mocked(api.list).mock.calls.at(-1)?.slice(0, 2)).toEqual([account.email, 10])
+  })
+})
+
+describe('진행 중 검색과 대화 열기', () => {
+  it('검색 중에는 다른 대화만 확인이 필요하고, 열면 요청을 끊고 취소 상태로 저장한 뒤 연다', async () => {
+    const { store, api, result } = harness()
+    const detail = savedDetail()
+    vi.mocked(api.get).mockResolvedValue(detail)
+    await waitFor(() => expect(api.list).toHaveBeenCalledOnce())
+    expect(result.current.needsCancelToOpen('saved')).toBe(false)
+    const started = searchStarted('대구 R&D', undefined, 'running')
+    const controller = new AbortController()
+    act(() => {
+      store.dispatch(started)
+      store.dispatch((_dispatch, _getState, requests) => {
+        requests.search = { requestId: started.payload.requestId, controller, timeoutId: setTimeout(() => {}, 90_000), query: '대구 R&D' }
+      })
+    })
+    // 지금 보고 있는 대화를 다시 여는 것은 검색을 끊지 않으므로 확인이 필요 없습니다.
+    expect(result.current.needsCancelToOpen('running')).toBe(false)
+    expect(result.current.needsCancelToOpen('saved')).toBe(true)
+    await act(async () => { expect(await result.current.open('running')).toBe(true) })
+    expect(controller.signal.aborted).toBe(false)
+    expect(store.getState().chat.searchStatus).toBe('pending')
+
+    await act(async () => { expect(await result.current.open('saved')).toBe(true) })
+    expect(controller.signal.aborted).toBe(true)
+    expect(store.getState().chat.messages).toEqual(detail.snapshot.messages)
+    // 떠난 대화는 '완료되지 않은 검색'이 아니라 취소된 상태(검색어를 초안으로 되돌림)로 저장됩니다.
+    const savedRunning = vi.mocked(api.save).mock.calls.filter((call) => call[1] === 'running').at(-1)
+    expect(savedRunning?.[3]).toMatchObject({ searchStatus: 'idle', searchError: null })
+    expect(savedRunning?.[3].messages.some((message) => message.failure === 'search')).toBe(false)
   })
 })

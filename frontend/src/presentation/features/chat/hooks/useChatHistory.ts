@@ -7,6 +7,7 @@ import type { ChatConversationSnapshot, ChatConversationSummary } from '../../..
 import type { ChatConversationUseCase } from '../../../../domain/usecases/ChatConversationUseCase'
 import { selectCurrentAccount } from '../../../shared/auth/state/authSlice'
 import { conversationHistoryOpened, conversationReset, createChatConversationSnapshot } from '../state/chatSlice'
+import { cancelActiveChatRequests, hasActiveChatRequest } from '../state/chatRequestThunks'
 
 type Entry = { snapshot: ChatConversationSnapshot; signature: string; saved: string | null; version: number; saving: boolean; error: boolean }
 type Session = {
@@ -133,11 +134,21 @@ export function useChatHistory(useCase: Pick<ChatConversationUseCase, 'list' | '
     current?.opening?.abort()
     if (current) { current.opening = null; update(current, (previous) => ({ ...previous, openingId: null })) }
   }, [update])
+  function currentConversationId(): string | null {
+    return store.getState().chat.messages.find((message) => message.role === 'user')?.id ?? null
+  }
+  /** 다른 대화를 열면 진행 중인 검색·해석이 끊기는지입니다. 화면은 이 값이 참일 때 먼저 확인 대화상자를 띄웁니다. */
+  function needsCancelToOpen(id: string): boolean {
+    return currentConversationId() !== id && hasActiveChatRequest(store.getState())
+  }
   async function open(id: string): Promise<boolean> {
     const current = session.current
     if (!current || !isCurrent(current) || current.deletingId === id || current.deletedIds.has(id)) return false
     cancelOpening()
-    if (store.getState().chat.messages.find((message) => message.role === 'user')?.id === id) return true
+    if (currentConversationId() === id) return true
+    // 검색·해석이 진행 중이면 다른 대화로 옮기는 순간 그 결과를 받을 곳이 없어집니다. 요청을 끊고 취소 상태로 저장한 뒤 엽니다.
+    // 사용자 확인은 부르는 쪽(WorkspaceLayout의 대화상자)이 `needsCancelToOpen`으로 먼저 받습니다.
+    if (hasActiveChatRequest(store.getState())) store.dispatch(cancelActiveChatRequests())
     capture(current)
     const previousChat = store.getState().chat
     const cached = current.entries.get(id)
@@ -206,7 +217,7 @@ export function useChatHistory(useCase: Pick<ChatConversationUseCase, 'list' | '
     updateSaveState(current)
   }
   const visible = state.email === email ? state : initialHistory
-  return { ...visible, activeId, open, remove, cancelOpening, retrySave,
+  return { ...visible, activeId, open, needsCancelToOpen, remove, cancelOpening, retrySave,
     loadMore: () => { const current = session.current; if (current) void load(current, visible.nextCursor) } }
 }
 
