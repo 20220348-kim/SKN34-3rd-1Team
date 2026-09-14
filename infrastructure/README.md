@@ -357,19 +357,20 @@ docker compose --env-file .env --file infrastructure/compose.yaml down --volumes
 
 `docker compose up -d`를 하면 `demo-seed` 서비스가 `core-api`가 healthy(Flyway 마이그레이션 완료)된 뒤 실행되어 **데모 계정이 없을 때만**
 [`infrastructure/seed/demo-data.sql`](seed/demo-data.sql)을 MySQL에 넣고 끝납니다. 계정 22개(개발용 시드 admin·member 포함, 소셜 전용 3개),
-기업 16개(협업·파트너 설정 12개), 파트너 모집글 6개(마감 1·기한 지남 1), 제안 11개(대기·수락·거절·철회·만료), 관심 공고 5개, 관리자 조치 기록 2건입니다.
+기업 16개(협업·파트너 설정 12개), 파트너 모집글 6개(마감 1·기한 지남 1), 제안 11개(대기·수락·거절·철회·만료), 관심 공고 5개,
+중복 지원 검토 2건(저장된 데모 자동 분석 1건), 신청 준비 2건(확인 입력·작성본 포함), 관리자 조치 기록 2건입니다.
 모집글은 접수 마감이 3주 이상 남은 기업마당 공고 6건에 붙이므로 공고 동기화가 끝날 때까지(최대 `DEMO_SEED_WAIT_SECONDS`) 기다렸다가 넣고,
 공고가 부족하면 이유를 남기고 실패합니다(`BIZINFO_API_KEY` 확인). `DEMO_SEED_ENABLED=false`면 아무것도 하지 않습니다.
 
 `jihoon.park@demo.govbiz.local` 계정이 있으면 이미 적재된 것으로 보고 건너뛰므로 이후 기동에서는 데모 자료가 유지됩니다.
 초기 상태로 되돌리거나 마감일을 오늘 기준으로 다시 맞추려면 `DEMO_SEED_FORCE=true docker compose run --rm demo-seed`를 실행합니다.
-이때 `@demo.govbiz.local` 계정과 시드 계정의 기업·모집글·제안·관심 공고를 지우고 다시 넣으며,
+이때 `@demo.govbiz.local` 계정과 시드 계정의 기업·모집글·제안·관심 공고·중복 검토·신청 준비를 지우고 다시 넣으며,
 **그 밖의 계정(직접 가입한 실제 이메일 등)은 읽지도 지우지도 않습니다.** 스택을 띄운 채 호스트에서 직접 넣으려면
 `./infrastructure/scripts/seed-demo-data.sh`를 씁니다(이 스크립트는 건너뛰기 없이 항상 다시 넣습니다).
 
 | 계정 | 비밀번호 | 용도 |
 |---|---|---|
-| `member@govbiz.local` | `govbiz-admin1`(개발용 로그인도 가능) | 모집글 2개(모집 중·마감), 받은 제안 3건, 보낸 제안 2건, 관심 공고 5건 |
+| `member@govbiz.local` | `govbiz-admin1`(개발용 로그인도 가능) | 모집글 2개(모집 중·마감), 받은 제안 3건, 보낸 제안 2건, 관심 공고 5건, 중복 검토 2건, 신청 준비 2건 |
 | `admin@govbiz.local` | `govbiz-admin1` | 관리자 계정 관리 화면(요약·목록·조치 기록), 가상 기업 1개와 보낸 제안 1건 |
 | `*@demo.govbiz.local` 20개 | `govbiz-demo1` | 일반 회원. `woojin.han`·`chaewon.song`·`jiwoo.seo`는 소셜 전용이라 비밀번호가 없음 |
 

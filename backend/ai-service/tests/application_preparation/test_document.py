@@ -8,7 +8,7 @@ from agents.testing import ScriptedModel, assistant_message
 from fastapi.testclient import TestClient
 
 from app.application_preparation.agent import ApplicationPreparationAgent
-from app.application_preparation.document import DocumentRequest, DocumentSelection, validate_document
+from app.application_preparation.document import DocumentPlacement, DocumentRequest, DocumentSelection, validate_document
 from app.application_preparation.service import ApplicationPreparationService
 from app.config import Settings
 from app.main import create_app
@@ -94,6 +94,24 @@ def test_agent_transmits_example_metadata_and_returns_cleanup_without_rewriting(
     assert result["placements"] == output["placements"]
 
 
+def test_repairs_invalid_example_classification_without_repeating_placements():
+    request = request_data()
+    request["targets"][0]["exampleText"] = "예시 회사"
+    invalid = selection_data()
+    invalid["clearExampleTargetIds"] = ["invented-example"]
+    classification = DocumentSelection(
+        placements=[], unmappedFactIds=[], clearExampleTargetIds=[request["targets"][0]["id"]],
+    )
+    agent = SimpleNamespace(place_document=AsyncMock(side_effect=[DocumentSelection.model_validate(invalid), classification]))
+
+    result = asyncio.run(ApplicationPreparationService(agent, "test-model").place_document(DocumentRequest.model_validate(request)))
+
+    assert result["placements"] == selection_data()["placements"]
+    assert result["clearExampleTargetIds"] == [request["targets"][0]["id"]]
+    assert agent.place_document.await_count == 2
+    assert agent.place_document.await_args_list[1].args[0].facts == []
+
+
 @pytest.mark.parametrize("mutation", ["valid", "omitted", "overlap", "duplicate", "invented"])
 def test_every_blue_paragraph_is_classified_including_unanswered_sections(mutation):
     request = request_data()
@@ -146,6 +164,79 @@ def test_rejects_combining_two_distinct_answers_in_one_native_cell():
     output["placements"].append({"factId": "company:role", "targetId": request["targets"][0]["id"], "box": None})
     with pytest.raises(ValueError, match="SHARED_ANSWER_TARGET"):
         validate_document(DocumentRequest.model_validate(request), DocumentSelection.model_validate(output))
+
+
+def test_repairs_shared_native_target_once_and_revalidates_the_full_selection():
+    request = request_data()
+    request["facts"].append({"id": "company:role", "label": "역할", "value": "기획"})
+    request["targets"].append({"id": "second-target", "text": "", "context": "역할 입력란", "exampleText": ""})
+    rejected = DocumentSelection.model_validate(selection_data())
+    rejected.placements.append(DocumentPlacement(factId="company:role", targetId=request["targets"][0]["id"], box=None))
+    repaired_role = DocumentSelection.model_validate({
+        "placements": [{"factId": "company:role", "targetId": "second-target", "box": None}], "unmappedFactIds": [],
+    })
+    agent = SimpleNamespace(place_document=AsyncMock(side_effect=[rejected, repaired_role]))
+
+    result = asyncio.run(ApplicationPreparationService(agent, "test-model").place_document(DocumentRequest.model_validate(request)))
+
+    assert result["placements"] == [selection_data()["placements"][0], repaired_role.placements[0].model_dump()]
+    assert result["clearExampleTargetIds"] == []
+    assert agent.place_document.await_count == 2
+    role_request, excluded, rejected_repair = agent.place_document.await_args_list[1].args
+    assert [fact.id for fact in role_request.facts] == ["company:role"]
+    assert excluded == {request["targets"][0]["id"]}
+    assert [placement.factId for placement in rejected_repair.placements] == ["company:role"]
+
+
+def test_reuses_valid_repair_classification_without_an_extra_call():
+    request = request_data()
+    request["facts"].append({"id": "company:role", "label": "역할", "value": "기획"})
+    request["targets"][0]["exampleText"] = "예시 회사"
+    request["targets"].append({"id": "second-target", "text": "", "context": "역할 입력란", "exampleText": ""})
+    rejected_data = selection_data()
+    rejected_data["placements"].append({"factId": "company:role", "targetId": request["targets"][0]["id"], "box": None})
+    rejected_data["clearExampleTargetIds"] = ["invented-example"]
+    rejected = DocumentSelection.model_validate(rejected_data)
+    repaired_role = DocumentSelection.model_validate({
+        "placements": [{"factId": "company:role", "targetId": "second-target", "box": None}], "unmappedFactIds": [],
+        "clearExampleTargetIds": [request["targets"][0]["id"]],
+    })
+    agent = SimpleNamespace(place_document=AsyncMock(side_effect=[rejected, repaired_role]))
+
+    result = asyncio.run(ApplicationPreparationService(agent, "test-model").place_document(DocumentRequest.model_validate(request)))
+
+    assert result["clearExampleTargetIds"] == [request["targets"][0]["id"]]
+    assert agent.place_document.await_count == 2
+
+
+def test_fails_explicitly_when_shared_target_repair_is_still_invalid():
+    request = request_data()
+    request["facts"].append({"id": "company:role", "label": "역할", "value": "기획"})
+    rejected_data = selection_data()
+    rejected_data["placements"].append({"factId": "company:role", "targetId": request["targets"][0]["id"], "box": None})
+    rejected = DocumentSelection.model_validate(rejected_data)
+    agent = SimpleNamespace(place_document=AsyncMock(return_value=rejected))
+
+    with pytest.raises(RuntimeError, match="APPLICATION_PREPARATION_FAILED"):
+        asyncio.run(ApplicationPreparationService(agent, "test-model").place_document(DocumentRequest.model_validate(request)))
+
+    assert agent.place_document.await_count == 2
+
+
+def test_rejects_a_repair_that_reuses_a_kept_target():
+    request = request_data()
+    request["facts"].append({"id": "company:role", "label": "역할", "value": "기획"})
+    rejected_data = selection_data()
+    rejected_data["placements"].append({"factId": "company:role", "targetId": request["targets"][0]["id"], "box": None})
+    rejected = DocumentSelection.model_validate(rejected_data)
+    reused = DocumentSelection.model_validate({
+        "placements": [{"factId": "company:role", "targetId": request["targets"][0]["id"], "box": None}],
+        "unmappedFactIds": [],
+    })
+    agent = SimpleNamespace(place_document=AsyncMock(side_effect=[rejected, reused]))
+
+    with pytest.raises(RuntimeError, match="APPLICATION_PREPARATION_FAILED"):
+        asyncio.run(ApplicationPreparationService(agent, "test-model").place_document(DocumentRequest.model_validate(request)))
 
 
 @pytest.mark.parametrize(("failure", "status"), [(None, 200), (TimeoutError(), 504), (RuntimeError(), 503)])

@@ -1,6 +1,7 @@
--- 로컬 개발용 데모 데이터입니다. 실제 서비스처럼 보이도록 계정 22개, 기업 16개, 파트너 모집글 6개, 제안 11개, 관심 공고 5개를 넣습니다.
+-- 로컬 개발용 데모 데이터입니다. 실제 서비스처럼 보이도록 계정 22개, 기업 16개, 파트너 모집글 6개, 제안 11개,
+-- 관심 공고 5개, 중복 지원 검토 2개, 신청 준비 2개를 넣습니다.
 -- 모집글은 이미 수집된 기업마당 공고(접수 마감이 3주 이상 남은 것) 6건에 붙이므로 공고 동기화가 끝난 뒤 실행해야 합니다.
--- 여러 번 실행해도 됩니다. `@demo.govbiz.local` 계정과 개발용 시드 계정(admin·member)의 기업·모집글·제안·관심 공고를 지우고 다시 넣습니다.
+-- 여러 번 실행해도 됩니다. `@demo.govbiz.local` 계정과 개발용 시드 계정(admin·member)의 기업·모집글·제안·관심 공고·중복 검토·신청 준비를 지우고 다시 넣습니다.
 -- 그 밖의 계정(직접 가입한 실제 이메일 등)은 읽지도 지우지도 않습니다.
 -- 실행: Compose의 demo-seed 서비스가 첫 기동 때 자동으로(다시 넣기는 DEMO_SEED_FORCE=true), 또는 ./infrastructure/scripts/seed-demo-data.sh로 직접
 --       (infrastructure/README.md "데모 데이터" 참고)
@@ -43,6 +44,12 @@ DROP TEMPORARY TABLE seed_guard;
 --    개발용 시드 계정은 남기고 그 기업(과 딸린 모집글·제안)만 지웁니다.
 -- ---------------------------------------------------------------------------------------------------------------------
 DELETE FROM account WHERE email LIKE '%@demo.govbiz.local';
+DELETE combination_review FROM combination_review
+    JOIN account ON account.id = combination_review.owner_account_id
+WHERE account.email IN ('admin@govbiz.local', 'member@govbiz.local');
+DELETE application_preparation FROM application_preparation
+    JOIN account ON account.id = application_preparation.owner_account_id
+WHERE account.email IN ('admin@govbiz.local', 'member@govbiz.local');
 DELETE company FROM company
     JOIN account ON account.id = company.account_id
 WHERE account.email IN ('admin@govbiz.local', 'member@govbiz.local');
@@ -258,6 +265,182 @@ INSERT INTO saved_support_program (account_id, support_program_id, saved_at) VAL
     (@member, @p4, DATE_SUB(@now, INTERVAL 3 DAY)),
     (@member, @p5, DATE_SUB(@now, INTERVAL 5 DAY));
 
+-- ---------------------------------------------------------------------------------------------------------------------
+-- 8. 중복 지원·수혜 검토 2건. 첫 검토는 저장된 자동 분석 결과와 내려받을 수 있는 데모 원문까지 갖고,
+--    두 번째 검토는 사용자가 입력을 고치고 실제 분석을 새로 실행할 수 있는 초안입니다.
+-- ---------------------------------------------------------------------------------------------------------------------
+SET @p1_source_code := (SELECT source_code FROM support_program WHERE id = @p1);
+SET @p1_source_program_id := (SELECT source_program_id FROM support_program WHERE id = @p1);
+SET @p1_source_url := (SELECT source_url FROM support_program WHERE id = @p1);
+SET @p2_source_code := (SELECT source_code FROM support_program WHERE id = @p2);
+SET @p2_source_program_id := (SELECT source_program_id FROM support_program WHERE id = @p2);
+SET @p2_source_url := (SELECT source_url FROM support_program WHERE id = @p2);
+SET @p3_source_code := (SELECT source_code FROM support_program WHERE id = @p3);
+SET @p3_source_program_id := (SELECT source_program_id FROM support_program WHERE id = @p3);
+SET @p4_source_code := (SELECT source_code FROM support_program WHERE id = @p4);
+SET @p4_source_program_id := (SELECT source_program_id FROM support_program WHERE id = @p4);
+
+INSERT INTO combination_review (owner_account_id, title, input_revision, created_at, updated_at)
+VALUES (@member, '진행 중인 지원사업과 신규 신청 중복 검토', 1, DATE_SUB(@now, INTERVAL 5 DAY), DATE_SUB(@now, INTERVAL 4 DAY));
+SET @review_completed := LAST_INSERT_ID();
+
+INSERT INTO combination_review_program (
+    review_id, position, source_code, source_program_id, sub_program_id,
+    application_submitted, selected, commitment_submitted, agreement_signed, execution_status, funding_received
+) VALUES
+    (@review_completed, 0, @p1_source_code, @p1_source_program_id, NULL, 'YES', 'YES', 'YES', 'YES', 'IN_PROGRESS', 'YES'),
+    (@review_completed, 1, @p2_source_code, @p2_source_program_id, NULL, 'YES', 'NO', 'NO', 'NO', 'NOT_STARTED', 'NO');
+
+SET @review_facts := '기존 사업은 협약을 체결해 수행 중이며, 신규 사업은 신청서 제출 전 중복 수혜 가능성을 확인하려는 단계입니다.';
+SET @review_source_0 := CONVERT('데모 원문 1\n동일 또는 유사한 사업 내용으로 다른 정부지원사업의 보조금을 중복하여 지원받을 수 없습니다. 수행 중인 협약과 신규 신청 과제의 목적, 비용 항목 및 수행 기간이 겹치는지 확인해야 합니다.' USING utf8mb4);
+SET @review_source_1 := CONVERT('데모 원문 2\n신규 신청기업은 타 지원사업 수행 여부를 신청서에 기재해야 합니다. 사업 목적과 지원 항목이 다르면 신청할 수 있으나, 최종 인정 여부는 전담기관의 검토 결과에 따릅니다.' USING utf8mb4);
+SET @review_source_0_hash := SHA2(@review_source_0, 256);
+SET @review_source_1_hash := SHA2(@review_source_1, 256);
+SET @review_started_at := DATE_SUB(@now, INTERVAL 4 DAY);
+SET @review_finished_at := DATE_ADD(@review_started_at, INTERVAL 2 MINUTE);
+
+INSERT INTO combination_review_run (
+    review_id, input_revision, request_key, request_hash, status, input_json, evidence_json, configuration_json,
+    analysis_json, failure_code, runner_instance_id, started_at, finished_at, execution_started_at
+) VALUES (
+    @review_completed,
+    1,
+    '10000000-0000-4000-8000-000000000001',
+    SHA2(CONCAT('1\n', @review_facts), 256),
+    'SUCCEEDED',
+    JSON_OBJECT(
+        'title', '진행 중인 지원사업과 신규 신청 중복 검토',
+        'programs', JSON_ARRAY(
+            JSON_OBJECT(
+                'identity', JSON_OBJECT('sourceCode', @p1_source_code, 'sourceProgramId', @p1_source_program_id, 'subProgramId', NULL),
+                'participation', JSON_OBJECT('applicationSubmitted', 'YES', 'selected', 'YES', 'commitmentSubmitted', 'YES', 'agreementSigned', 'YES', 'executionStatus', 'IN_PROGRESS', 'fundingReceived', 'YES')
+            ),
+            JSON_OBJECT(
+                'identity', JSON_OBJECT('sourceCode', @p2_source_code, 'sourceProgramId', @p2_source_program_id, 'subProgramId', NULL),
+                'participation', JSON_OBJECT('applicationSubmitted', 'YES', 'selected', 'NO', 'commitmentSubmitted', 'NO', 'agreementSigned', 'NO', 'executionStatus', 'NOT_STARTED', 'fundingReceived', 'NO')
+            )
+        ),
+        'additionalFacts', @review_facts,
+        'asOfDate', DATE_FORMAT(CURDATE(), '%Y-%m-%d')
+    ),
+    JSON_OBJECT(
+        'documents', JSON_ARRAY(
+            JSON_OBJECT('programIndex', 0, 'sourceUrl', @p1_source_url, 'sourcePageUrl', @p1_source_url, 'fileName', '기존사업-데모원문.txt', 'format', 'TXT', 'rawHash', @review_source_0_hash, 'textHash', @review_source_0_hash, 'parserVersion', 'demo-seed-v1', 'fetchedAt', DATE_FORMAT(@review_started_at, '%Y-%m-%dT%H:%i:%s.%f')),
+            JSON_OBJECT('programIndex', 1, 'sourceUrl', @p2_source_url, 'sourcePageUrl', @p2_source_url, 'fileName', '신규사업-데모원문.txt', 'format', 'TXT', 'rawHash', @review_source_1_hash, 'textHash', @review_source_1_hash, 'parserVersion', 'demo-seed-v1', 'fetchedAt', DATE_FORMAT(@review_started_at, '%Y-%m-%dT%H:%i:%s.%f'))
+        ),
+        'blocks', JSON_ARRAY(
+            JSON_OBJECT('id', 'demo-evidence-1', 'programIndex', 0, 'documentHash', @review_source_0_hash, 'locator', '데모 원문 1, 문단 1', 'text', '동일 또는 유사한 사업 내용으로 다른 정부지원사업의 보조금을 중복하여 지원받을 수 없습니다.'),
+            JSON_OBJECT('id', 'demo-evidence-2', 'programIndex', 1, 'documentHash', @review_source_1_hash, 'locator', '데모 원문 2, 문단 1', 'text', '사업 목적과 지원 항목이 다르면 신청할 수 있으나, 최종 인정 여부는 전담기관의 검토 결과에 따릅니다.')
+        ),
+        'coverageWarnings', JSON_ARRAY('이 결과는 화면 확인용 데모 원문을 사용했으며 실제 공고 원문 판정이 아닙니다.')
+    ),
+    JSON_OBJECT('contractVersion', 'combination-review-v1', 'model', 'demo-seed-no-paid-call', 'promptVersion', 'demo-seed-v1'),
+    JSON_OBJECT(
+        'summary', '두 사업의 목적과 비용 항목이 겹치면 중복 수혜 제한이 적용될 수 있어 전담기관 확인이 필요합니다.',
+        'pairs', JSON_ARRAY(
+            JSON_OBJECT(
+                'firstProgramIndex', 0,
+                'secondProgramIndex', 1,
+                'stages', JSON_ARRAY(
+                    JSON_OBJECT('stage', 'APPLICATION', 'judgment', 'NEEDS_FACTS', 'scope', '신규 사업 신청 단계', 'explanation', '신청 자체는 가능할 수 있으나 두 과제의 목적과 비용 항목 구분 자료가 더 필요합니다.', 'questions', JSON_ARRAY('두 사업의 세부 비용 항목이 겹치나요?', '신규 과제 산출물이 기존 협약 산출물과 구분되나요?'), 'requiresInstitutionConfirmation', TRUE, 'citations', JSON_ARRAY(JSON_OBJECT('evidenceId', 'demo-evidence-2', 'quote', '사업 목적과 지원 항목이 다르면 신청할 수 있으나'))),
+                    JSON_OBJECT('stage', 'SELECTION', 'judgment', 'INSUFFICIENT_EVIDENCE', 'scope', '신규 사업 선정 단계', 'explanation', '선정 단계의 중복 참여 처리 기준은 데모 원문만으로 확인할 수 없습니다.', 'questions', JSON_ARRAY('선정 통보 전에 기존 수행 사업을 신고해야 하나요?'), 'requiresInstitutionConfirmation', TRUE, 'citations', JSON_ARRAY()),
+                    JSON_OBJECT('stage', 'COMMITMENT', 'judgment', 'NEEDS_FACTS', 'scope', '확약서 제출 단계', 'explanation', '두 과제의 산출물과 인력 투입 계획을 구분한 자료가 필요합니다.', 'questions', JSON_ARRAY('동일한 인력이 같은 기간에 두 과제에 투입되나요?'), 'requiresInstitutionConfirmation', TRUE, 'citations', JSON_ARRAY()),
+                    JSON_OBJECT('stage', 'AGREEMENT', 'judgment', 'CONFLICTING_EVIDENCE', 'scope', '신규 협약 체결 단계', 'explanation', '사업 목적이 다르면 가능하다는 내용과 유사 사업의 중복 지원을 제한하는 내용이 함께 있어 기관 확인이 필요합니다.', 'questions', JSON_ARRAY('전담기관이 두 과제의 목적과 비용 구분을 인정했나요?'), 'requiresInstitutionConfirmation', TRUE, 'citations', JSON_ARRAY(JSON_OBJECT('evidenceId', 'demo-evidence-1', 'quote', '동일 또는 유사한 사업 내용'), JSON_OBJECT('evidenceId', 'demo-evidence-2', 'quote', '사업 목적과 지원 항목이 다르면 신청할 수 있으나'))),
+                    JSON_OBJECT('stage', 'EXECUTION', 'judgment', 'NEEDS_FACTS', 'scope', '두 사업 동시 수행 단계', 'explanation', '수행 기간과 참여 인력, 산출물이 실제로 분리되는지 확인해야 합니다.', 'questions', JSON_ARRAY('수행 일정과 참여 인력을 사업별로 구분했나요?'), 'requiresInstitutionConfirmation', TRUE, 'citations', JSON_ARRAY()),
+                    JSON_OBJECT('stage', 'FUNDING', 'judgment', 'RESTRICTION_APPLIES', 'scope', '동일 비용의 중복 수혜', 'explanation', '동일하거나 유사한 사업 내용과 비용에 보조금을 중복 적용하면 제한됩니다.', 'questions', JSON_ARRAY(), 'requiresInstitutionConfirmation', FALSE, 'citations', JSON_ARRAY(JSON_OBJECT('evidenceId', 'demo-evidence-1', 'quote', '다른 정부지원사업의 보조금을 중복하여 지원받을 수 없습니다')))
+                )
+            )
+        ),
+        'limitations', JSON_ARRAY('자동 생성된 데모 결과이며 실제 자격 판정이나 기관 답변을 대신하지 않습니다.', '화면 동작 확인을 위해 축약한 가상 원문을 사용했습니다.')
+    ),
+    NULL,
+    '20000000-0000-4000-8000-000000000001',
+    @review_started_at,
+    @review_finished_at,
+    @review_started_at
+);
+SET @review_run_completed := LAST_INSERT_ID();
+
+INSERT INTO combination_review_run_source (run_id, document_index, raw_hash, raw_bytes) VALUES
+    (@review_run_completed, 0, @review_source_0_hash, @review_source_0),
+    (@review_run_completed, 1, @review_source_1_hash, @review_source_1);
+
+INSERT INTO combination_review (owner_account_id, title, input_revision, created_at, updated_at)
+VALUES (@member, '마케팅·기술지원 사업 동시 신청 검토', 1, DATE_SUB(@now, INTERVAL 1 DAY), DATE_SUB(@now, INTERVAL 1 DAY));
+SET @review_draft := LAST_INSERT_ID();
+
+INSERT INTO combination_review_program (
+    review_id, position, source_code, source_program_id, sub_program_id,
+    application_submitted, selected, commitment_submitted, agreement_signed, execution_status, funding_received
+) VALUES
+    (@review_draft, 0, @p3_source_code, @p3_source_program_id, NULL, 'YES', 'UNKNOWN', 'NO', 'NO', 'NOT_STARTED', 'NO'),
+    (@review_draft, 1, @p4_source_code, @p4_source_program_id, NULL, 'NO', 'NO', 'NO', 'NO', 'NOT_STARTED', 'NO');
+
+-- ---------------------------------------------------------------------------------------------------------------------
+-- 9. 신청 준비 2건. 최신 행은 입력이 모두 확인됐고 섹션별 작성본을 확인·수정·새로 생성할 수 있습니다.
+--    다른 한 건은 작성 전 상태라 목록과 진행 관리에서 서로 다른 단계를 보여 줍니다.
+-- ---------------------------------------------------------------------------------------------------------------------
+SET @application_form_version := 'bizinfo-pbln-000000000118979-innovation-voucher-2026-v1';
+SET @application_source_code := 'BIZINFO';
+SET @application_source_program_id := 'PBLN_000000000118979';
+
+INSERT INTO application_preparation (
+    owner_account_id, source_code, source_program_id, form_version_id, service_field, input_revision,
+    progress_stage, progress_revision, progress_stage_updated_at, created_at, updated_at
+) VALUES (
+    @member, @application_source_code, @application_source_program_id, @application_form_version, 'TECHNICAL_SUPPORT', 1,
+    'PREPARING', 1, DATE_SUB(@now, INTERVAL 8 DAY), DATE_SUB(@now, INTERVAL 8 DAY), DATE_SUB(@now, INTERVAL 8 DAY)
+);
+SET @preparation_blank := LAST_INSERT_ID();
+
+INSERT INTO application_preparation (
+    owner_account_id, source_code, source_program_id, form_version_id, service_field, input_revision,
+    progress_stage, progress_revision, progress_stage_updated_at, created_at, updated_at
+) VALUES (
+    @member, @application_source_code, @application_source_program_id, @application_form_version, 'MARKETING', 4,
+    'DOCUMENT_REVIEW', 3, DATE_SUB(@now, INTERVAL 1 DAY), DATE_SUB(@now, INTERVAL 12 DAY), DATE_SUB(@now, INTERVAL 1 DAY)
+);
+SET @preparation_active := LAST_INSERT_ID();
+
+INSERT INTO application_preparation_fact (
+    preparation_id, section_key, field_key, fact_status, value_text, source_text, input_revision, created_at, updated_at
+) VALUES
+    (@preparation_active, 'company-overview', 'company-name', 'PROVIDED', '넥스트웨이브 주식회사', '사업자등록증의 공식 상호는 넥스트웨이브 주식회사입니다.', 2, DATE_SUB(@now, INTERVAL 10 DAY), DATE_SUB(@now, INTERVAL 10 DAY)),
+    (@preparation_active, 'company-overview', 'contact-person', 'UNKNOWN', NULL, '신청 업무 담당자는 아직 정하지 않았습니다.', 2, DATE_SUB(@now, INTERVAL 10 DAY), DATE_SUB(@now, INTERVAL 10 DAY)),
+    (@preparation_active, 'company-overview', 'company-history', 'UNKNOWN', NULL, '주요 연혁은 증빙 자료를 확인한 뒤 입력하기로 했습니다.', 2, DATE_SUB(@now, INTERVAL 10 DAY), DATE_SUB(@now, INTERVAL 10 DAY)),
+    (@preparation_active, 'company-overview', 'main-products', 'UNKNOWN', NULL, '주요 생산품의 공식 표기는 아직 확인하지 못했습니다.', 2, DATE_SUB(@now, INTERVAL 10 DAY), DATE_SUB(@now, INTERVAL 10 DAY)),
+    (@preparation_active, 'company-overview', 'main-customers', 'UNKNOWN', NULL, '주요 판매처는 공개 가능한 범위를 확인하고 있습니다.', 2, DATE_SUB(@now, INTERVAL 10 DAY), DATE_SUB(@now, INTERVAL 10 DAY)),
+    (@preparation_active, 'voucher-plan', 'project-title', 'PROVIDED', '소상공인 상권분석 서비스 브랜드 고도화 및 시장 확장', '이번 과제명은 소상공인 상권분석 서비스 브랜드 고도화 및 시장 확장입니다.', 3, DATE_SUB(@now, INTERVAL 6 DAY), DATE_SUB(@now, INTERVAL 6 DAY)),
+    (@preparation_active, 'voucher-plan', 'project-details', 'UNKNOWN', NULL, '세부 수행 활동은 수행기관과 협의한 뒤 확정하기로 했습니다.', 3, DATE_SUB(@now, INTERVAL 6 DAY), DATE_SUB(@now, INTERVAL 6 DAY)),
+    (@preparation_active, 'voucher-plan', 'execution-period', 'UNKNOWN', NULL, '협약 일정이 나오지 않아 수행 기간은 아직 미정입니다.', 3, DATE_SUB(@now, INTERVAL 6 DAY), DATE_SUB(@now, INTERVAL 6 DAY)),
+    (@preparation_active, 'voucher-plan', 'project-goal', 'UNKNOWN', NULL, '정량 목표는 현재 내부 검토 중입니다.', 3, DATE_SUB(@now, INTERVAL 6 DAY), DATE_SUB(@now, INTERVAL 6 DAY)),
+    (@preparation_active, 'voucher-necessity', 'business-relevance', 'UNKNOWN', NULL, '기업활동과의 관련성 문안은 아직 확정하지 않았습니다.', 4, DATE_SUB(@now, INTERVAL 2 DAY), DATE_SUB(@now, INTERVAL 2 DAY)),
+    (@preparation_active, 'voucher-necessity', 'support-necessity', 'PROVIDED', '내부에 브랜드 전략과 광고 성과 분석 전문 인력이 없어 외부 전문 수행기관의 진단과 실행 지원이 필요합니다.', '내부에는 브랜드 전략과 광고 성과 분석을 전담할 전문 인력이 없습니다.', 4, DATE_SUB(@now, INTERVAL 2 DAY), DATE_SUB(@now, INTERVAL 2 DAY));
+
+SET @company_overview_facts := JSON_ARRAY(
+    JSON_OBJECT('fieldKey', 'company-history', 'status', 'UNKNOWN', 'value', NULL),
+    JSON_OBJECT('fieldKey', 'company-name', 'status', 'PROVIDED', 'value', '넥스트웨이브 주식회사'),
+    JSON_OBJECT('fieldKey', 'contact-person', 'status', 'UNKNOWN', 'value', NULL),
+    JSON_OBJECT('fieldKey', 'main-customers', 'status', 'UNKNOWN', 'value', NULL),
+    JSON_OBJECT('fieldKey', 'main-products', 'status', 'UNKNOWN', 'value', NULL)
+);
+SET @voucher_plan_facts := JSON_ARRAY(
+    JSON_OBJECT('fieldKey', 'execution-period', 'status', 'UNKNOWN', 'value', NULL),
+    JSON_OBJECT('fieldKey', 'project-details', 'status', 'UNKNOWN', 'value', NULL),
+    JSON_OBJECT('fieldKey', 'project-goal', 'status', 'UNKNOWN', 'value', NULL),
+    JSON_OBJECT('fieldKey', 'project-title', 'status', 'PROVIDED', 'value', '소상공인 상권분석 서비스 브랜드 고도화 및 시장 확장')
+);
+
+INSERT INTO application_preparation_content (
+    preparation_id, section_key, input_revision, content_kind, content_text, facts_json, run_id, created_at, confirmed_at
+) VALUES
+    (@preparation_active, 'company-overview', 4, 'USER_EDIT',
+     '신청 업체명은 넥스트웨이브 주식회사입니다. 담당자와 주요 연혁·생산품·판매처는 증빙과 공개 범위를 확인한 뒤 보완할 예정입니다.',
+     @company_overview_facts, NULL, DATE_SUB(@now, INTERVAL 5 DAY), DATE_SUB(@now, INTERVAL 4 DAY)),
+    (@preparation_active, 'voucher-plan', 4, 'USER_EDIT',
+     '과제명은 소상공인 상권분석 서비스 브랜드 고도화 및 시장 확장입니다. 세부 활동과 일정, 정량 목표는 수행기관과 협의한 뒤 보완할 예정입니다.',
+     @voucher_plan_facts, NULL, DATE_SUB(@now, INTERVAL 1 DAY), NULL);
+
 DROP TEMPORARY TABLE IF EXISTS seed_program;
 
 SELECT
@@ -267,4 +450,8 @@ SELECT
     (SELECT COUNT(*) FROM partner_proposal) AS proposals,
     (SELECT COUNT(*) FROM account_oauth_identity) AS oauth_links,
     (SELECT COUNT(*) FROM account_admin_action) AS admin_actions,
-    (SELECT COUNT(*) FROM saved_support_program) AS saved_programs;
+    (SELECT COUNT(*) FROM saved_support_program) AS saved_programs,
+    (SELECT COUNT(*) FROM combination_review) AS combination_reviews,
+    (SELECT COUNT(*) FROM combination_review_run) AS combination_review_runs,
+    (SELECT COUNT(*) FROM application_preparation) AS application_preparations,
+    (SELECT COUNT(*) FROM application_preparation_content) AS application_contents;
