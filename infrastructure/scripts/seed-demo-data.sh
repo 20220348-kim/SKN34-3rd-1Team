@@ -9,6 +9,7 @@ REPOSITORY_DIR="$(cd -- "${SCRIPT_DIR}/../.." && pwd)"
 COMPOSE_FILE="${REPOSITORY_DIR}/infrastructure/compose.yaml"
 ENV_FILE="${GOVBIZ_ENV_FILE:-${REPOSITORY_DIR}/.env}"
 SEED_FILE="${GOVBIZ_SEED_FILE:-${REPOSITORY_DIR}/infrastructure/seed/demo-data.sql}"
+APPLICATION_SEED_FILE="$(dirname "${SEED_FILE}")/application-preparations.sql"
 PROJECT_NAME="${GOVBIZ_COMPOSE_PROJECT_NAME:-govbiz}"
 
 if [[ ! -f "${ENV_FILE}" ]]; then
@@ -17,6 +18,10 @@ if [[ ! -f "${ENV_FILE}" ]]; then
 fi
 if [[ ! -f "${SEED_FILE}" ]]; then
   echo "Missing seed file ${SEED_FILE}." >&2
+  exit 1
+fi
+if [[ ! -f "${APPLICATION_SEED_FILE}" ]]; then
+  echo "Missing seed file ${APPLICATION_SEED_FILE}." >&2
   exit 1
 fi
 if [[ ! "${PROJECT_NAME}" =~ ^[a-zA-Z0-9][a-zA-Z0-9_.-]*$ ]]; then
@@ -42,7 +47,6 @@ done
 
 echo "Seeding demo data from ${SEED_FILE} into Compose project '${PROJECT_NAME}'"
 # 자격 증명은 컨테이너 환경 변수에 있으므로 호스트로 꺼내지 않고 컨테이너 안에서 mysql 클라이언트를 부릅니다.
-"${COMPOSE[@]}" exec --no-TTY mysql sh -c \
-  'exec mysql --default-character-set=utf8mb4 --user="$MYSQL_USER" --password="$MYSQL_PASSWORD" "$MYSQL_DATABASE"' \
-  < "${SEED_FILE}"
+{ printf 'SET @reset_application_preparations = 1;\n'; cat "${SEED_FILE}" "${APPLICATION_SEED_FILE}"; } | "${COMPOSE[@]}" exec --no-TTY mysql sh -c \
+  'exec mysql --default-character-set=utf8mb4 --user="$MYSQL_USER" --password="$MYSQL_PASSWORD" "$MYSQL_DATABASE"'
 echo "Demo data seeded. Log in with member@govbiz.local (dev login) or any @demo.govbiz.local account (password govbiz-demo1)."

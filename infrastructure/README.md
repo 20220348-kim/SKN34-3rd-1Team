@@ -355,14 +355,35 @@ docker compose --env-file .env --file infrastructure/compose.yaml down --volumes
 
 ### 데모 데이터
 
-`docker compose up -d`를 하면 `demo-seed` 서비스가 `core-api`가 healthy(Flyway 마이그레이션 완료)된 뒤 실행되어 **데모 계정이 없을 때만**
-[`infrastructure/seed/demo-data.sql`](seed/demo-data.sql)을 MySQL에 넣고 끝납니다. 계정 22개(개발용 시드 admin·member 포함, 소셜 전용 3개),
+`docker compose up -d`를 하면 `demo-seed` 서비스가 `core-api`가 healthy(Flyway 마이그레이션 완료)된 뒤 실행됩니다.
+데모 계정이 없을 때는 [`demo-data.sql`](seed/demo-data.sql)과 [`application-preparations.sql`](seed/application-preparations.sql)을 순서대로 적재합니다.
+계정 22개(개발용 시드 admin·member 포함, 소셜 전용 3개),
 기업 16개(협업·파트너 설정 12개), 파트너 모집글 6개(마감 1·기한 지남 1), 제안 11개(대기·수락·거절·철회·만료), 관심 공고 5개,
 중복 지원 검토 2건(저장된 데모 자동 분석 1건), 신청 준비 2건(확인 입력·작성본 포함), 관리자 조치 기록 2건입니다.
 모집글은 접수 마감이 3주 이상 남은 기업마당 공고 6건에 붙이므로 공고 동기화가 끝날 때까지(최대 `DEMO_SEED_WAIT_SECONDS`) 기다렸다가 넣고,
 공고가 부족하면 이유를 남기고 실패합니다(`BIZINFO_API_KEY` 확인). `DEMO_SEED_ENABLED=false`면 아무것도 하지 않습니다.
 
-`jihoon.park@demo.govbiz.local` 계정이 있으면 이미 적재된 것으로 보고 건너뛰므로 이후 기동에서는 데모 자료가 유지됩니다.
+`jihoon.park@demo.govbiz.local` 계정이 이미 있으면 전체 초기화를 건너뛰고 신청도우미 SQL만 실행합니다.
+V35의 `demo_seed_key`로 `member@govbiz.local`의 목업 2건을 식별하므로, 같은 공고·분야의 사용자 작업이 있어도 목업은 별도로 추가됩니다.
+일반 작업은 키가 NULL이라 개수 제한 없이 별도 행으로 쌓입니다. 재실행 시 기존 목업과 사용자 작성본을 덮어쓰지 않으며,
+목업을 삭제했다면 다음 시드 실행 시 다시 추가합니다. 이전 버전의 식별값 없는 행은 사용자 기록과 구분할 수 없어 그대로 보존합니다.
+이 SQL을 포함한 코드를 각자 pull하고 로컬 Compose를 실행하면 각자의 DB에 동일한 목업이 들어갑니다.
+신청도우미 목업은 member 계정에서 보이며 `DEMO_SEED_ENABLED=false` 또는 독립 production Compose에는 자동 적재하지 않습니다.
+
+이미 실행 중인 환경에서 이번 변경을 적용할 때는 Core API를 재빌드해 V35를 적용한 뒤 시드만 실행합니다. 강제 초기화는 필요 없습니다.
+
+```bash
+docker compose --env-file .env -f infrastructure/compose.yaml up -d --build --wait core-api
+docker compose --env-file .env -f infrastructure/compose.yaml run --rm demo-seed
+```
+
+신청도우미 목업은 `application-preparations.sql` 한 곳에서 관리하며 신규 DB 적재와 기존 DB 보충이 같은 파일을 사용합니다.
+검증은 실제 개발 DB 대신 임시 MySQL 8.4 컨테이너에서 실행할 수 있습니다(실행 후 테스트 컨테이너 삭제).
+
+```bash
+RUN_SEED_MYSQL_TESTS=1 python3 -m unittest discover -s infrastructure/scripts -p test_application_seed_mysql.py
+```
+
 초기 상태로 되돌리거나 마감일을 오늘 기준으로 다시 맞추려면 `DEMO_SEED_FORCE=true docker compose run --rm demo-seed`를 실행합니다.
 이때 `@demo.govbiz.local` 계정과 시드 계정의 기업·모집글·제안·관심 공고·중복 검토·신청 준비를 지우고 다시 넣으며,
 **그 밖의 계정(직접 가입한 실제 이메일 등)은 읽지도 지우지도 않습니다.** 스택을 띄운 채 호스트에서 직접 넣으려면

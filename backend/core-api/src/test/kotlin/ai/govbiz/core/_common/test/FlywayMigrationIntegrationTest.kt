@@ -17,6 +17,30 @@ import java.nio.file.Path
 /** 빈 DB와 기존 대화용 V19 DB를 실제 MySQL 8.4에서 검증합니다. 개발 DB·적용 이력은 변경하지 않습니다. */
 class FlywayMigrationIntegrationTest {
     @Test
+    fun demoSeedKeysPreserveUserWorkAndOnlyDeduplicateDemoRows() = withDatabase { mysql, jdbc ->
+        migration(mysql, "34").migrate()
+        jdbc.update("""INSERT INTO account (email, password_hash, terms_agreed_at)
+            VALUES ('member@govbiz.local', 'test', NOW())""")
+        val owner = jdbc.queryForObject("SELECT id FROM account WHERE email = 'member@govbiz.local'", Long::class.java)!!
+        val insert = """INSERT INTO application_preparation
+            (owner_account_id, source_code, source_program_id, form_version_id, service_field, created_at, updated_at)
+            VALUES (?, 'BIZINFO', 'same-program', 'same-form', 'MARKETING', NOW(), NOW())"""
+        jdbc.update(insert, owner)
+        val before = jdbc.queryForMap("SELECT id, input_revision, created_at, updated_at FROM application_preparation")
+        assertEquals(1, migration(mysql, "35").migrate().migrationsExecuted)
+        assertEquals(before, jdbc.queryForMap("SELECT id, input_revision, created_at, updated_at FROM application_preparation"))
+        assertEquals(1, jdbc.queryForObject("SELECT COUNT(*) FROM application_preparation WHERE demo_seed_key IS NULL", Int::class.java))
+        jdbc.update(insert, owner)
+        jdbc.update(insert, owner)
+        jdbc.update("UPDATE application_preparation SET demo_seed_key = 'demo-marketing-v1' WHERE id = ?", before["id"])
+        assertThrows(org.springframework.dao.DuplicateKeyException::class.java) {
+            jdbc.update("UPDATE application_preparation SET demo_seed_key = 'demo-marketing-v1' WHERE demo_seed_key IS NULL")
+        }
+        assertEquals(3, jdbc.queryForObject("SELECT COUNT(*) FROM application_preparation", Int::class.java))
+        assertEquals(2, jdbc.queryForObject("SELECT COUNT(*) FROM application_preparation WHERE demo_seed_key IS NULL", Int::class.java))
+    }
+
+    @Test
     fun lexicalUpgradeOnlyInvalidatesDerivedReadinessAndPreservesPublishedHistory() = withDatabase { mysql, jdbc ->
         migration(mysql, "23").migrate()
         jdbc.update("""INSERT INTO support_program_sync_status

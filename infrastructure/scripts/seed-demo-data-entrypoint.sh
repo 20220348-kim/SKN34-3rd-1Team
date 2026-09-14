@@ -3,7 +3,7 @@
 # Keep this entrypoint LF-terminated; the root .gitattributes enforces it.
 #
 # 1. DEMO_SEED_ENABLED가 true가 아니면 아무것도 하지 않고 끝납니다.
-# 2. 데모 계정이 이미 있으면 최초 1회 적재가 끝난 것으로 보고 건너뜁니다. 다시 넣으려면 DEMO_SEED_FORCE=true로 실행합니다.
+# 2. 데모 계정이 이미 있으면 기존 자료를 보존하고 고정 키로 신청 준비 목업 2건을 보장합니다.
 # 3. core-api가 healthy(=Flyway 마이그레이션 완료)여야 시작되며, 모집글이 붙을 기업마당 공고가 동기화될 때까지 기다립니다.
 # 4. /seed/demo-data.sql을 흘려보냅니다. 데모 계정만 지우고 다시 넣습니다.
 set -eu
@@ -14,6 +14,7 @@ if [ "${DEMO_SEED_ENABLED:-false}" != "true" ]; then
 fi
 
 SEED_FILE="${DEMO_SEED_FILE:-/seed/demo-data.sql}"
+APPLICATION_SEED_FILE="$(dirname "${SEED_FILE}")/application-preparations.sql"
 WAIT_SECONDS="${DEMO_SEED_WAIT_SECONDS:-600}"
 REQUIRED_PROGRAMS="${DEMO_SEED_REQUIRED_PROGRAMS:-6}"
 HOST="${MYSQL_HOST:-mysql}"
@@ -24,6 +25,10 @@ if [ ! -f "${SEED_FILE}" ]; then
   echo "demo-seed: seed file ${SEED_FILE} is missing." >&2
   exit 1
 fi
+if [ ! -f "${APPLICATION_SEED_FILE}" ]; then
+  echo "demo-seed: seed file ${APPLICATION_SEED_FILE} is missing." >&2
+  exit 1
+fi
 
 query() {
   mysql --host="${HOST}" --user="${MYSQL_USER}" --password="${MYSQL_PASSWORD}" --default-character-set=utf8mb4 \
@@ -31,9 +36,12 @@ query() {
 }
 
 if [ "${DEMO_SEED_FORCE:-false}" != "true" ]; then
-  existing="$(query "SELECT COUNT(*) FROM account WHERE email = '${MARKER_EMAIL}'" 2>/dev/null || echo 0)"
+  existing="$(query "SELECT COUNT(*) FROM account WHERE email = '${MARKER_EMAIL}'")"
   if [ "${existing:-0}" -ge 1 ]; then
-    echo "demo-seed: demo data already present (${MARKER_EMAIL}); skipping. Re-seed with DEMO_SEED_FORCE=true docker compose run --rm demo-seed"
+    echo "demo-seed: preserving existing data; adding missing application preparations."
+    mysql --host="${HOST}" --user="${MYSQL_USER}" --password="${MYSQL_PASSWORD}" --default-character-set=utf8mb4 \
+      "${MYSQL_DATABASE}" < "${APPLICATION_SEED_FILE}"
+    echo "demo-seed: application preparations ready."
     exit 0
   fi
 fi
@@ -56,6 +64,13 @@ while :; do
 done
 
 echo "demo-seed: loading ${SEED_FILE}"
+reset_applications=0
+if [ "${DEMO_SEED_FORCE:-false}" = "true" ]; then
+  reset_applications=1
+fi
 mysql --host="${HOST}" --user="${MYSQL_USER}" --password="${MYSQL_PASSWORD}" --default-character-set=utf8mb4 \
+  --init-command="SET @reset_application_preparations = ${reset_applications}" \
   "${MYSQL_DATABASE}" < "${SEED_FILE}"
+mysql --host="${HOST}" --user="${MYSQL_USER}" --password="${MYSQL_PASSWORD}" --default-character-set=utf8mb4 \
+  "${MYSQL_DATABASE}" < "${APPLICATION_SEED_FILE}"
 echo "demo-seed: done. Log in with member@govbiz.local (dev login) or any @demo.govbiz.local account (password govbiz-demo1)."
