@@ -968,10 +968,17 @@ describe('계정 보안 모달', () => {
 
 describe('파트너 모집 화면', () => {
   beforeEach(() => {
+    // 고정 공고의 접수 기간 안으로 날짜만 고정하고 검색 debounce 타이머는 실제로 실행한다.
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-09-01T03:00:00Z'))
     vi.spyOn(appContainer.resolve('browsePartnerRecruitmentsUseCase'), 'execute').mockResolvedValue(partnerRecruitmentPage)
     vi.spyOn(appContainer.resolve('browsePartnerProposalsUseCase'), 'execute').mockResolvedValue({ box: 'received', proposals: [], pendingCount: 0 })
     vi.spyOn(appContainer.resolve('getPartnerRecruitmentDetailUseCase'), 'execute')
       .mockImplementation(async (id) => (id === partnerRecruitmentDetail.id ? partnerRecruitmentDetail : null))
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
   })
 
   it('목록을 모집 API로 읽고 상세로 이동해 예시 매칭과 제안 폼을 보여준다', async () => {

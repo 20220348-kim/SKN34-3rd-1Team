@@ -121,6 +121,9 @@ jobs:
       - name: Test Compose cleanup guards without Docker mutations
         run: python -B -m unittest discover -s ../../infrastructure/scripts -p 'test_*.py'
 
+      - name: Test backend deployment guards without AWS or Docker mutations
+        run: python -B -m unittest discover -s ../../infrastructure/codebuild -p 'test_*.py'
+
       - name: Validate retrieval evaluation fixture and metrics
         working-directory: evaluation/support-program-search
         run: ../../backend/ai-service/.venv/bin/python -m unittest discover

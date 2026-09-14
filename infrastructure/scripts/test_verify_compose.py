@@ -21,6 +21,7 @@ if [[ "${VERIFY_CHECK_SAFE_UPSTREAM_ENV:-false}" == "true" ]]; then
   [[ "$BIZINFO_API_BASE_URL" == "http://bizinfo-stub:8001" ]] || exit 95
   [[ "$OPENAI_BASE_URL" == "http://openai-stub:8002/v1" ]] || exit 96
   [[ "$OPENAI_API_KEY" == "compose-verification-key-never-sent" ]] || exit 97
+  [[ "$DEMO_SEED_ENABLED" == "false" && "$DEMO_SEED_FORCE" == "false" ]] || exit 115
   [[ "$MSIT_API_BASE_URL" == "http://public-notices-stub:8004" ]] || exit 98
   [[ "$MSIT_API_KEY" == "compose%2Bnotice%2Fverification%3D" ]] || exit 99
   [[ "$MSIT_SYNC_ENABLED" == "true" ]] || exit 100
@@ -171,6 +172,8 @@ printf '%s' '200'
             BIZINFO_API_BASE_URL="https://must-not-call.invalid",
             OPENAI_BASE_URL="https://must-not-call.invalid/v1",
             OPENAI_API_KEY="must-not-use-real-model-key",
+            DEMO_SEED_ENABLED="true",
+            DEMO_SEED_FORCE="true",
             DAILY_REPORT_ENABLED="true",
             DAILY_REPORT_QUEUE_ENABLED="false",
             DAILY_REPORT_DELIVERY_QUEUE_ENABLED="false",
