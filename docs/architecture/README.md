@@ -123,8 +123,10 @@ MVVM은 Model·View·ViewModel의 책임을 나누는 화면 설계입니다. �
 |---|---|---|
 | View | [ChatPage.tsx](../../frontend/src/presentation/features/chat/view/ChatPage.tsx) | 입력창·결과 카드 렌더링, 사용자 이벤트 연결 |
 | 페이지 ViewModel | [useChatPageViewModel.ts](../../frontend/src/presentation/features/chat/viewmodel/useChatPageViewModel.ts) | 채팅·준비 상태 조합, 검색 가능 여부 검사, IME·스크롤, 화면 이벤트 제공 |
-| 내부 채팅 Hook | [useSupportProgramChat.ts](../../frontend/src/presentation/features/chat/hooks/useSupportProgramChat.ts) | `draft`, `messages`, `isSearching` 등 Redux 상태와 검색·취소·시간 제한 등 요청 수명 관리 |
+| 내부 채팅 Hook | [useSupportProgramChat.ts](../../frontend/src/presentation/features/chat/hooks/useSupportProgramChat.ts) | `draft`, `messages`, `isSearching` 등 Redux 상태 구독과 검색·해석 요청의 시작·취소·시간 제한. 요청 객체 자체는 아래 요청 레지스트리가 소유 |
+| 요청 레지스트리 | [chatRequestRegistry.ts](../../frontend/src/presentation/features/chat/state/chatRequestRegistry.ts) | 진행 중 `AbortController`·타이머의 주인. Store와 수명이 같아 화면을 떠나도 요청이 이어지고, thunk의 extraArgument로 주입 |
 | 내부 준비 상태 Hook | [useSupportProgramSearchReadiness.ts](../../frontend/src/presentation/features/chat/hooks/useSupportProgramSearchReadiness.ts) | 검색 준비 상태 조회와 준비 중 polling 관리 |
+| 공용 레이아웃 ViewModel | [useWorkspaceLayoutViewModel.ts](../../frontend/src/presentation/shared/app-sidebar/useWorkspaceLayoutViewModel.ts), [useWorkspaceChatActions.ts](../../frontend/src/presentation/shared/app-sidebar/useWorkspaceChatActions.ts) | 사이드바 접기·모바일 메뉴·포커스 이동과 새검색·대화 열기·삭제의 확인 대화상자 흐름. `WorkspaceLayout` View는 JSX와 문구만 가짐 |
 | Model 측 | Domain 모델·UseCase·Repository | 검색 조건과 공고 데이터, 검색·상세 조회 실행 |
 
 View는 페이지 ViewModel 하나가 반환한 상태를 렌더링하고 사용자 이벤트를 반환된 handler에 연결합니다.
@@ -167,20 +169,24 @@ ChatPage의 제출 이벤트
   → Store 변경 → 채팅 Hook의 useAppSelector 구독 → 페이지 ViewModel 반환값 → View 재렌더링
 ```
 
-Thunk는 비동기 처리를 수행하는 함수이며, 현재 내부 채팅 Hook 안에 정의되어 Redux 미들웨어가 실행합니다.
+Thunk는 비동기 처리를 수행하는 함수이며, 검색·해석 Thunk는 내부 채팅 Hook 안에, 진행 중 요청을 끊는 취소 Thunk는
+[chatRequestThunks.ts](../../frontend/src/presentation/features/chat/state/chatRequestThunks.ts)에 정의되어 Redux 미들웨어가 실행합니다.
 HTTP 호출은 UseCase·Repository를 통해 수행하고 [chatSlice](../../frontend/src/presentation/features/chat/state/chatSlice.ts)의
 Reducer에는 상태 변경 규칙을 둡니다. Slice 내부의 `state.messages.push(...)` 표기는 Redux Toolkit이
 Immer로 처리하는 갱신 방식이며 View나 HTTP 코드가 Store 상태를 직접 변경하는 흐름이 아닙니다.
 
 `main.tsx`의 Redux `Provider`가 Store를 화면 트리에 연결하고 Selector가 필요한 상태를 읽습니다.
-요청 ID를 비교해 이전 요청의 늦은 결과를 무시하고, 직렬화할 수 없는 `AbortController`는 Store가 아닌
-내부 채팅 Hook의 ref에 보관합니다.
+요청 ID를 비교해 이전 요청의 늦은 결과를 무시합니다. 직렬화할 수 없는 `AbortController`와 타이머는 Store 상태가 아니라
+Store를 만들 때 thunk extraArgument로 넣는 `ChatRequestRegistry`가 보관합니다. 화면 컴포넌트가 아니라 Store와 수명이 같으므로
+다른 메뉴로 이동해도 요청이 끊기지 않고, 결과는 Redux로 돌아와 사이드바 진행 패널·헤더 칩·도착 알림(`presentation/shared/chat-activity`)이
+Selector로 읽어 보여 줍니다. 요청을 끊는 경우는 로그아웃(App 수준 `useChatRequestLifecycle`)·취소 버튼·시간 초과, 그리고
+확인 대화상자에서 계속을 누른 새 대화·다른 대화 열기뿐입니다.
 
 ### Hook 상태와 Redux 상태의 선택
 
 | 사용처 | 상태 저장 위치 | 수명 |
 |---|---|---|
-| 지원사업 채팅 | Redux `chat` slice + 내부 채팅 Hook | 앱 내 화면 이동 동안 메시지·입력 유지 |
+| 지원사업 채팅 | Redux `chat` slice + 내부 채팅 Hook + `ChatRequestRegistry` | 앱 내 화면 이동 동안 메시지·입력·진행 중 요청 유지, 아직 보지 않은 결과는 배지·알림으로 회수 |
 | 지원사업 상세 | ViewModel Hook의 로컬 상태 | 화면 진입 때 API 재조회, 이탈 시 로컬 상태 해제 |
 | 공고 원문 질문 | 질문 페이지 ViewModel Hook의 로컬 상태 | 명시적 제출 때만 API 호출, 화면 이탈·새로고침 시 질문·답변 초기화 |
 | Hook SampleItem | React Hook Form + Hook 로컬 상태 | 화면 이탈 시 입력·결과 초기화 |
@@ -192,8 +198,8 @@ SampleItem의 두 버전 모두 같은 `PrepareSampleItemUseCase`와 API를 사�
 기업 조건·접수 상태를 보냅니다. 해석은 확정 조건과 필요한 마지막 추가 질문·미확정 초안만 사용하며,
 전체 대화 이력을 보내지 않습니다.
 
-Zod가 HTTP 응답을 검증합니다. AbortController와 요청 ID는 화면 이탈·새 대화 이후 오래된 결과가
-반영되는 것을 막습니다. 이 취소 처리가 서버의 OpenAI 작업 중단까지 보장하는 것은 아닙니다.
+Zod가 HTTP 응답을 검증합니다. AbortController와 요청 ID는 새 대화·로그아웃 이후 오래된 결과가
+반영되는 것을 막습니다. 화면 이탈만으로는 요청을 취소하지 않습니다. 이 취소 처리가 서버의 OpenAI 작업 중단까지 보장하는 것은 아닙니다.
 상태 관리 비교용 SampleItem은 별도 예제 화면이며 지원사업 기능과 분리되어 있습니다.
 Core 상태 조회와 두 SampleItem 요청에는 10초 상한을 적용합니다. 비동기 폼 검증 중 입력 수정·이탈은
 요청 시작 전 세대 번호로 검사하며, 완료 후 늦은 응답은 요청 ID와 취소 상태로 차단합니다.

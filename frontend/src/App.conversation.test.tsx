@@ -236,6 +236,11 @@ describe('대화 조건 해석·확인 검색 HTTP E2E', () => {
     expect(requestSignal.aborted).toBe(false)
     readiness.canSearch = false
     fireEvent.click(screen.getByRole('button', { name: path === '/' ? '새 AI 대화 검색' : '지원사업 새검색' }))
+    if (path === '/app/chat') {
+      // 검색 화면에서 진행 중에 사이드바 새검색을 누르면 확인 대화상자를 거쳐서만 끊습니다. 비로그인 메인의 새 대화는 바로 끊습니다.
+      expect(requestSignal.aborted).toBe(false)
+      fireEvent.click(within(screen.getByRole('dialog', { name: '검색이 진행 중입니다' })).getByRole('button', { name: '계속' }))
+    }
     expect(requestSignal.aborted).toBe(true)
     expect(document.activeElement).toBe(input)
     expect((input as HTMLTextAreaElement).disabled).toBe(false)

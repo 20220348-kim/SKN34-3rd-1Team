@@ -75,6 +75,8 @@ export function PublicPartnerRecruitmentListPage() {
     sourceCode,
     sourceOptions,
     selectSource,
+    hasActiveNarrowing,
+    clearNarrowing,
     loginPrompt,
     openLoginPrompt,
     closeLoginPrompt,
@@ -168,8 +170,13 @@ export function PublicPartnerRecruitmentListPage() {
             <p className={styles.description}>모집글을 불러오는 중입니다.</p>
           </section>
         ) : recruitments.length === 0 ? (
-          <section className={styles.card} aria-label="모집글 없음">
-            <p className={styles.description}>아직 모집 중인 글이 없습니다. 로그인해 첫 모집글을 올려 보세요.</p>
+          <section className={styles.card} aria-label="검색 결과 없음">
+            <p className={styles.description}>
+              {hasActiveNarrowing ? '조건에 맞는 모집글이 없습니다. 검색어나 필터를 바꾸거나 초기화해 보세요.' : '아직 모집 중인 글이 없습니다. 로그인해 첫 모집글을 올려 보세요.'}
+            </p>
+            {hasActiveNarrowing ? (
+              <button className={workspacePageStyles.quietLink} type="button" onClick={clearNarrowing}>검색·필터 초기화</button>
+            ) : null}
           </section>
         ) : (
           <>

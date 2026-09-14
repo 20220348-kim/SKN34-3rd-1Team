@@ -19,6 +19,17 @@ export const chatActivityMessages = {
   openHistoryCancel: '취소',
 } as const
 
+/**
+ * 조건 해석은 몇 초 안에 끝나므로 패널·헤더 칩은 진행 중 표시 없이 결과가 도착했을 때만 알립니다.
+ * 검색은 수십 초가 걸려 진행 중임을 계속 보여 주고, 대화 기록 항목의 점은 해석 중에도 붙입니다.
+ */
+export function visibleChatActivity(activity: ChatActivity | null): ChatActivity | null {
+  return activity?.kind === 'interpreting' ? null : activity
+}
+
+/** 토스트를 띄우지 않는 결과입니다. "답변이 도착했어요"는 요청에 따라 알림을 끄고, 패널·배지로만 알립니다. */
+export const silentToastOutcomes: ReadonlySet<ChatOutcome> = new Set<ChatOutcome>(['interpretation-answered'])
+
 export function chatOutcomeMessage(outcome: ChatOutcome, resultCount: number | null): string {
   switch (outcome) {
     case 'search-succeeded':
@@ -30,6 +41,7 @@ export function chatOutcomeMessage(outcome: ChatOutcome, resultCount: number | n
     case 'interpretation-clarification':
       return '조건을 확인하는 질문이 있어요. 답하면 검색을 이어가요.'
     case 'interpretation-answered':
+      // 토스트는 `silentToastOutcomes`로 꺼 두었고, 문구는 패널·스크린 리더 안내용으로 남깁니다.
       return '답변이 도착했어요.'
     case 'interpretation-failed':
       return '조건 해석을 마치지 못했어요. 대화에서 다시 시도할 수 있어요.'
@@ -63,8 +75,9 @@ export function chatActivityTone(activity: ChatActivity): 'pending' | 'done' | '
 }
 
 export function chatActivityHeaderLabel(activity: ChatActivity | null): string | null {
-  if (activity === null) return null
-  if (activity.kind === 'searching') return chatActivityMessages.headerSearching
-  if (activity.kind === 'interpreting') return chatActivityMessages.headerInterpreting
+  const visible = visibleChatActivity(activity)
+  if (visible === null) return null
+  if (visible.kind === 'searching') return chatActivityMessages.headerSearching
+  if (visible.kind === 'interpreting') return chatActivityMessages.headerInterpreting
   return chatActivityMessages.headerUnseen
 }

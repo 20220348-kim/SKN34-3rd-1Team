@@ -3,6 +3,7 @@ import { useState } from 'react'
 import type { PartnerRecruitmentSummary } from '../../../../domain/entities/PartnerRecruitment'
 import {
   defaultPartnerRecruitmentQuery,
+  hasPartnerRecruitmentNarrowing,
   partnerRecruitmentSortLabels,
   type PartnerRecruitmentQuery,
   type PartnerRecruitmentSort,
@@ -55,6 +56,13 @@ export function usePublicPartnerRecruitmentListViewModel() {
     selectSource: (sourceCode: string) => setQuery((current) => ({ ...current, sourceCode, page: 1 })),
     /** 지원사업 찾기 필터 검색처럼 "검색 결과 N건"으로 보입니다. 처음 읽기 전에는 null입니다. */
     resultTotal: page === null ? null : page.total,
+    /** 검색어·출처로 좁힌 상태입니다. 결과가 없을 때 "아직 글이 없다"가 아니라 조건을 바꾸라고 안내합니다. */
+    hasActiveNarrowing: hasPartnerRecruitmentNarrowing(query),
+    /** 검색어와 출처를 지우고 첫 페이지부터 전체를 다시 읽습니다. 정렬은 유지합니다. */
+    clearNarrowing: () => {
+      setKeywordDraft('')
+      setQuery((current) => ({ ...current, keyword: '', sourceCode: '', page: 1 }))
+    },
     loginPrompt: promptReturnPath === null ? null : { loginPath: loginPathFor(promptReturnPath) },
     openLoginPrompt: (recruitment: PartnerRecruitmentSummary) => setPromptRecruitmentId(recruitment.id),
     closeLoginPrompt: () => setPromptRecruitmentId(null),

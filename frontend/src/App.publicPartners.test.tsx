@@ -67,6 +67,35 @@ describe('공개 파트너 모집', () => {
     ))
   })
 
+  it('검색어·출처로 좁혀 결과가 없으면 조건 변경·초기화를 안내하고, 초기화하면 검색어와 출처를 비워 전체를 다시 읽는다', async () => {
+    const browse = appContainer.resolve('browsePartnerRecruitmentsUseCase').execute as ReturnType<typeof vi.fn>
+    renderApp('/partners', null)
+    await screen.findAllByRole('article')
+
+    browse.mockResolvedValueOnce({ ...partnerRecruitmentPage, recruitments: [], total: 0, totalPages: 0 })
+    const search = screen.getByRole('form', { name: '모집글 검색' })
+    fireEvent.change(within(search).getByRole('searchbox', { name: '모집글 검색' }), { target: { value: '없는 글' } })
+    fireEvent.click(within(search).getByRole('button', { name: '조회' }))
+    const empty = await screen.findByRole('region', { name: '검색 결과 없음' })
+    // 좁힌 조건 때문에 비어 있는 것이므로 "아직 글이 없다·로그인해 올려라"가 아니라 조건을 바꾸라고 안내합니다.
+    expect(within(empty).getByText('조건에 맞는 모집글이 없습니다. 검색어나 필터를 바꾸거나 초기화해 보세요.')).toBeTruthy()
+    expect(screen.queryByText(/아직 모집 중인 글이 없습니다/)).toBeNull()
+
+    fireEvent.click(within(empty).getByRole('button', { name: '검색·필터 초기화' }))
+    await waitFor(() => expect(browse).toHaveBeenLastCalledWith(
+      { keyword: '', seekingRoles: [], regions: [], mineOnly: false, sourceCode: '', sort: 'DEADLINE', page: 1 },
+      expect.any(AbortSignal),
+    ))
+    expect(within(search).getByRole('searchbox', { name: '모집글 검색' })).toHaveProperty('value', '')
+    await screen.findAllByRole('article')
+
+    // 아무 조건 없이 비어 있을 때만 로그인해 첫 글을 올리라고 안내합니다.
+    browse.mockResolvedValueOnce({ ...partnerRecruitmentPage, recruitments: [], total: 0, totalPages: 0 })
+    fireEvent.change(screen.getByRole('combobox', { name: '정렬' }), { target: { value: 'RECENT' } })
+    expect(await screen.findByText('아직 모집 중인 글이 없습니다. 로그인해 첫 모집글을 올려 보세요.')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: '검색·필터 초기화' })).toBeNull()
+  })
+
   it('비로그인은 헤더 아래에서 모집글을 읽고 제안 대신 로그인 안내를 본다', async () => {
     renderApp('/partners', null)
 
