@@ -641,6 +641,39 @@ AI의 HTTP 504나 Core 읽기 시간 초과는 기존대로 `TIMEOUT → 504 AI_
 색인은 계속 실행됩니다. 두 스케줄러는 각각 별도의 단일 스레드에서 실행되며 실패를 기록한 뒤
 다음 주기에 다시 시도합니다. 현재 공개된 수동 동기화 HTTP API는 없습니다.
 
+### 예산을 지정한 일회성 수집
+
+`catalog-sync-once` 프로필은 HTTP 서버 없이 선택한 제공처를 한 번 수집하고 종료합니다. 일반 API 서버의
+자동 수집/색인 복구 플래그는 계속 `false`로 유지합니다. 이 프로필에서는 초기화 단계에 모든 수집·복구·큐·메일
+예약 작업과 Flyway를 강제로 끄므로, 이미 migration이 완료된 DB에만 실행해야 합니다.
+
+```bash
+java -Djdk.httpclient.disableRetryConnect=true -Djdk.httpclient.redirects.retrylimit=1 \
+  -jar application.jar --spring.profiles.active=catalog-sync-once \
+  --app.catalog-sync-once.sources=BIZINFO,KSTARTUP,MSIT \
+  --app.catalog-sync-once.max-usd=1.00 \
+  --app.catalog-sync-once.receipt-path=/persistent/catalog-initial.receipt
+```
+
+기본값은 **무료 사전 검사**(`apply=false`)입니다. 각 제공처 전체 페이지를 기존 Client/Facade로 검증하고,
+실제 색인 입력의 UTF-8 바이트 수와 문서당 8,191 토큰 상한으로 보수적인 임베딩 비용 상한을 계산합니다.
+`text-embedding-3-small`의 [공식 표준 입력 단가](https://developers.openai.com/api/docs/models/text-embedding-3-small)
+$0.02/백만 토큰(2026-09-15 확인)을 사용하며, 허용 예산은
+0 초과 $1 이하입니다. 실행 전 대상 AI Service가 이 모델·1536차원과 SDK `max_retries=0`을 사용하는지 확인해야 합니다.
+다른 모델·요금 또는 별도 검색/답변 호출의 비용까지 제한하는 계정 전체 예산 기능은 아닙니다.
+위 JVM 옵션은 [JDK HTTP Client의 자동 재전송](https://docs.oracle.com/en/java/javase/21/docs/api/java.net.http/module-summary.html)을
+막아 같은 임베딩 요청이 네트워크 장애로 중복 실행되지 않도록 합니다. 예산을 제한한 실행에서는 생략하지 않습니다.
+
+승인된 적용은 같은 명령에 `--app.catalog-sync-once.apply=true`를 추가합니다. 모든 선택 제공처의 전체 수집과
+합산 비용 검사가 끝나기 전에는 DB/색인을 변경하거나 유료 API를 호출하지 않습니다. 검사한 동일 스냅샷을
+제공처별 `색인 → Repository의 원자적 공개` 순서로 반영하며, 중간 실패 시 실패한 제공처의 기존 공개 목록은 유지합니다.
+먼저 성공한 제공처까지 되돌리지는 않습니다. 실패를 정상 완료로 숨기거나 자동 재시도하지 않습니다.
+
+영속 디렉터리의 receipt를 **배타적으로 생성하고 디스크에 동기화한 뒤** 적용을 시작합니다. 완료·실패·강제 중단 모두
+같은 기록 경로로 다시 실행할 수 없습니다. Docker에서는 호스트 디렉터리를 마운트하고 `--restart=no`를 사용합니다.
+기록을 삭제하거나 새 경로로 재실행하면 추가 과금될 수 있으므로, 기존 지출 확인과 새 승인이 필요합니다.
+자동 수집을 계속 꺼두면 신규·수정 공고는 다음 수동 수집 전까지 반영되지 않습니다.
+
 기업마당 키는 Encoding·Decoding 형식 모두 받을 수 있으며 Client가 요청 전에 정규화합니다.
 목록 DTO는 검색·저장에 사용하는 원본 필드만 디코딩합니다. 사용하지 않는 신청 방법
 (`reqstMthPapersCn`) 필드는 무시하며, 실제 사용하는 필드와 페이지 완전성 검증은 유지합니다.

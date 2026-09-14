@@ -139,6 +139,27 @@ Core CORS·OAuth 콜백/복귀 주소는 같은 고정 Vercel origin으로 설�
 Google/Kakao 콘솔에 `<운영 origin>/api/v1/auth/oauth/{google|kakao}/callback`을 별도 등록한다.
 OAuth 자격증명이 없는 공급자는 사용할 수 없으며 이메일 회원가입/로그인은 별도로 검증한다.
 
+### 계정 인증메일과 소셜 로그인 활성화
+
+SMTP와 OAuth 비밀값은 EC2의 권한 600 환경 파일에만 저장한다. Git, Vercel `VITE_*`,
+SSM Run Command 본문이나 로그에 넣지 않는다. 기존 운영 JWT·DB·프록시 비밀값은 유지한다.
+
+- Google/Kakao client ID와 secret을 설정하고, 공급자 콘솔에 위 운영 콜백을 정확히 등록한다.
+  카카오는 로그인과 OpenID Connect 및 앱에서 필요한 이메일 동의항목을 확인한다.
+- `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`를 설정한다. Gmail SMTP는
+  `smtp.gmail.com:587`, 계정의 앱 비밀번호, `SMTP_AUTH=true`, `SMTP_STARTTLS_ENABLED=true`,
+  `SMTP_SSL_ENABLED=false`를 사용한다. 일반 Google 로그인 비밀번호를 넣지 않는다.
+- `ACCOUNT_EMAIL_VERIFICATION_FROM`과 `ACCOUNT_PASSWORD_RESET_FROM`에 허용된 발신 주소를 설정하고
+  `ACCOUNT_EMAIL_VERIFICATION_MAIL_ENABLED=true`, `ACCOUNT_PASSWORD_RESET_MAIL_ENABLED=true`로 켠다.
+  개발 로그인은 false, Secure 쿠키는 true, 복귀/재설정 URL은 운영 HTTPS origin을 유지한다.
+  수집·색인·정기 리포트 스위치는 이 작업으로 켜지 않는다.
+- 변경 전 환경 파일과 Compose를 비공개 경로에 백업하고 정적 검사를 통과한 뒤,
+  `docker compose --env-file /opt/govbiz/.env.production -f /opt/govbiz/infrastructure/compose.prod.yaml up -d --no-deps --wait --wait-timeout 240 core-api`
+  로 Core만 재생성한다. 서버에서 별도 적용한 네트워크/IP 설정을 덮어쓰지 않는다.
+- health, OAuth 공급자 목록과 운영 콜백을 확인한다. SMTP 인증 성공만으로 메일 수신이나
+  회원가입 검증이 완료된 것은 아니다. 승인된 테스트 수신자로 인증번호 수신·가입·로그인·재설정 및
+  공급자 로그인/동의까지 별도로 검증한다.
+
 ## 최초 기동과 데이터 준비
 
 아래는 **AWS 구성과 비용 승인을 마친 뒤 EC2에서** 실행한다. 지금 자원을 만들라는 뜻이 아니다.
@@ -159,7 +180,7 @@ Flyway 실패 시 DB 삭제/migration 수정 대신 적용 이력·권한·연�
 카카오 연결 해제는 `ACCOUNT_OAUTH_UNLINK_ENABLED`와 `ACCOUNT_OAUTH_UNLINK_QUEUE_ENABLED`를 함께 켠다.
 queue 스위치만 끄면 기존 DB 직접 실행 모드가 동작하므로 초기에는 기능 스위치도 false로 둔다.
 이전 DB/큐를 복원했다면 켜는 즉시 대기 작업이 실행될 수 있으므로 기존 작업·외부 호출/연결 해제/메일 영향을 먼저 검토한다.
-SMTP·비밀번호 재설정 메일은 이번 초기 설정에서 비활성화했다. 공개 운영 전에 발송 설정/정책을 별도로 준비한다.
+계정 인증·비밀번호 재설정 메일의 기본값도 false다. 위 활성화 절차로 SMTP/발신 주소를 준비한 뒤 켠다.
 
 실배포 완료 기준:
 

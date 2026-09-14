@@ -14,6 +14,11 @@ import ai.govbiz.core.supportprogram.service.sync.KStartupSupportProgramCatalogS
 import ai.govbiz.core.supportprogram.service.sync.MsitSupportProgramCatalogSyncService
 import ai.govbiz.core.supportprogram.service.sync.CnTradeNoticeSupportProgramCatalogSyncService
 import ai.govbiz.core.supportprogram.service.sync.SupportProgramIndexSyncService
+import ai.govbiz.core.supportprogram.service.sync.SupportProgramCatalogSyncOnceService
+import ai.govbiz.core.supportprogram.service.sync.config.SupportProgramCatalogSyncOnceProperties
+import java.math.BigDecimal
+import java.nio.file.Path
+import org.junit.jupiter.api.io.TempDir
 import ai.govbiz.core.supportprogram.domain.SupportProgramSyncOutcome
 import ai.govbiz.core.supportprogram.helper.SupportProgramCatalogFingerprintHelper
 import ai.govbiz.core.supportprogram.helper.SupportProgramContentHashHelper
@@ -51,6 +56,39 @@ import org.springframework.jdbc.core.JdbcTemplate
 )
 @Import(MySqlTestContainerConfig::class)
 class SupportProgramRepositoryIntegrationTest {
+
+    @TempDir
+    lateinit var syncOnceDirectory: Path
+
+    @Test
+    fun oneShotSyncPreservesOtherSourcesIsIdempotentAndKeepsOldSnapshotOnIndexFailure() {
+        val original = catalogProgram("shared", "한글 공고 🚀")
+        val removed = catalogProgram("removed", "누락될 공고")
+        val other = catalogProgram("shared", "다른 제공처", sourceCode = "KSTARTUP")
+        repository.synchronizeSource("BIZINFO", listOf(original, removed))
+        repository.upsert(other)
+        var snapshot = listOf(original)
+        val index = Mockito.mock(SupportProgramIndexSyncService::class.java)
+        Mockito.`when`(index.indexSnapshot(snapshot)).thenReturn(1)
+        val unused = SupportProgramCatalogFacade { error("unselected source called") }
+        val service = SupportProgramCatalogSyncOnceService(SupportProgramCatalogFacade { snapshot }, unused, unused, unused, repository, index)
+        repeat(2) { attempt ->
+            service.run(SupportProgramCatalogSyncOnceProperties(listOf("BIZINFO"), BigDecimal.ONE,
+                syncOnceDirectory.resolve("approved-$attempt"), true))
+            assertEquals(original, repository.findSearchablePresent().single())
+            assertFalse(isSourcePresent("BIZINFO", "removed"))
+            assertEquals(other, repository.findPresentBySourceAndProgramId("KSTARTUP", "shared"))
+        }
+        snapshot = listOf(original.copy(program = original.program.copy(title = "아직 공개하지 않음")))
+        Mockito.`when`(index.indexSnapshot(snapshot)).thenThrow(IllegalStateException("later batch failed"))
+        assertThrows(IllegalStateException::class.java) {
+            service.run(SupportProgramCatalogSyncOnceProperties(listOf("BIZINFO"), BigDecimal.ONE,
+                syncOnceDirectory.resolve("approved-failure"), true))
+        }
+        assertEquals(original, repository.findSearchablePresent().single())
+        assertEquals(other, repository.findPresentBySourceAndProgramId("KSTARTUP", "shared"))
+        assertEquals(SupportProgramSyncOutcome.FAILURE, repository.findSyncStatus("BIZINFO")?.lastSyncOutcome)
+    }
 
     @Autowired
     private lateinit var repository: SupportProgramRepository

@@ -24,6 +24,24 @@ def validate(config):
         errors.append("고정 운영 Vercel HTTPS origin이 필요합니다(끝 / 제외).")
     if core.get("ACCOUNT_DEV_LOGIN_ENABLED") != "false" or core.get("ACCOUNT_COOKIE_SECURE") != "true":
         errors.append("개발 로그인은 false, Secure 쿠키는 true여야 합니다.")
+    mail_enabled = False
+    for prefix in ("ACCOUNT_EMAIL_VERIFICATION", "ACCOUNT_PASSWORD_RESET"):
+        enabled = core.get(prefix + "_MAIL_ENABLED", "false")
+        if enabled not in {"true", "false"}:
+            errors.append(f"{prefix}_MAIL_ENABLED는 true 또는 false여야 합니다.")
+        if enabled == "true":
+            mail_enabled = True
+            if not re.fullmatch(r"[^\s@<>,;]+@[^\s@<>,;]+\.[^\s@<>,;]+", core.get(prefix + "_FROM", "")):
+                errors.append(f"{prefix}_FROM에 단일 발신 이메일 주소가 필요합니다.")
+    if mail_enabled:
+        if any(not core.get(key, "").strip() for key in ("SMTP_HOST", "SMTP_USERNAME", "SMTP_PASSWORD")):
+            errors.append("계정 메일을 켜려면 SMTP host/username/password가 필요합니다.")
+        port = core.get("SMTP_PORT", "")
+        if not port.isdigit() or not 1 <= int(port) <= 65535:
+            errors.append("SMTP_PORT는 1~65535여야 합니다.")
+        tls = (core.get("SMTP_STARTTLS_ENABLED"), core.get("SMTP_SSL_ENABLED"))
+        if core.get("SMTP_AUTH") != "true" or tls not in {("true", "false"), ("false", "true")}:
+            errors.append("운영 SMTP는 인증과 STARTTLS 또는 SSL 중 한 가지를 사용해야 합니다.")
     if core.get("ACCOUNT_OAUTH_UNLINK_ENABLED") == "true" and core.get("ACCOUNT_OAUTH_UNLINK_QUEUE_ENABLED") != "true":
         errors.append("운영 카카오 연결 해제를 활성화할 때는 큐 모드도 함께 켜야 합니다.")
     if core.get("SERVER_FORWARD_HEADERS_STRATEGY") != "native" or core.get("SERVER_TOMCAT_REMOTEIP_INTERNAL_PROXIES") != r"172\.30\.254\.2":
