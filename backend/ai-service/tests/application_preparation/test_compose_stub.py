@@ -4,7 +4,7 @@ from pathlib import Path
 
 import httpx2
 import pytest
-from agents import OpenAIResponsesModel
+from langchain_openai import ChatOpenAI
 from openai import AsyncOpenAI
 
 from app.application_preparation.agent import ApplicationPreparationAgent
@@ -13,7 +13,7 @@ from app.application_preparation.service import ApplicationPreparationService
 
 
 @pytest.mark.anyio
-async def test_actual_compose_stub_through_sdk_and_service(monkeypatch):
+async def test_actual_compose_stub_through_langchain_and_service(monkeypatch):
     stub_path = Path(__file__).resolve().parents[4] / "infrastructure/stubs/openai/server.py"
     spec = importlib.util.spec_from_file_location("application_preparation_compose_stub", stub_path)
     stub = importlib.util.module_from_spec(spec)
@@ -50,8 +50,11 @@ async def test_actual_compose_stub_through_sdk_and_service(monkeypatch):
         http_client=httpx2.AsyncClient(transport=httpx2.MockTransport(handle)),
     )
     agent = ApplicationPreparationAgent(
-        model=OpenAIResponsesModel(model="gpt-5.6-luna", openai_client=client),
-        model_timeout_seconds=4,
+        model=ChatOpenAI(
+            model="gpt-5.6-luna", api_key="test-key", use_responses_api=True,
+            store=False, reasoning={"effort": "none"}, timeout=4, max_retries=0,
+            root_async_client=client, async_client=client.chat.completions,
+        ),
         run_timeout_seconds=5,
     )
     try:

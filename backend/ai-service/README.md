@@ -22,7 +22,10 @@ Agent 안에서 API 전송 스키마의 판별 union을 `anyOf`로 변환하고 
 구조화 출력의 형태 준수와 실제 판단 품질은 다르며 [공식 안내](https://developers.openai.com/api/docs/guides/structured-outputs)를 참고합니다.
 [실행·원문 관리 계약](../../docs/duplicate-support-review-design.md)과 [무료 검증](../../evaluation/combination-review/README.md)에 범위를 정리했습니다.
 
-신청 문서 기능은 `app/application_preparation`에서 역할이 분리된 양식 발견·입력 해석·초안 작성 Agent를 사용합니다.
+신청 문서 기능은 `app/application_preparation`에서 양식 발견·입력 해석·초안 작성·원본 문서 배치를 수행합니다.
+호출 흐름은 `Router → Service → ApplicationPreparationAgent → LangChain ChatOpenAI → OpenAI Responses API`입니다.
+각 호출은 strict JSON Schema로 결과를 검증하고, 응답 거절·불완전 응답·파싱 실패를 오류로 처리합니다.
+기존 토큰 한도(해석 2,500, 발견·초안 5,000, 배치 10,000)와 모델·실행 시간 제한을 유지하며 자동 재시도·응답 저장·LangSmith 추적을 비활성화합니다.
 양식 발견 Agent는 Core가 공식 PDF/HWP/HWPX에서 추출한 위치 포함 블록만 받아 작성 대상 문서와 문항을 제안하고, 모든 필드는
 허용된 블록의 정확한 원문 인용을 가져야 합니다. 모델이 원문의 줄바꿈을 공백으로 표현한 경우에만 실제 원문 구간으로
 정규화하며, 같은 문서·문항 식별자가 반복되면 데이터 손실 없이 안전한 고유 키로 바꿉니다. 입력 해석 Agent는 선택된 문항 필드와 현재 사용자 확인 사실, 이번 답변만
@@ -157,7 +160,7 @@ C02와 같은 모델·HTTP 25초/전체 실행 30초 제한, 최대 출력 1,200
 `principal`(`accountId`, `toolToken`, `hasCompany`; 비로그인은 `null`)과, 관심 공고 묶음 질문의 두 번째 호출에만
 `savedProgramDocuments[]`(최대 10건 × 청크 `{id, contentHash}` 50개, 청크가 비면 원문 미수집)·`resumeIntent`를 더한 것이고, 응답은 위 표의 필드에
 `cards[]`(최대 5장, `kind` RECRUITMENT/PROGRAM, `id`, `title`, `subtitle`, `reason`, `quote`, `to`), `navigation`(`label`, `to`),
-`toolCalls[]`(`name`, `ms`, `ok`), `needsDocuments`를 더한 것입니다. 이 경로만 LangGraph를 쓰며 다른 기능은 Agents SDK 그대로입니다.
+`toolCalls[]`(`name`, `ms`, `ok`), `needsDocuments`를 더한 것입니다. 이 경로만 LangGraph를 쓰며 중복 지원 검토와 신청 문서는 LangChain, 나머지 기능은 Agents SDK를 사용합니다.
 
 ```
 classify(nano, 구조화) ─┬─ PRODUCT_HELP·SEARCH·PROGRAM_QUESTION·OUT_OF_SCOPE·UNCLEAR·(제안함) ─► finalize

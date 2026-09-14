@@ -79,7 +79,6 @@ def build_application_container(
     general_model = None
     if (
         evidence_answer_agent is None or conversation_agent is None
-        or application_preparation_agent is None
     ):
         general_model = OpenAIResponsesModel(
             model=settings.openai_model,
@@ -113,10 +112,13 @@ def build_application_container(
         )
 
     if application_preparation_agent is None:
-        assert general_model is not None
         application_preparation_agent = ApplicationPreparationAgent(
-            model=general_model,
-            model_timeout_seconds=settings.llm_model_timeout_seconds,
+            model=ChatOpenAI(
+                model=settings.openai_model, api_key=settings.openai_api_key,
+                use_responses_api=True, store=False, reasoning={"effort": "none"},
+                timeout=settings.llm_model_timeout_seconds, max_retries=0,
+                root_async_client=openai_client, async_client=openai_client.chat.completions,
+            ),
             run_timeout_seconds=settings.llm_run_timeout_seconds,
         )
 

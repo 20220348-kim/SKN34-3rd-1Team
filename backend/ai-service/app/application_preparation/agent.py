@@ -1,9 +1,10 @@
 import asyncio
 import json
 
-from agents import Agent, Model, ModelSettings, ModelTimeoutError, RunConfig, Runner
+from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_openai import ChatOpenAI
+from langsmith import tracing_context
 from openai import APITimeoutError
-from openai.types.shared import Reasoning
 
 from app.application_preparation.discovery_prompt import DISCOVERY_INSTRUCTIONS
 from app.application_preparation.models import (
@@ -21,51 +22,27 @@ from app.application_preparation.document import DOCUMENT_INSTRUCTIONS, Document
 class ApplicationPreparationAgent:
     """Structured application calls with no tools or handoffs."""
 
-    def __init__(self, *, model: Model, model_timeout_seconds: float, run_timeout_seconds: float):
+    def __init__(self, *, model: ChatOpenAI, run_timeout_seconds: float):
         self._run_timeout_seconds = run_timeout_seconds
-        self._agent = Agent(
-            name="GovBiz Application Preparation",
-            model=model,
-            instructions=INSTRUCTIONS,
-            output_type=InterpretationSelection,
-            model_settings=ModelSettings(
-                max_tokens=2500,
-                reasoning=Reasoning(effort="none"),
-                store=False,
-                timeout=model_timeout_seconds,
-                extra_args={"timeout": model_timeout_seconds},
-            ),
+        self._model = model
+
+    async def _invoke(self, selection_type, instructions, content, max_tokens, timeout_message):
+        structured = self._model.model_copy(update={"max_tokens": max_tokens}).with_structured_output(
+            selection_type, method="json_schema", strict=True, include_raw=True,
         )
-        self._discovery_agent = Agent(
-            name="GovBiz Application Form Discovery",
-            model=model,
-            instructions=DISCOVERY_INSTRUCTIONS,
-            output_type=FormDiscoverySelection,
-            model_settings=ModelSettings(
-                max_tokens=5000,
-                reasoning=Reasoning(effort="none"),
-                store=False,
-                timeout=model_timeout_seconds,
-                extra_args={"timeout": model_timeout_seconds},
-            ),
-        )
-        self._run_config = RunConfig(tracing_disabled=True, trace_include_sensitive_data=False)
-        self._document_agent = Agent(
-            name="GovBiz Original Document Placement", model=model,
-            instructions=DOCUMENT_INSTRUCTIONS, output_type=DocumentSelection,
-            model_settings=ModelSettings(max_tokens=10000, reasoning=Reasoning(effort="none"), store=False,
-                                        timeout=model_timeout_seconds, extra_args={"timeout": model_timeout_seconds}),
-        )
-        self._draft_agent = Agent(
-            name="GovBiz Application Draft",
-            model=model,
-            instructions=DRAFT_INSTRUCTIONS,
-            output_type=DraftSelection,
-            model_settings=ModelSettings(
-                max_tokens=5000, reasoning=Reasoning(effort="none"), store=False,
-                timeout=model_timeout_seconds, extra_args={"timeout": model_timeout_seconds},
-            ),
-        )
+        try:
+            async with asyncio.timeout(self._run_timeout_seconds):
+                with tracing_context(enabled=False):
+                    result = await structured.ainvoke(
+                        [SystemMessage(content=instructions), HumanMessage(content=content)],
+                    )
+        except (APITimeoutError, TimeoutError) as error:
+            raise TimeoutError(timeout_message) from error
+        if (result["parsing_error"] is not None
+                or result["raw"].response_metadata.get("status") != "completed"
+                or not isinstance(result["parsed"], selection_type)):
+            raise ValueError("invalid application preparation output")
+        return selection_type.model_validate(result["parsed"].model_dump())
 
     async def place_document(
         self,
@@ -74,7 +51,7 @@ class ApplicationPreparationAgent:
         rejected_output: DocumentSelection | None = None,
     ) -> DocumentSelection:
         prompt: dict = request.model_dump(exclude={"pageImages"})
-        content = [{"type": "input_text", "text": json.dumps(prompt, ensure_ascii=False)}]
+        content = [{"type": "text", "text": json.dumps(prompt, ensure_ascii=False)}]
         if not request.facts:
             classification = {
                 "classificationOnly": {
@@ -85,7 +62,7 @@ class ApplicationPreparationAgent:
                     ),
                 },
             }
-            content.append({"type": "input_text", "text": json.dumps(classification, ensure_ascii=False)})
+            content.append({"type": "text", "text": json.dumps(classification, ensure_ascii=False)})
         if excluded_target_ids is not None:
             repair = {
                 "repair": {
@@ -100,56 +77,26 @@ class ApplicationPreparationAgent:
                     ),
                 },
             }
-            content.append({"type": "input_text", "text": json.dumps(repair, ensure_ascii=False)})
-        content.extend({"type": "input_image", "image_url": f"data:image/png;base64,{page}", "detail": "high"} for page in request.pageImages)
-        try:
-            async with asyncio.timeout(self._run_timeout_seconds):
-                result = await Runner.run(self._document_agent, [{"role": "user", "content": content}], max_turns=1, run_config=self._run_config)
-        except (ModelTimeoutError, APITimeoutError, TimeoutError) as error:
-            raise TimeoutError("Document placement timed out") from error
-        if not isinstance(result.final_output, DocumentSelection):
-            raise ValueError("invalid document placement")
-        return DocumentSelection.model_validate(result.final_output.model_dump())
+            content.append({"type": "text", "text": json.dumps(repair, ensure_ascii=False)})
+        content.extend({"type": "image_url", "image_url": {"url": f"data:image/png;base64,{page}", "detail": "high"}} for page in request.pageImages)
+        return await self._invoke(
+            DocumentSelection, DOCUMENT_INSTRUCTIONS, content, 10000, "Document placement timed out",
+        )
 
     async def draft(self, request: DraftRequest) -> DraftSelection:
-        try:
-            async with asyncio.timeout(self._run_timeout_seconds):
-                result = await Runner.run(
-                    self._draft_agent, json.dumps(request.model_dump(), ensure_ascii=False),
-                    max_turns=1, run_config=self._run_config,
-                )
-        except (ModelTimeoutError, APITimeoutError, TimeoutError) as error:
-            raise TimeoutError("Application draft agent timed out") from error
-        if not isinstance(result.final_output, DraftSelection):
-            raise ValueError("invalid application draft output")
-        return DraftSelection.model_validate(result.final_output.model_dump())
+        return await self._invoke(
+            DraftSelection, DRAFT_INSTRUCTIONS, json.dumps(request.model_dump(), ensure_ascii=False),
+            5000, "Application draft agent timed out",
+        )
 
     async def interpret(self, request: InterpretRequest) -> InterpretationSelection:
-        try:
-            async with asyncio.timeout(self._run_timeout_seconds):
-                result = await Runner.run(
-                    self._agent,
-                    json.dumps(request.model_dump(), ensure_ascii=False),
-                    max_turns=1,
-                    run_config=self._run_config,
-                )
-        except (ModelTimeoutError, APITimeoutError, TimeoutError) as error:
-            raise TimeoutError("Application preparation agent timed out") from error
-        if not isinstance(result.final_output, InterpretationSelection):
-            raise ValueError("invalid application preparation output")
-        return InterpretationSelection.model_validate(result.final_output.model_dump())
+        return await self._invoke(
+            InterpretationSelection, INSTRUCTIONS, json.dumps(request.model_dump(), ensure_ascii=False),
+            2500, "Application preparation agent timed out",
+        )
 
     async def discover(self, request: DiscoverFormsRequest) -> FormDiscoverySelection:
-        try:
-            async with asyncio.timeout(self._run_timeout_seconds):
-                result = await Runner.run(
-                    self._discovery_agent,
-                    json.dumps(request.model_dump(), ensure_ascii=False),
-                    max_turns=1,
-                    run_config=self._run_config,
-                )
-        except (ModelTimeoutError, APITimeoutError, TimeoutError) as error:
-            raise TimeoutError("Application form discovery agent timed out") from error
-        if not isinstance(result.final_output, FormDiscoverySelection):
-            raise ValueError("invalid application form discovery output")
-        return FormDiscoverySelection.model_validate(result.final_output.model_dump())
+        return await self._invoke(
+            FormDiscoverySelection, DISCOVERY_INSTRUCTIONS, json.dumps(request.model_dump(), ensure_ascii=False),
+            5000, "Application form discovery agent timed out",
+        )

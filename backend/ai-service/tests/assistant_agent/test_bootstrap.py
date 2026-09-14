@@ -51,7 +51,11 @@ async def test_agent_models_tool_client_and_service_are_wired_and_closed(monkeyp
     try:
         assert isinstance(container.assistant_agent_service, AssistantAgentService)
         assert container.assistant_agent_service._timeout_seconds == 15.0
-        combination, classify, agent = FakeChatOpenAI.instances
+        application, combination, classify, agent = FakeChatOpenAI.instances
+        assert application.kwargs["root_async_client"] is client
+        assert application.kwargs["timeout"] == 1.25
+        assert application.kwargs["max_retries"] == 0
+        assert application.kwargs["store"] is False
         assert combination.kwargs["max_tokens"] == 6000
         assert combination.kwargs["timeout"] == 60
         # 분류는 도우미와 같은 싼 모델·low, 계획·답은 전용 모델. 둘 다 저장 안 함·재시도 없음·도우미 제한 시간.
@@ -81,8 +85,8 @@ async def test_supplied_agent_service_skips_model_and_client_construction(monkey
     try:
         assert container.assistant_agent_service is service
         assert container.assistant_tool_client is None
-        assert len(FakeChatOpenAI.instances) == 1
-        assert FakeChatOpenAI.instances[0].kwargs["max_tokens"] == 6000
+        assert len(FakeChatOpenAI.instances) == 2
+        assert FakeChatOpenAI.instances[1].kwargs["max_tokens"] == 6000
     finally:
         await container.close()
     assert client.closed
