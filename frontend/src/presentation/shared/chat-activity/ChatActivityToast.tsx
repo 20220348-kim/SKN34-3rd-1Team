@@ -5,7 +5,7 @@ import { useAppSelector } from '../../../app/hooks'
 import { selectChatActivity } from '../../features/chat/state/chatSlice'
 import { selectAuthStatus } from '../auth/state/authSlice'
 import { appPaths, publicPaths } from '../routes/appPaths'
-import { chatActivityMessages, chatOutcomeMessage } from './chatActivityMessages'
+import { chatActivityMessages, chatOutcomeMessage, silentToastOutcomes } from './chatActivityMessages'
 import { chatActivityToastStyles as styles } from './ChatActivityToast.styles'
 
 /** 알림이 스스로 접히기까지의 시간입니다. 사이드바·헤더 배지는 결과를 볼 때까지 남습니다. */
@@ -26,7 +26,8 @@ export function ChatActivityToast() {
   const { pathname } = useLocation()
   const path = pathname.replace(/\/+$/, '') || publicPaths.landing
   const onChatScreen = chatPaths.includes(path)
-  const outcomeKey = activity?.kind === 'unseen' ? `${activity.outcome}:${activity.resultCount ?? ''}` : null
+  const outcomeKey = activity?.kind === 'unseen' && !silentToastOutcomes.has(activity.outcome)
+    ? `${activity.outcome}:${activity.resultCount ?? ''}` : null
   const [dismissedKey, setDismissedKey] = useState<string | null>(null)
 
   useEffect(() => {
@@ -37,7 +38,7 @@ export function ChatActivityToast() {
     return () => clearTimeout(timer)
   }, [onChatScreen, outcomeKey])
 
-  if (activity?.kind !== 'unseen' || onChatScreen || outcomeKey === dismissedKey) return null
+  if (activity?.kind !== 'unseen' || outcomeKey === null || onChatScreen || outcomeKey === dismissedKey) return null
   const chatPath = authStatus === 'authenticated' ? appPaths.chat : publicPaths.landing
 
   return (

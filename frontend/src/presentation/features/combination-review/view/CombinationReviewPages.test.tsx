@@ -232,7 +232,8 @@ describe('review screens and execution safety', () => {
     fireEvent.click(screen.getByText('입력 저장 후 분석 시작'))
     const alert = await screen.findByRole('alert')
     expect(alert.textContent).toContain('Core API 실행 버전')
-    expect(document.activeElement).toBe(alert)
+    // 포커스 이동은 렌더 뒤 effect에서 일어나므로 느린 환경(CI)에서도 기다립니다.
+    await waitFor(() => expect(document.activeElement).toBe(alert))
     fireEvent.click(screen.getByText('이전: 제목·공고 선택'))
     expect(screen.getByDisplayValue('보존할 입력')).toBeTruthy()
   })

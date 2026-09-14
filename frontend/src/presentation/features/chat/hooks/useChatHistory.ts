@@ -147,7 +147,7 @@ export function useChatHistory(useCase: Pick<ChatConversationUseCase, 'list' | '
     cancelOpening()
     if (currentConversationId() === id) return true
     // 검색·해석이 진행 중이면 다른 대화로 옮기는 순간 그 결과를 받을 곳이 없어집니다. 요청을 끊고 취소 상태로 저장한 뒤 엽니다.
-    // 사용자 확인은 부르는 쪽(WorkspaceLayout의 대화상자)이 `needsCancelToOpen`으로 먼저 받습니다.
+    // 사용자 확인은 부르는 쪽(`useWorkspaceChatActions`의 확인 대화상자)이 `needsCancelToOpen`으로 먼저 받습니다.
     if (hasActiveChatRequest(store.getState())) store.dispatch(cancelActiveChatRequests())
     capture(current)
     const previousChat = store.getState().chat

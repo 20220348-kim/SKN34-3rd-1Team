@@ -138,10 +138,11 @@ describe('비로그인 대화의 화면 이동 수명', () => {
     await act(async () => fireEvent.click(within(screen.getByRole('navigation', { name: '화면 이동' }))
       .getByRole('link', { name: '파트너 모집' })))
 
-    // 요청은 살아 있고 대화도 남아 있으며, 헤더가 진행 중임을 알립니다.
+    // 요청은 살아 있고 대화도 남아 있습니다. 검색은 헤더가 진행 중임을 알리고, 몇 초면 끝나는 조건 해석은 도착할 때만 알립니다.
     expect(signal.aborted).toBe(false)
     expect(store.getState().chat.messages.some((message) => message.text === originalMessage)).toBe(true)
-    expect(screen.getByRole('status', { name: phase === 'search' ? '지원사업 검색 진행 중' : '조건 해석 진행 중' })).toBeTruthy()
+    if (phase === 'search') expect(screen.getByRole('status', { name: '지원사업 검색 진행 중' })).toBeTruthy()
+    else expect(screen.queryByRole('status', { name: /진행 중/ })).toBeNull()
     expect(screen.queryByRole('status', { name: '검색 알림' })).toBeNull()
 
     await act(async () => {

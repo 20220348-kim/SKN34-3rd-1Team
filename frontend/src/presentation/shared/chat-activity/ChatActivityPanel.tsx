@@ -4,7 +4,7 @@ import { useAppSelector } from '../../../app/hooks'
 import { selectChatActivity, selectChatConversationTitle } from '../../features/chat/state/chatSlice'
 import { appPaths } from '../routes/appPaths'
 import { ChatActivityDot } from './ChatActivityDot'
-import { chatActivityMessages, chatActivityPanelLabel } from './chatActivityMessages'
+import { chatActivityMessages, chatActivityPanelLabel, visibleChatActivity } from './chatActivityMessages'
 import { chatActivityPanelStyles as styles } from './ChatActivityPanel.styles'
 
 /**
@@ -12,7 +12,7 @@ import { chatActivityPanelStyles as styles } from './ChatActivityPanel.styles'
  * 어느 대화인지 제목을 함께 보여 주고, "보기"로 그 대화(현재 대화)를 엽니다. 결과를 보면 사라집니다.
  */
 export function ChatActivityPanel() {
-  const activity = useAppSelector(selectChatActivity)
+  const activity = visibleChatActivity(useAppSelector(selectChatActivity))
   const title = useAppSelector(selectChatConversationTitle)
   if (activity === null) return null
 

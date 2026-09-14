@@ -165,7 +165,7 @@ describe('사이드바 대화 기록 HTTP 통합', () => {
     vi.mocked(appContainer.resolve('interpretSupportProgramConversationUseCase').execute).mockReturnValue(new Promise(() => {}))
     await submit('진행 중 질문')
     expect(view.store.getState().chat.interpretation.status).toBe('pending')
-    // 진행 중인 대화의 기록 항목에만 점이 붙고, 버튼 이름은 그대로입니다.
+    // 진행 중인 대화의 기록 항목에는 조건 해석 중에도 점이 붙고(패널은 해석 중을 건너뜀), 버튼 이름은 그대로입니다.
     expect(screen.getByRole('button', { name: '대화 열기: 진행 중 질문' }).querySelector('[data-activity="pending"]')).toBeTruthy()
     expect(screen.getByRole('button', { name: '대화 열기: 이전 질문' }).querySelector('[data-activity]')).toBeNull()
 

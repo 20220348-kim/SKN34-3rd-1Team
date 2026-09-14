@@ -28,6 +28,9 @@ const saved: SavedSupportProgram[] = [
 const detailPath = `/app/support-programs/detail?${new URLSearchParams({ sourceCode: program.sourceCode, sourceProgramId: program.id })}`
 
 beforeEach(() => {
+  // 달력은 이번 달만 보여 주므로 fixture 공고의 접수 기간 안으로 날짜만 고정합니다. 타이머는 실제로 실행합니다.
+  vi.useFakeTimers({ toFake: ['Date'] })
+  vi.setSystemTime(new Date('2026-09-10T03:00:00Z'))
   vi.stubGlobal('fetch', vi.fn(() => new Promise<Response>(() => {})))
 })
 
@@ -35,6 +38,7 @@ afterEach(() => {
   cleanup()
   vi.restoreAllMocks()
   vi.unstubAllGlobals()
+  vi.useRealTimers()
 })
 
 describe('관심 공고함', () => {

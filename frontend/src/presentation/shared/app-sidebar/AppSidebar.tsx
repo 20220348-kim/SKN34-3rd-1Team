@@ -27,14 +27,15 @@ type MenuItem = {
 
 type MenuGroup = { title: string; items: MenuItem[] }
 
+// 순서는 사용 빈도와 업무 흐름(찾기 → 모아두기 → 준비·검토 → 협업 → 결제)을 따르고, 도우미 도움말 주제 순서와 맞춥니다.
 const menuGroups: MenuGroup[] = [
   {
     title: '메뉴',
     items: [
+      { label: '관심 공고함', icon: 'bookmark', to: appPaths.savedPrograms, matches: (pathname) => pathname.startsWith(appPaths.savedPrograms) },
+      { label: '기업 맞춤 리포트', icon: 'inbox', to: appPaths.reports, matches: (pathname) => pathname === appPaths.reports },
       { label: '신청 문서 작성', icon: 'document', to: appPaths.applicationPreparations, matches: (pathname) => pathname.startsWith(appPaths.applicationPreparations) },
       { label: '중복 지원·수혜 검토', icon: 'shield', to: appPaths.combinationReviews, matches: (pathname) => pathname.startsWith(appPaths.combinationReviews) },
-      { label: '기업 맞춤 리포트', icon: 'inbox', to: appPaths.reports, matches: (pathname) => pathname === appPaths.reports },
-      { label: '관심 공고함', icon: 'bookmark', to: appPaths.savedPrograms, matches: (pathname) => pathname.startsWith(appPaths.savedPrograms) },
       {
         label: '파트너 관리',
         icon: 'users',
@@ -151,7 +152,7 @@ export function AppSidebar({ onClose, onNewChat, closeLabel, onNavigate, history
   const { account, logOut } = useAuthSession()
   const navigate = useNavigate()
   const pendingProposalCount = usePendingReceivedProposalCount()
-  // 진행 중인 검색과 아직 보지 않은 결과는 아래 고정 패널과 해당 대화 기록 항목의 점으로 알립니다.
+  // 해당 대화 기록 항목의 점은 조건 해석·검색 진행 중과 아직 보지 않은 결과를 모두 표시합니다. 아래 고정 패널은 해석 중을 건너뜁니다.
   const chatActivity = useAppSelector(selectChatActivity)
   const isSearchPage = pathname === appPaths.chat || pathname.startsWith(appPaths.supportProgramDetail)
   // 계정 카드를 누르면 내 프로필·로그아웃과 관리자 전용 회원·기업 메뉴가 열립니다.
