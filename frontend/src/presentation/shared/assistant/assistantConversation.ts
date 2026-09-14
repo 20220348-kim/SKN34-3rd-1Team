@@ -1,4 +1,4 @@
-import type { AssistantAnswer } from '../../../domain/entities/AssistantAnswer'
+import type { AssistantAnswer, AssistantCard as AssistantAnswerCard } from '../../../domain/entities/AssistantAnswer'
 import type { PartnerProposal } from '../../../domain/entities/PartnerProposal'
 import type { SavedSupportProgram } from '../../../domain/entities/SavedSupportProgram'
 import { loginPathFor, signupPathFor } from '../auth/returnPath'
@@ -40,6 +40,8 @@ export type AssistantCardRow = {
   tag: { label: string; tone: AssistantCardTagTone } | null
   title: string
   detail: string | null
+  /** 있으면 제목이 이 경로로 가는 링크가 됩니다. 에이전트 카드(모집글·공고 상세)에 씁니다. */
+  to?: string
 }
 
 /** [external]이면 새 탭에서 바깥 주소를 엽니다. `searchQuery`가 있으면 이동하면서 검색 입력창에 그 문구를 미리 채웁니다. */
@@ -190,6 +192,16 @@ export function programIdentityFrom(pathname: string, search: string): { sourceC
 
 export type AssistantFreeTextContext = { pathname: string; search: string; session: AssistantSession; returnTo: string }
 
+/** 에이전트 카드를 목록 행으로 바꿉니다. 종류 태그, 제목 링크, 부제와 고른 이유 한 줄입니다. */
+function agentCardRows(cards: AssistantAnswerCard[], inApp: boolean): AssistantCardRow[] {
+  return cards.map((card) => ({
+    tag: { label: card.kind === 'RECRUITMENT' ? assistantMessages.cardRecruitment : assistantMessages.cardProgram, tone: 'ok' },
+    title: card.title,
+    detail: [card.subtitle, card.reason, card.quote === null ? null : assistantMessages.cardQuote(card.quote)].filter((part): part is string => part !== null).join(' · '),
+    to: helpActionHref(card.to, inApp),
+  }))
+}
+
 /**
  * Core가 검증한 자유 질문 답을 말풍선으로 바꿉니다. 의도별로 출처·버튼·후속 알약이 다릅니다.
  * UNCLEAR는 확인 질문 뒤에 주제 알약을 다시 보여 주고, 비로그인 상태 질문은 로그인 링크를 붙입니다.
@@ -199,7 +211,9 @@ export function freeTextAnswer(answer: AssistantAnswer, context: AssistantFreeTe
   const navigation: AssistantCardButton | null = answer.navigation === null
     ? null
     : { label: answer.navigation.label, to: helpActionHref(answer.navigation.to, inApp) }
-  const cardOf = (buttons: AssistantCardButton[]): AssistantCard | null => (buttons.length > 0 ? { rows: [], buttons } : null)
+  const cardOf = (buttons: AssistantCardButton[], rows: AssistantCardRow[] = []): AssistantCard | null =>
+    (buttons.length > 0 || rows.length > 0 ? { rows, buttons } : null)
+  const agentRows = agentCardRows(answer.cards, inApp)
   const loginButtons: AssistantCardButton[] = [
     { label: assistantMessages.login, to: loginPathFor(context.returnTo) },
     { label: assistantMessages.signup, to: signupPathFor(context.returnTo) },
@@ -231,8 +245,18 @@ export function freeTextAnswer(answer: AssistantAnswer, context: AssistantFreeTe
         ? assistantMessages.savedSource
         : answer.accountTopic === 'RECEIVED_PROPOSALS' ? assistantMessages.proposalsSource : assistantMessages.profileSource
       return botMessage([answer.answer ?? ''], {
-        card: cardOf(context.session.isAuthenticated ? (navigation === null ? [] : [navigation]) : loginButtons),
-        source: context.session.isAuthenticated ? source : null,
+        card: cardOf(context.session.isAuthenticated ? (navigation === null ? [] : [navigation]) : loginButtons, context.session.isAuthenticated ? agentRows : []),
+        source: context.session.isAuthenticated ? (agentRows.length > 0 ? assistantMessages.aiToolSource(source) : source) : null,
+        followUps: [otherQuestionReply],
+      })
+    }
+    case 'PARTNER_MATCH':
+    case 'SAVED_PROGRAMS_QUESTION': {
+      // 도구 에이전트의 답입니다. 비로그인이면 Core가 로그인 안내를 보내므로 로그인 버튼을 붙입니다.
+      const basis = answer.intent === 'PARTNER_MATCH' ? assistantMessages.profileSource : assistantMessages.savedSource
+      return botMessage([answer.answer ?? ''], {
+        card: cardOf(context.session.isAuthenticated ? (navigation === null ? [] : [navigation]) : loginButtons, context.session.isAuthenticated ? agentRows : []),
+        source: context.session.isAuthenticated ? assistantMessages.aiToolSource(basis) : null,
         followUps: [otherQuestionReply],
       })
     }

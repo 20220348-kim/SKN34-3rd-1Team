@@ -44,6 +44,15 @@ class SupportProgramEvidenceService(
         )
     }
 
+    /**
+     * 공고의 현재 원문을 확보해 청킹만 합니다(색인·답변 없음). 도우미 관심 공고 질문과 원문 선수집이 씁니다.
+     * 기업마당 공고가 아니면 [SupportProgramEvidenceNotSupportedException], 수집 실패는 [SupportProgramEvidenceUnavailableException]입니다.
+     */
+    fun prepareChunks(program: SupportProgram): List<SupportProgramEvidenceChunk> {
+        if (program.sourceCode != BIZINFO_SOURCE_CODE) throw SupportProgramEvidenceNotSupportedException()
+        return chunksFor(currentSourceDocument(program))
+    }
+
     private fun currentSourceDocument(program: SupportProgram): SupportProgramSourceDocument {
         val cached = try {
             repository.findPresentSourceDocument(program.sourceCode, program.id)

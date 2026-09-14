@@ -9,6 +9,12 @@ DEFAULT_OPENAI_MODEL = "gpt-5.6-luna"
 # nano는 추론 minimal에서 분류가 흔들려(50문항 중 28개) low를 기본으로 둔다. 평가 기록은 evaluation/assistant/runs 참고.
 DEFAULT_OPENAI_ASSISTANT_MODEL = "gpt-5-nano"
 ASSISTANT_REASONING_EFFORTS = ("none", "minimal", "low")
+# 도우미 도구 에이전트(LangGraph)의 계획·답 모델. 도구 선택 정확도를 위해 luna를 기본으로 둔다.
+DEFAULT_ASSISTANT_TOOLS_BASE_URL = "http://127.0.0.1:8080"
+DEFAULT_ASSISTANT_AGENT_MAX_TOOL_CALLS = 3
+DEFAULT_ASSISTANT_AGENT_TIMEOUT_SECONDS = 15.0
+DEFAULT_ASSISTANT_TOOL_TIMEOUT_SECONDS = 3.0
+MAX_ASSISTANT_AGENT_MAX_TOOL_CALLS = 6
 DEFAULT_LLM_MODEL_TIMEOUT_SECONDS = 25.0
 DEFAULT_LLM_RUN_TIMEOUT_SECONDS = 30.0
 DEFAULT_LLM_RANKING_MODEL_TIMEOUT_SECONDS = 45.0
@@ -42,8 +48,26 @@ class Settings:
     openai_ranking_service_tier: Literal["default", "priority"] = "default"
     openai_assistant_model: str = DEFAULT_OPENAI_ASSISTANT_MODEL
     openai_assistant_reasoning_effort: Literal["none", "minimal", "low"] = "low"
+    openai_assistant_agent_model: str = DEFAULT_OPENAI_MODEL
+    openai_assistant_agent_reasoning_effort: Literal["none", "low"] = "none"
+    assistant_tools_base_url: str = DEFAULT_ASSISTANT_TOOLS_BASE_URL
+    assistant_tools_token: str | None = None
+    assistant_agent_max_tool_calls: int = DEFAULT_ASSISTANT_AGENT_MAX_TOOL_CALLS
+    assistant_agent_timeout_seconds: float = DEFAULT_ASSISTANT_AGENT_TIMEOUT_SECONDS
+    assistant_tool_timeout_seconds: float = DEFAULT_ASSISTANT_TOOL_TIMEOUT_SECONDS
 
     def __post_init__(self) -> None:
+        if self.openai_assistant_agent_reasoning_effort not in ("none", "low"):
+            raise SettingsConfigurationError("OPENAI_ASSISTANT_AGENT_REASONING_EFFORT must be none or low")
+        if (
+            isinstance(self.assistant_agent_max_tool_calls, bool)
+            or not 1 <= self.assistant_agent_max_tool_calls <= MAX_ASSISTANT_AGENT_MAX_TOOL_CALLS
+        ):
+            raise SettingsConfigurationError("ASSISTANT_AGENT_MAX_TOOL_CALLS must be 1~6")
+        if not self.assistant_tools_base_url.startswith(("http://", "https://")):
+            raise SettingsConfigurationError("ASSISTANT_TOOLS_BASE_URL must be an http(s) address")
+        if self.assistant_tool_timeout_seconds >= self.assistant_agent_timeout_seconds:
+            raise SettingsConfigurationError("ASSISTANT_TOOL_TIMEOUT_SECONDS must be less than ASSISTANT_AGENT_TIMEOUT_SECONDS")
         if self.openai_assistant_reasoning_effort not in ASSISTANT_REASONING_EFFORTS:
             raise SettingsConfigurationError("OPENAI_ASSISTANT_REASONING_EFFORT must be none, minimal or low")
         if self.openai_ranking_reasoning_effort not in ("none", "low"):
@@ -93,6 +117,21 @@ class Settings:
             openai_assistant_reasoning_effort=cast(
                 Literal["none", "minimal", "low"],
                 _optional_value(environ.get("OPENAI_ASSISTANT_REASONING_EFFORT")) or "low",
+            ),
+            openai_assistant_agent_model=_optional_value(environ.get("OPENAI_ASSISTANT_AGENT_MODEL")) or DEFAULT_OPENAI_MODEL,
+            openai_assistant_agent_reasoning_effort=cast(
+                Literal["none", "low"], _optional_value(environ.get("OPENAI_ASSISTANT_AGENT_REASONING_EFFORT")) or "none",
+            ),
+            assistant_tools_base_url=_optional_value(environ.get("ASSISTANT_TOOLS_BASE_URL")) or DEFAULT_ASSISTANT_TOOLS_BASE_URL,
+            assistant_tools_token=_optional_value(environ.get("ASSISTANT_TOOLS_TOKEN")),
+            assistant_agent_max_tool_calls=_bounded_int(
+                "ASSISTANT_AGENT_MAX_TOOL_CALLS", DEFAULT_ASSISTANT_AGENT_MAX_TOOL_CALLS,
+            ),
+            assistant_agent_timeout_seconds=_positive_float(
+                environ.get("ASSISTANT_AGENT_TIMEOUT_SECONDS"), default=DEFAULT_ASSISTANT_AGENT_TIMEOUT_SECONDS,
+            ),
+            assistant_tool_timeout_seconds=_positive_float(
+                environ.get("ASSISTANT_TOOL_TIMEOUT_SECONDS"), default=DEFAULT_ASSISTANT_TOOL_TIMEOUT_SECONDS,
             ),
             llm_model_timeout_seconds=_positive_float(
                 environ.get("LLM_MODEL_TIMEOUT_SECONDS"),
@@ -148,6 +187,17 @@ def _positive_float(value: str | None, *, default: float) -> float:
     except ValueError:
         return default
     return parsed if 0 < parsed <= 30 else default
+
+
+def _bounded_int(name: str, default: int) -> int:
+    value = _optional_value(environ.get(name))
+    if value is None:
+        return default
+    try:
+        return int(value)
+    except ValueError:
+        # Do not include the supplied value in a startup error.
+        raise SettingsConfigurationError(f"{name} must be an integer") from None
 
 
 def _strict_timeout(name: str, default: float) -> float:

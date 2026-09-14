@@ -9,7 +9,10 @@ import ai.govbiz.core.account.helper.SessionCookieHelper
 import jakarta.servlet.http.Cookie
 import ai.govbiz.core.account.service.AccountSessionService
 import ai.govbiz.core.account.web.AuthenticatedAccountArgumentResolver
+import ai.govbiz.core.assistant.config.AssistantAgentProperties
 import ai.govbiz.core.assistant.domain.AssistantAnswer
+import ai.govbiz.core.assistant.domain.AssistantCard
+import ai.govbiz.core.assistant.domain.AssistantCardKind
 import ai.govbiz.core.assistant.domain.AssistantIntent
 import ai.govbiz.core.assistant.domain.AssistantNavigation
 import ai.govbiz.core.assistant.domain.AssistantQuestion
@@ -52,9 +55,10 @@ class AssistantMessageControllerTest {
     @AfterEach
     fun closeValidator() = validator.close()
 
-    private fun mvc(perClient: Int = 100): MockMvc {
+    private fun mvc(perClient: Int = 100, agent: AssistantAgentProperties = AssistantAgentProperties(), agentPerClient: Int = 100): MockMvc {
         val admission = SupportProgramRequestAdmissionService(SupportProgramRequestAdmissionProperties(perClient, 100, 4)) { 0L }
-        return MockMvcBuilders.standaloneSetup(AssistantMessageController(service, admission))
+        val agentAdmission = SupportProgramRequestAdmissionService(SupportProgramRequestAdmissionProperties(agentPerClient, 100, 4)) { 0L }
+        return MockMvcBuilders.standaloneSetup(AssistantMessageController(service, admission, agentAdmission, agent))
             .setCustomArgumentResolvers(AuthenticatedAccountArgumentResolver { sessionService })
             .setControllerAdvice(ApiExceptionHandler()).setValidator(validator)
             .setMessageConverters(JacksonJsonHttpMessageConverter(mapper)).build()
@@ -143,6 +147,38 @@ class AssistantMessageControllerTest {
             assertEquals(400, response.status, json)
         }
         Mockito.verifyNoInteractions(service)
+    }
+
+    @Test
+    fun rendersAgentCardsWithTheirRoutes() {
+        `when`(service.answer(isNull(), anyQuestion())).thenReturn(
+            AssistantAnswer(
+                AssistantIntent.PARTNER_MATCH, "맞는 모집글 한 건이에요.", emptyList(), null, null, null,
+                AssistantNavigation("파트너 모집 열기", "/app/partners"),
+                listOf(AssistantCard(AssistantCardKind.RECRUITMENT, "21", "AI 실증 참여기관 구합니다", "서울AI 주식회사 · 서울", "지역과 역할이 맞습니다.", "/app/partners/detail?recruitmentId=21")),
+            ),
+        )
+        mvc().perform(request()).andExpect(status().isOk)
+            .andExpect(jsonPath("$.intent").value("PARTNER_MATCH"))
+            .andExpect(jsonPath("$.cards.length()").value(1))
+            .andExpect(jsonPath("$.cards[0].kind").value("RECRUITMENT"))
+            .andExpect(jsonPath("$.cards[0].id").value("21"))
+            .andExpect(jsonPath("$.cards[0].subtitle").value("서울AI 주식회사 · 서울"))
+            .andExpect(jsonPath("$.cards[0].to").value("/app/partners/detail?recruitmentId=21"))
+            .andExpect(jsonPath("$.cards[0].quote").value(null))
+            .andExpect(jsonPath("$.navigation.to").value("/app/partners"))
+    }
+
+    @Test
+    fun agentPathHasItsOwnPerClientLimitOnlyWhenEnabled() {
+        `when`(service.answer(isNull(), anyQuestion())).thenReturn(answer())
+        val enabled = mvc(agent = AssistantAgentProperties(agentEnabled = true, toolsSecret = "assistant-tools-secret-for-tests-0123456789"), agentPerClient = 1)
+        enabled.perform(request()).andExpect(status().isOk).andExpect(jsonPath("$.cards").isArray)
+        enabled.perform(request()).andExpect(status().isTooManyRequests).andExpect(jsonPath("$.code").value("SUPPORT_PROGRAM_RATE_LIMITED"))
+
+        val disabled = mvc(agentPerClient = 1)
+        disabled.perform(request()).andExpect(status().isOk)
+        disabled.perform(request()).andExpect(status().isOk)
     }
 
     @Test

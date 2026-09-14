@@ -70,4 +70,53 @@
           AND program.is_source_present = TRUE
         ORDER BY saved.saved_at DESC, saved.id DESC
     </select>
+
+    <!-- 원문 선수집 outbox. 일일 리포트 발송 outbox와 같은 예약·발행·만료 규칙입니다. -->
+    <select id="findPublishablePrefetch" resultType="long">
+        SELECT id FROM saved_support_program
+        WHERE source_prefetch_status = 'PENDING'
+          AND (source_prefetch_next_publish_at IS NULL OR source_prefetch_next_publish_at &lt;= #{now})
+        ORDER BY source_prefetch_next_publish_at, id LIMIT 20
+    </select>
+
+    <update id="reservePrefetchPublication">
+        UPDATE saved_support_program SET source_prefetch_next_publish_at = #{retryAt}
+        WHERE id = #{id} AND source_prefetch_status = 'PENDING'
+          AND (source_prefetch_next_publish_at IS NULL OR source_prefetch_next_publish_at &lt;= #{now})
+    </update>
+
+    <update id="markPrefetchPublished">
+        UPDATE saved_support_program
+        SET source_prefetch_status = 'PUBLISHED', source_prefetch_updated_at = #{now}
+        WHERE id = #{id} AND source_prefetch_status = 'PENDING'
+    </update>
+
+    <update id="expirePublishedPrefetch">
+        UPDATE saved_support_program
+        SET source_prefetch_status = 'PENDING', source_prefetch_next_publish_at = NULL
+        WHERE source_prefetch_status = 'PUBLISHED' AND source_prefetch_updated_at &lt; #{before}
+    </update>
+
+    <update id="requeueStalePrefetch">
+        UPDATE saved_support_program
+        SET source_prefetch_status = 'PENDING', source_prefetch_next_publish_at = NULL
+        WHERE source_prefetch_status = 'DONE' AND source_prefetch_updated_at &lt; #{before}
+        ORDER BY source_prefetch_updated_at LIMIT ${limit}
+    </update>
+
+    <select id="findPublishedProgram" resultMap="savedSupportProgramDbRow">
+        SELECT
+            <include refid="savedProgramColumns" />
+        FROM saved_support_program saved
+        JOIN support_program program ON program.id = saved.support_program_id
+        WHERE saved.id = #{id}
+          AND saved.source_prefetch_status = 'PUBLISHED'
+          AND program.is_source_present = TRUE
+    </select>
+
+    <update id="finishPrefetch">
+        UPDATE saved_support_program
+        SET source_prefetch_status = #{status}, source_prefetch_updated_at = #{now}, source_prefetch_next_publish_at = NULL
+        WHERE id = #{id} AND source_prefetch_status = 'PUBLISHED'
+    </update>
 </mapper>

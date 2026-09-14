@@ -77,6 +77,7 @@ export const assistantStyles = {
   card: 'overflow-hidden rounded-xl border border-sample-border bg-white text-[13px]',
   cardRow: 'border-b border-sample-border px-3 py-2.5 last:border-b-0',
   cardRowTitle: 'block font-bold leading-[1.45]',
+  cardRowLink: 'block font-bold leading-[1.45] underline-offset-2 hover:underline focus-visible:underline',
   cardRowDetail: 'block text-[12px] text-sample-muted',
   cardTag: 'mr-1.5 inline-block rounded px-1.5 py-px align-[1px] text-[10.5px] font-bold',
   cardTagHot: 'bg-[#fde8e6] text-[#9a3947]',

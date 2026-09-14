@@ -26,6 +26,28 @@ uv run --project backend/ai-service python evaluation/assistant/evaluate.py --li
 uv run --project backend/ai-service python evaluation/assistant/evaluate.py --live --case H02-1 --case N08
 ```
 
+## 도구 에이전트 평가 (`--agent`)
+
+`--agent`는 LangGraph 에이전트 경로(`POST /internal/v1/assistant/agent`)로 **모든 문항**을 돌린다. 분류 문항 50개는 분류 한 번으로 끝나고,
+`mode: "agent"` 문항 20개(모집글 매칭 8·관심 공고 묶음 8·도구 상태 4)는 가짜 Core 도구 서버(`agent_fixtures.py`: 가상 회사·모집글 2건·관심 공고 3건)와
+가짜 근거 검색(고정 청크)을 쓴다. 모델(분류 nano, 계획·답 luna)만 실제로 부른다. 관심 공고 묶음 문항은 Core처럼 두 번 부른다(첫 응답 `needsDocuments`
+→ 고정 문서로 `resumeIntent` 재호출).
+
+```bash
+uv run --project backend/ai-service python evaluation/assistant/evaluate.py --agent
+uv run --project backend/ai-service python evaluation/assistant/evaluate.py --agent --live --report evaluation/assistant/runs/<날짜>-agent-v1/report.json
+```
+
+지표: `intentAccuracy`(첫 응답 의도), `toolSelectionAccuracy`(호출한 도구 집합 = `expectedTools`), `cardValidityRate`(카드 id가 전부 고정 자료 안),
+`expectedCardsIncludedRate`(`expectedCards`가 카드에 포함), `quoteVerificationRate`(인용이 청크 원문에 글자 그대로 있음), `answeredRate`, `meanLatencyMs`.
+가짜 자료가 작아(모집글 2건) 카드 순위·문장 품질은 측정하지 않는다.
+
+측정(2026-09-14, 분류 `gpt-5-nano`/low, 계획·답 `gpt-5.6-luna`/none): `runs/agent-20260914-v1`(분류 프롬프트 보강 전) 의도 57/68·도구 선택 16/20 →
+`runs/agent-20260914-v2`(보강 후) 70문항 오류 0, 의도 61/70(0.87; 분류 문항만 보면 여섯 의도 프롬프트의 48/50보다 낮음 — 여덟 의도에서 nano가
+`PRODUCT_HELP`↔`PROGRAM_QUESTION`, `ACCOUNT_STATE`↔`SAVED_PROGRAMS_QUESTION`을 흔들림), 에이전트 20문항은 도구 선택 19/20, 카드 유효 20/20,
+기대 카드 포함 7/7, 인용 대조 100%, 답 생성 19/20, 평균 지연 전체 6.1초·에이전트 문항 10.4초. 분류 정확도를 올리려면 분류 모델을 luna로 바꾸는 것이
+다음 실험이다(비용 약 4배, `OPENAI_ASSISTANT_MODEL`).
+
 ## 데이터
 
 - `questions.json`: `id`, `message`, `expectedIntent`, `split`과 필요할 때 `expectedCitation`(사용법), `expectedAccountTopic`(상태),

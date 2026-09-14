@@ -62,6 +62,8 @@ import ai.govbiz.core.supportprogram.repository.exception.SupportProgramSearchRe
 import ai.govbiz.core.supportprogram.service.catalog.exception.SupportProgramCatalogFilterException
 import ai.govbiz.core.supportprogram.service.evidence.exception.SupportProgramEvidenceNotSupportedException
 import ai.govbiz.core.supportprogram.service.evidence.exception.SupportProgramEvidenceUnavailableException
+import ai.govbiz.core.assistant.service.exception.AssistantToolUnauthorizedException
+import ai.govbiz.core.assistant.service.exception.AssistantToolsDisabledException
 import ai.govbiz.core.supportprogram.service.admission.exception.SupportProgramRequestRejectedException
 import jakarta.servlet.http.HttpServletRequest
 import java.net.URI
@@ -911,6 +913,32 @@ class ApiExceptionHandler {
                 "Email Verification Mail Unavailable",
                 "The email verification code cannot be sent right now.",
                 "EMAIL_VERIFICATION_MAIL_UNAVAILABLE",
+            ),
+            request,
+        )
+
+    @ExceptionHandler(AssistantToolUnauthorizedException::class)
+    fun handleAssistantToolUnauthorizedException(request: HttpServletRequest): ResponseEntity<ProblemDetail> =
+        problemResponse(
+            ProblemDefinition(
+                HttpStatus.UNAUTHORIZED,
+                URI.create("urn:govbiz:problem:assistant-tool-unauthorized"),
+                "Assistant Tool Unauthorized",
+                "The assistant tool request is missing a valid internal token.",
+                "ASSISTANT_TOOL_UNAUTHORIZED",
+            ),
+            request,
+        )
+
+    @ExceptionHandler(AssistantToolsDisabledException::class)
+    fun handleAssistantToolsDisabledException(request: HttpServletRequest): ResponseEntity<ProblemDetail> =
+        problemResponse(
+            ProblemDefinition(
+                HttpStatus.SERVICE_UNAVAILABLE,
+                URI.create("urn:govbiz:problem:assistant-tools-disabled"),
+                "Assistant Tools Disabled",
+                "The assistant tool API is not configured on this server.",
+                "ASSISTANT_TOOLS_DISABLED",
             ),
             request,
         )

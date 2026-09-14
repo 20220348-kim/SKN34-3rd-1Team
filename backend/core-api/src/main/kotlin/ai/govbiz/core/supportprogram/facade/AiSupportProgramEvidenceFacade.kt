@@ -57,6 +57,16 @@ class AiSupportProgramEvidenceFacade(
         return validateAnswer(answered.answer, answered.answerStatus, answered.citationChunkIds, retrieved, sourceUrl)
     }
 
+    /** 청크를 색인만 합니다. 도우미 관심 공고 질문과 원문 선수집이 검색 전에 부릅니다. */
+    fun index(chunks: List<SupportProgramEvidenceChunk>) {
+        require(chunks.isNotEmpty() && chunks.size <= MAX_CHUNKS) { "invalid evidence chunk count" }
+        require(chunks.map(SupportProgramEvidenceChunk::id).toSet().size == chunks.size) { "duplicate evidence chunk ids" }
+        val indexed = client.indexChunks(AiSupportProgramEvidenceIndexRequest(chunks.map(::toChunkRequest)))
+        if (indexed.indexedCount != chunks.size) {
+            throw AiServiceCallException.invalidResponse("AI evidence did not acknowledge every chunk", null)
+        }
+    }
+
     private fun requireRetrievedChunks(
         matches: List<ai.govbiz.core.supportprogram.client.ai.dto.AiSupportProgramEvidenceMatchPayload?>?,
         candidatesById: Map<String, SupportProgramEvidenceChunk>,

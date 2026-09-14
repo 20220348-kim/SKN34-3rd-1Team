@@ -3,7 +3,9 @@ package ai.govbiz.core.assistant.client
 import ai.govbiz.core._common.config.JsonDeserializationConfig
 import ai.govbiz.core._common.exception.AiServiceCallException
 import ai.govbiz.core._common.exception.AiServiceFailure
+import ai.govbiz.core.assistant.client.dto.AiAssistantAgentRequest
 import ai.govbiz.core.assistant.client.dto.AiAssistantAnswerRequest
+import ai.govbiz.core.assistant.client.dto.AiAssistantPrincipal
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.Test
@@ -60,6 +62,35 @@ class AiAssistantClientTest {
     }
 
     @Test
+    fun sendsTheAgentContractWithThePrincipalAndDecodesCards() {
+        val agentRequest = AiAssistantAgentRequest(
+            "govbiz-assistant-agent-v1", request.message, request.history, request.session, request.context, request.helpEntries,
+            AiAssistantPrincipal(7L, "7.1900000000.sig", true),
+        )
+        val expectedJson = requestJson.replace("govbiz-assistant-v1", "govbiz-assistant-agent-v1").trimEnd().removeSuffix("}") +
+            ""","principal":{"accountId":7,"toolToken":"7.1900000000.sig","hasCompany":true},"savedProgramDocuments":null,"resumeIntent":null}"""
+        server.expect(requestTo(AGENT_URL)).andExpect(method(HttpMethod.POST))
+            .andExpect(content().json(expectedJson, JsonCompareMode.STRICT))
+            .andRespond(withSuccess(resource("contract-agent-response.json"), MediaType.APPLICATION_JSON))
+        val payload = client.agent(agentRequest)
+        assertEquals("govbiz-assistant-agent-v1", payload.schemaVersion)
+        assertEquals("PARTNER_MATCH", payload.intent)
+        assertEquals("21", payload.cards!!.single()!!.id)
+        assertEquals("/app/partners/detail?recruitmentId=21", payload.cards!!.single()!!.to)
+        assertEquals("/app/partners", payload.navigation!!.to)
+        assertEquals(listOf(true, true), payload.toolCalls!!.map { it!!.ok })
+    }
+
+    @ParameterizedTest
+    @CsvSource("503,UNAVAILABLE", "504,TIMEOUT", "204,INVALID_RESPONSE", "500,UPSTREAM_ERROR")
+    fun mapsAgentStatusesToTheSameFailures(status: Int, failure: AiServiceFailure) {
+        server.expect(requestTo(AGENT_URL)).andRespond(withStatus(HttpStatusCode.valueOf(status)))
+        val agentRequest = AiAssistantAgentRequest("govbiz-assistant-agent-v1", request.message, request.history, request.session, request.context, request.helpEntries, null)
+        val error = assertThrows(AiServiceCallException::class.java) { client.agent(agentRequest) }
+        assertEquals(failure, error.failure)
+    }
+
+    @Test
     fun treatsUndecodableBodiesAsInvalidResponses() {
         server.expect(requestTo(URL)).andRespond(withSuccess("""{"intent":["not","a","string"]}""", MediaType.APPLICATION_JSON))
         val error = assertThrows(AiServiceCallException::class.java) { client.answer(request) }
@@ -71,5 +102,6 @@ class AiAssistantClientTest {
 
     private companion object {
         const val URL = "http://ai-service.test/internal/v1/assistant/answers"
+        const val AGENT_URL = "http://ai-service.test/internal/v1/assistant/agent"
     }
 }

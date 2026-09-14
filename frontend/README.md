@@ -59,6 +59,9 @@ Compose에서는 루트 `.env`의 `KAKAO_CHANNEL_ID`가 이 값으로 전달됩�
 
 `VITE_ASSISTANT_AI_ENABLED=true`(Compose는 루트 `ASSISTANT_AI_ENABLED`)일 때만 도우미가 자유 입력을 AI로 보냅니다. 기본은 꺼짐이며,
 꺼져 있으면 자유 입력은 "아래 주제 중 하나를 골라 주세요"로 돌려보내고 주제·상태·카카오 문의 알약만으로 동작해 모델 비용이 들지 않습니다.
+Core의 도구 에이전트(`ASSISTANT_AGENT_ENABLED`)가 켜져 있으면 같은 응답에 `cards[]`(모집글·공고: 제목 링크, 부제, 고른 이유, 관심 공고 질문의 원문 인용)가 함께 오고
+`PARTNER_MATCH`·`SAVED_PROGRAMS_QUESTION` 의도가 추가됩니다. 화면은 카드가 오면 목록 행(제목을 누르면 상세 화면)으로 그리고 "AI 생성 · …" 출처를 붙이며,
+없으면 지금처럼 동작합니다. 프런트 스위치는 그대로입니다.
 
 ## 화면과 현재 동작
 

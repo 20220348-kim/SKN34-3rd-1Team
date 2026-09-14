@@ -14,6 +14,7 @@ from app.support_program_evidence.errors import SupportProgramEvidenceError
 from app.support_program_evidence.models import (
     EvidenceChunkIdentity,
     SupportProgramEvidenceBatchRequest,
+    SupportProgramEvidenceDocumentChunk,
     SupportProgramEvidenceBatchResponse,
     SupportProgramEvidenceMatch,
     SupportProgramEvidenceSearchRequest,
@@ -72,12 +73,21 @@ class SupportProgramEvidenceService:
                     with_vectors=False,
                 )
                 existing_ids: set[str] = set()
+                missing_text_ids: list[str] = []
                 for point in existing:
                     identity = identities.get(str(point.id))
                     if identity is None or not _payload_matches(point.payload, identity):
                         # 같은 chunk ID·해시를 다른 상세 공고에 재사용하면 안 된다.
                         raise SupportProgramEvidenceError()
                     existing_ids.add(str(point.id))
+                    if not isinstance((point.payload or {}).get("text"), str):
+                        missing_text_ids.append(str(point.id))
+                # 원문 없이 색인된 이전 버전 point에는 벡터를 다시 만들지 않고 원문만 붙인다(문서 묶음 검색용).
+                for point_id in missing_text_ids:
+                    await self.qdrant_client.set_payload(
+                        collection_name=self.collection_name, payload={"text": identities[point_id].text},
+                        points=[point_id], wait=True,
+                    )
                 missing = [
                     chunk
                     for point_id, chunk in identities.items()
@@ -99,6 +109,8 @@ class SupportProgramEvidenceService:
                                 "contentHash": chunk.content_hash,
                                 "documentId": chunk.document_id,
                                 "order": chunk.order,
+                                # 도우미 관심 공고 질문이 청크 원문을 다시 읽을 수 있게 저장한다. 공개 공고 원문이다.
+                                "text": chunk.text,
                             },
                         )
                         for chunk, vector in zip(missing, vectors, strict=True)
@@ -228,6 +240,73 @@ class SupportProgramEvidenceService:
                     "support_program_evidence_search_failed stage=%s elapsed_ms=%d",
                     stage, round((monotonic() - started_at) * 1000),
                 )
+
+    async def search_documents(
+        self,
+        question: str,
+        documents: dict[str, list[tuple[str, str]]],
+        per_document_limit: int,
+    ) -> dict[str, list[SupportProgramEvidenceDocumentChunk]]:
+        """여러 문서의 허용 청크 안에서 질문과 가까운 청크를 문서마다 최대 per_document_limit개 찾는다.
+
+        색인되지 않았거나 원문이 없는 청크는 조용히 빠진다(호출부가 '원문 미확인'으로 다룬다). 청크 목록이 빈 문서는 검색하지 않는다.
+        """
+        if not 1 <= per_document_limit <= 10:
+            raise ValueError("per_document_limit must be 1~10")
+        identities: dict[str, tuple[str, str, str]] = {}
+        for document_id, chunks in documents.items():
+            for chunk_id, content_hash in chunks:
+                identities[_point_id_of(chunk_id, content_hash)] = (chunk_id, content_hash, document_id)
+        if not identities:
+            return {}
+        started_at = monotonic()
+        try:
+            async with asyncio.timeout(25):
+                if not await self.qdrant_client.collection_exists(self.collection_name):
+                    return {}
+                indexed = await self.qdrant_client.retrieve(
+                    collection_name=self.collection_name, ids=list(identities), with_payload=True, with_vectors=False,
+                )
+                present: dict[str, dict] = {}
+                for point in indexed:
+                    identity = identities.get(str(point.id))
+                    payload = point.payload or {}
+                    if identity is None or not isinstance(payload.get("text"), str) or (
+                        payload.get("id"), payload.get("contentHash"), payload.get("documentId"),
+                    ) != identity:
+                        continue
+                    present[str(point.id)] = payload
+                if not present:
+                    return {}
+                vector, cache_state = await self._embed_query(question)
+                response = await self.qdrant_client.query_points(
+                    collection_name=self.collection_name,
+                    query=vector,
+                    query_filter=models.Filter(must=[models.HasIdCondition(has_id=list(present))]),
+                    limit=min(per_document_limit * len(documents), len(present)),
+                    with_payload=True,
+                    with_vectors=False,
+                )
+                grouped: dict[str, list[SupportProgramEvidenceDocumentChunk]] = {}
+                for point in response.points:
+                    payload = present.get(str(point.id))
+                    if payload is None:
+                        continue
+                    bucket = grouped.setdefault(payload["documentId"], [])
+                    if len(bucket) >= per_document_limit:
+                        continue
+                    bucket.append(SupportProgramEvidenceDocumentChunk(
+                        id=payload["id"], contentHash=payload["contentHash"], documentId=payload["documentId"],
+                        order=int(payload.get("order", 0)), text=payload["text"], score=float(point.score),
+                    ))
+                logger.info(
+                    "support_program_evidence_document_search_completed document_count=%d chunk_count=%d matched_documents=%d "
+                    "elapsed_ms=%d cache_state=%s",
+                    len(documents), len(identities), len(grouped), round((monotonic() - started_at) * 1000), cache_state,
+                )
+                return grouped
+        except Exception as error:
+            raise SupportProgramEvidenceError() from error
 
     async def _embed_query(self, query: str) -> tuple[list[float], str]:
         key = sha256(query.encode("utf-8")).hexdigest()
@@ -362,12 +441,11 @@ class SupportProgramEvidenceService:
 
 
 def _point_id(chunk: EvidenceChunkIdentity) -> str:
-    return str(
-        uuid5(
-            NAMESPACE_URL,
-            f"govbiz:support-program-evidence:v1:{chunk.id}:{chunk.content_hash}",
-        )
-    )
+    return _point_id_of(chunk.id, chunk.content_hash)
+
+
+def _point_id_of(chunk_id: str, content_hash: str) -> str:
+    return str(uuid5(NAMESPACE_URL, f"govbiz:support-program-evidence:v1:{chunk_id}:{content_hash}"))
 
 
 def _payload_matches(

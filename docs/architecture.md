@@ -193,6 +193,15 @@ AI Service는 DB를 보지 않고 도구도 없습니다. 상태 답(`ACCOUNT_ST
 인용 id는 요청에 실린 도움말 안에서만, 이동 경로는 Core 상수와 도움말 행동 경로 안에서만 인정하며 어긋나면 502로 버립니다.
 대화는 브라우저 세션 저장소에만 남고 서버는 저장하지 않습니다. 분류·인용 회귀는 [도우미 의도 분류 평가](../evaluation/assistant/README.md)로 확인합니다.
 
+Core 설정 `app.assistant.agent-enabled=true`(루트 `ASSISTANT_AGENT_ENABLED`, 기본 꺼짐)면 같은 질문을 AI Service의
+`/internal/v1/assistant/agent`(LangGraph 도구 에이전트)로 보냅니다. 분류 뒤 회원 자료가 필요한 의도(`PARTNER_MATCH` 모집글 매칭,
+`ACCOUNT_STATE` 내 상태, `SAVED_PROGRAMS_QUESTION` 관심 공고 묶음 질문)만 AI Service가 Core 내부 읽기 도구
+`GET /internal/v1/assistant/tools/{company-profile|recruitments|saved-programs}`를 최대 3회 되불러 답과 카드(`cards[]`, 모집글·공고, 이유·인용·상세 경로)를 만듭니다.
+도구 호출은 Core·AI Service가 공유하는 비밀(`ASSISTANT_TOOLS_TOKEN`, 32자 이상)과 요청마다 발급하는 계정 묶음 HMAC 토큰(5분) 둘 다 있어야 통과하고,
+응답 카드 id·경로·인용은 Core가 도구 결과·허용 목록·청크 원문과 다시 대조합니다. 관심 공고 묶음 질문은 첫 응답이 `needsDocuments`면 Core가 관심 공고
+최대 10건의 원문을 확보·청킹·색인(6초 예산, 부분 성공 허용)해 같은 의도로 한 번 더 부르고, 관심 공고를 담을 때 원문을 미리 수집·색인하는
+outbox 큐(`ASSISTANT_PREFETCH_QUEUE_ENABLED`, RabbitMQ)가 첫 질문 지연을 줄입니다. 비로그인은 도구 경로가 막혀 로그인 안내로 끝납니다.
+
 ### 확인된 조건의 검색
 
 ```text
@@ -672,14 +681,16 @@ Core의 공개 계약은 기능별 `controller/dto`, 외부 계약은 시스템�
 
 AI Service는 조건 변경 해석·점수화·원문 근거 답변에서 각각 `HTTP API → Service → Agent → OpenAI → Response` 흐름으로
 실행합니다. `bootstrap.py`가 클라이언트와 서비스 수명주기를 구성하고, 역할이 다른 typed Agent를 각각
-`max_turns=1`로 실행합니다. 현재 tool·handoff·multi-agent orchestration은 없습니다. 일반 공고 색인·검색은
+`max_turns=1`로 실행합니다. 도우미 도구 에이전트(`app/assistant_agent`)만 예외로 LangGraph 그래프
+(`classify → plan ⇄ tools → answer → verify`, 관심 공고 묶음 질문은 `retrieve → map → reduce → verify` 서브그래프)를 쓰며
+도구는 Core 내부 읽기 API 세 개와 기존 근거 컬렉션의 문서 id 제한 검색뿐입니다. 그 밖의 tool·handoff·multi-agent orchestration은 없습니다. 일반 공고 색인·검색은
 `support_program_index`, 원문 청크 색인·검색은 `support_program_evidence`가 OpenAI 임베딩과 분리된 Qdrant
 컬렉션을 직접 사용합니다.
 
 랭킹 모델은 `OPENAI_RANKING_MODEL`로 지정하고 미설정이면 공통 `OPENAI_MODEL`을 상속합니다.
 `OPENAI_RANKING_REASONING_EFFORT`는 `none`/`low`만 허용합니다. 제공 설정 예제는 비용 절감을 위해 랭킹도
 Luna/low를 사용하며 대화·원문 답변 모델은 바꾸지 않습니다. 모델 객체는 분리하되 동일한 OpenAI
-클라이언트·인증·재시도 정책을 공유하며 새 provider나 orchestration 계층은 없습니다.
+클라이언트·인증·재시도 정책을 공유하며 새 provider는 없습니다. orchestration 계층은 위 도우미 도구 에이전트의 LangGraph 하나뿐입니다.
 도우미 자유 질문 분류는 `OPENAI_ASSISTANT_MODEL`(기본 `gpt-5-nano`, 추론 `low`)로 가장 싼 모델을 따로 씁니다.
 출력 축약은 미채택이며 기존 후보 ID·필드명·출력 계약을 유지합니다. 축약 구현은 평가 경로에만 남깁니다.
 `OPENAI_RANKING_SERVICE_TIER` 미설정 시 코드·Compose 기본값은 `default`입니다. 제공 `.env.example`은

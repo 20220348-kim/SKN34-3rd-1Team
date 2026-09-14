@@ -7,3 +7,11 @@ data class SavedSupportProgram(
     val savedAt: LocalDateTime,
     val program: SupportProgram,
 )
+
+/** 관심 공고 원문 선수집(outbox) 상태입니다. DONE은 하루가 지나면 다시 PENDING이 됩니다. */
+enum class SavedSupportProgramPrefetchStatus {
+    PENDING,
+    PUBLISHED,
+    DONE,
+    FAILED,
+}
