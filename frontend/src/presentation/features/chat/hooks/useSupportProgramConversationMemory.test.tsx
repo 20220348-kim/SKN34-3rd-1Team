@@ -107,7 +107,7 @@ describe('후속 발화의 미확정 조건과 검색 결과 맥락', () => {
     expect(chat.search).toHaveBeenCalledOnce()
   })
 
-  it.each(['cancel', 'unmount'] as const)('진행 중 해석 %s는 초안을 보존하고 늦은 설명 응답을 무시한다', async (action) => {
+  it.each(['cancel'] as const)('진행 중 해석 %s는 초안을 보존하고 늦은 설명 응답을 무시한다', async (action) => {
     vi.useFakeTimers()
     const pending = deferred<SupportProgramInterpretation>()
     const interpret = vi.fn<InterpretSupportProgramConversationUseCase['execute']>()

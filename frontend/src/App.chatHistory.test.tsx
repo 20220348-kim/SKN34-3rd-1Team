@@ -68,16 +68,20 @@ async function submit(text: string) {
 describe('사이드바 대화 기록 HTTP 통합', () => {
   it('삭제 취소 시 보존하고 확인하면 현재 대화를 비우며 새 세션에서도 삭제 상태를 유지한다', async () => {
     const view = renderChat()
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false)
     await submit('삭제할 서울 지원사업')
     await waitFor(() => expect([...records.get(account.email)!.values()][0].snapshot.interpretation.status).toBe('ready'))
     const remove = screen.getByRole('button', { name: '대화 삭제: 삭제할 서울 지원사업' })
     fireEvent.click(remove)
+    // 브라우저 confirm이 아니라 앱 안 대화상자로 묻고, 취소하면 아무것도 지우지 않습니다.
+    const dialog = screen.getByRole('dialog', { name: '대화를 삭제할까요?' })
+    expect(within(dialog).getByText(/“삭제할 서울 지원사업” 대화의 질문·답변·검색 결과가 삭제되며 복구할 수 없습니다/)).toBeTruthy()
+    fireEvent.click(within(dialog).getByRole('button', { name: '취소' }))
+    expect(screen.queryByRole('dialog', { name: '대화를 삭제할까요?' })).toBeNull()
     expect(historyRequests.filter((request) => request.method === 'DELETE')).toHaveLength(0)
     expect(screen.getByRole('button', { name: '대화 열기: 삭제할 서울 지원사업' })).toBeTruthy()
-    confirm.mockReturnValue(true)
-    await act(async () => fireEvent.click(remove))
-    expect(confirm.mock.calls.at(-1)?.[0]).toContain('복구할 수 없습니다')
+    fireEvent.click(remove)
+    await act(async () => fireEvent.click(within(screen.getByRole('dialog', { name: '대화를 삭제할까요?' })).getByRole('button', { name: '삭제' })))
+    expect(screen.queryByRole('dialog', { name: '대화를 삭제할까요?' })).toBeNull()
     expect(historyRequests.filter((request) => request.method === 'DELETE')).toHaveLength(1)
     expect(records.get(account.email)?.size).toBe(0)
     expect(screen.queryByRole('button', { name: /^대화 열기:/ })).toBeNull()
@@ -92,14 +96,14 @@ describe('사이드바 대화 기록 HTTP 통합', () => {
 
   it('다른 기록을 삭제해도 현재 대화는 그대로 유지한다', async () => {
     const view = renderChat()
-    vi.spyOn(window, 'confirm').mockReturnValue(true)
     await submit('이전 질문')
     await waitFor(() => expect([...records.get(account.email)!.values()][0].snapshot.interpretation.status).toBe('ready'))
     fireEvent.click(screen.getByRole('button', { name: '지원사업 새검색' }))
     await submit('현재 질문')
     await waitFor(() => expect([...records.get(account.email)!.values()].every((entry) => entry.snapshot.interpretation.status === 'ready')).toBe(true))
     const before = view.store.getState().chat
-    await act(async () => fireEvent.click(screen.getByRole('button', { name: '대화 삭제: 이전 질문' })))
+    fireEvent.click(screen.getByRole('button', { name: '대화 삭제: 이전 질문' }))
+    await act(async () => fireEvent.click(within(screen.getByRole('dialog', { name: '대화를 삭제할까요?' })).getByRole('button', { name: '삭제' })))
     expect(screen.queryByRole('button', { name: '대화 열기: 이전 질문' })).toBeNull()
     expect(screen.getByRole('button', { name: '대화 열기: 현재 질문' })).toBeTruthy()
     expect(view.store.getState().chat).toBe(before)
@@ -107,7 +111,7 @@ describe('사이드바 대화 기록 HTTP 통합', () => {
 
   it('삭제 중 버튼을 잠그고 실패 안내 후 같은 버튼으로 재시도할 수 있다', async () => {
     renderChat()
-    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    const confirmDelete = () => fireEvent.click(within(screen.getByRole('dialog', { name: '대화를 삭제할까요?' })).getByRole('button', { name: '삭제' }))
     await submit('삭제 재시도')
     await waitFor(() => expect([...records.get(account.email)!.values()][0].snapshot.interpretation.status).toBe('ready'))
     const fetch = globalThis.fetch
@@ -115,13 +119,15 @@ describe('사이드바 대화 기록 HTTP 통합', () => {
     vi.stubGlobal('fetch', vi.fn((input, init) => init?.method === 'DELETE'
       ? new Promise<Response>((resolve) => { finish = resolve }) : fetch(input, init)))
     fireEvent.click(screen.getByRole('button', { name: '대화 삭제: 삭제 재시도' }))
+    confirmDelete()
     expect((screen.getByRole('button', { name: '대화 삭제: 삭제 재시도' }) as HTMLButtonElement).disabled).toBe(true)
     expect(screen.getByText('대화 삭제 중…')).toBeTruthy()
     await act(async () => finish(json({}, 500)))
     expect(screen.getByText(/대화 삭제를 확인하지 못했습니다/)).toBeTruthy()
     expect(screen.getByRole('button', { name: '대화 열기: 삭제 재시도' })).toBeTruthy()
     vi.stubGlobal('fetch', fetch)
-    await act(async () => fireEvent.click(screen.getByRole('button', { name: '대화 삭제: 삭제 재시도' })))
+    fireEvent.click(screen.getByRole('button', { name: '대화 삭제: 삭제 재시도' }))
+    await act(async () => confirmDelete())
     expect(screen.queryByRole('button', { name: '대화 열기: 삭제 재시도' })).toBeNull()
     expect(screen.queryByText(/대화 삭제를 확인하지 못했습니다/)).toBeNull()
   })
@@ -148,6 +154,36 @@ describe('사이드바 대화 기록 HTTP 통합', () => {
     expect(screen.getByRole('region', { name: '조건 변경 제안' })).toBeTruthy()
     expect(appContainer.resolve('interpretSupportProgramConversationUseCase').execute).toHaveBeenCalledTimes(3)
     expect(appContainer.resolve('searchSupportProgramsUseCase').execute).not.toHaveBeenCalled()
+  })
+
+  it('검색 중에 다른 대화를 열면 앱 안 대화상자로 확인하고, 취소하면 검색을 유지하며, 계속하면 검색을 끊고 그 대화를 연다', async () => {
+    const view = renderChat()
+    await submit('이전 질문')
+    await waitFor(() => expect([...records.get(account.email)!.values()][0].snapshot.interpretation.status).toBe('ready'))
+    fireEvent.click(screen.getByRole('button', { name: '지원사업 새검색' }))
+    // 두 번째 질문의 조건 해석은 끝나지 않은 채로 둡니다.
+    vi.mocked(appContainer.resolve('interpretSupportProgramConversationUseCase').execute).mockReturnValue(new Promise(() => {}))
+    await submit('진행 중 질문')
+    expect(view.store.getState().chat.interpretation.status).toBe('pending')
+    // 진행 중인 대화의 기록 항목에만 점이 붙고, 버튼 이름은 그대로입니다.
+    expect(screen.getByRole('button', { name: '대화 열기: 진행 중 질문' }).querySelector('[data-activity="pending"]')).toBeTruthy()
+    expect(screen.getByRole('button', { name: '대화 열기: 이전 질문' }).querySelector('[data-activity]')).toBeNull()
+
+    fireEvent.click(screen.getByRole('button', { name: '대화 열기: 이전 질문' }))
+    const dialog = screen.getByRole('dialog', { name: '검색이 진행 중입니다' })
+    expect(within(dialog).getByText('다른 대화를 열면 진행 중인 검색이 취소되고 결과를 받지 못합니다. 계속할까요?')).toBeTruthy()
+    fireEvent.click(within(dialog).getByRole('button', { name: '취소' }))
+    expect(screen.queryByRole('dialog', { name: '검색이 진행 중입니다' })).toBeNull()
+    expect(view.store.getState().chat.interpretation.status).toBe('pending')
+    expect(within(screen.getByRole('region', { name: '대화 내역' })).getByText('진행 중 질문')).toBeTruthy()
+
+    fireEvent.click(screen.getByRole('button', { name: '대화 열기: 이전 질문' }))
+    await act(async () => fireEvent.click(within(screen.getByRole('dialog', { name: '검색이 진행 중입니다' })).getByRole('button', { name: '계속' })))
+    expect(screen.queryByRole('dialog', { name: '검색이 진행 중입니다' })).toBeNull()
+    expect(within(screen.getByRole('region', { name: '대화 내역' })).getByText('이전 질문')).toBeTruthy()
+    expect(view.store.getState().chat.interpretation.status).not.toBe('pending')
+    // 떠난 대화는 '완료되지 않은 검색'이 아니라 취소된 상태로 저장됩니다.
+    await waitFor(() => expect([...records.get(account.email)!.values()].find((entry) => entry.conversation.title === '진행 중 질문')?.snapshot.interpretation.status).toBe('idle'))
   })
 
   it('새 브라우저 상태·재로그인에서 저장된 결과와 조건을 복원하고 다른 계정은 빈 목록을 본다', async () => {

@@ -17,6 +17,7 @@ import {
   draftChanged,
   interpretationStarted,
   interpretationSucceeded,
+  outcomeSeen,
   proposalConfirmed,
   searchStarted,
   searchSucceeded,
@@ -116,7 +117,7 @@ describe('비로그인 대화의 화면 이동 수명', () => {
     expect(document.activeElement).toBe(screen.getByRole('textbox', { name: '지원사업 검색어' }))
   })
 
-  it.each(['interpretation', 'search'] as const)('진행 중인 %s 요청을 남기고 다른 메뉴로 나가면 취소하고 복귀 후 늦은 응답도 무시한다', async (phase) => {
+  it.each(['interpretation', 'search'] as const)('진행 중인 %s 요청을 남기고 다른 메뉴로 나가면 요청을 이어가고, 헤더 배지와 도착 알림으로 돌아올 수 있다', async (phase) => {
     let complete!: (response: Response) => void
     const pending = new Promise<Response>((resolve) => { complete = resolve })
     const fetchMock = vi.fn()
@@ -137,13 +138,11 @@ describe('비로그인 대화의 화면 이동 수명', () => {
     await act(async () => fireEvent.click(within(screen.getByRole('navigation', { name: '화면 이동' }))
       .getByRole('link', { name: '파트너 모집' })))
 
-    expect(signal.aborted).toBe(true)
-    expectEmptyConversation(store)
-    fireEvent.click(within(screen.getByRole('navigation', { name: '화면 이동' }))
-      .getByRole('link', { name: '지원사업 찾기' }))
-    expectEmptyChatScreen()
-    fireEvent.change(screen.getByRole('textbox', { name: '지원사업 검색어' }), { target: { value: '새 대화의 초안' } })
-    const returnedState = store.getState().chat
+    // 요청은 살아 있고 대화도 남아 있으며, 헤더가 진행 중임을 알립니다.
+    expect(signal.aborted).toBe(false)
+    expect(store.getState().chat.messages.some((message) => message.text === originalMessage)).toBe(true)
+    expect(screen.getByRole('status', { name: phase === 'search' ? '지원사업 검색 진행 중' : '조건 해석 진행 중' })).toBeTruthy()
+    expect(screen.queryByRole('status', { name: '검색 알림' })).toBeNull()
 
     await act(async () => {
       complete(json(phase === 'search' ? completeSearchResult({ query: context.query, programs: [program] })
@@ -151,11 +150,95 @@ describe('비로그인 대화의 화면 이동 수명', () => {
       await pending
     })
 
-    expect(store.getState().chat).toEqual(returnedState)
-    expect((screen.getByRole('textbox', { name: '지원사업 검색어' }) as HTMLTextAreaElement).value).toBe('새 대화의 초안')
-    expect(screen.queryByRole('button', { name: '이 조건으로 검색' })).toBeNull()
-    expect(screen.queryByRole('heading', { name: program.title })).toBeNull()
+    // 결과가 도착하면 알림 한 줄과 헤더 배지가 바뀌고, 대화 보기로 돌아가면 결과가 보이며 알림이 사라집니다.
+    const toast = screen.getByRole('status', { name: '검색 알림' })
+    expect(within(toast).getByText(phase === 'search' ? '지원사업 검색이 끝났어요. 결과 1건이에요.' : '조건 변경안이 준비됐어요. 확인을 눌러야 검색이 시작돼요.')).toBeTruthy()
+    expect(screen.getByRole('status', { name: '검색 결과 도착' })).toBeTruthy()
+    expect(store.getState().chat.unseenOutcome).toBe(phase === 'search' ? 'search-succeeded' : 'interpretation-ready')
+
+    await act(async () => fireEvent.click(within(toast).getByRole('link', { name: '대화 보기' })))
+    expect(screen.queryByRole('status', { name: '검색 알림' })).toBeNull()
+    expect(store.getState().chat.unseenOutcome).toBeNull()
+    if (phase === 'search') expect(screen.getByRole('heading', { name: program.title })).toBeTruthy()
+    else expect(screen.getByRole('button', { name: '이 조건으로 검색' })).toBeTruthy()
     expect(fetchMock).toHaveBeenCalledTimes(phase === 'search' ? 2 : 1)
+
+    // 결과를 본 뒤 다시 나가면 비로그인 대화는 예전처럼 비웁니다.
+    await act(async () => fireEvent.click(within(screen.getByRole('navigation', { name: '화면 이동' }))
+      .getByRole('link', { name: '파트너 모집' })))
+    expectEmptyConversation(store)
+  })
+
+  it('로그인 사용자가 검색 중에 다른 메뉴로 가면 사이드바 아래 고정 패널이 검색 중인 대화를 알리고 결과가 오면 도착 건수로 바뀐다', async () => {
+    let complete!: (response: Response) => void
+    const pending = new Promise<Response>((resolve) => { complete = resolve })
+    const fetchMock = vi.fn().mockResolvedValueOnce(json(readyConversationProposal(context))).mockReturnValueOnce(pending)
+    vi.stubGlobal('fetch', fetchMock)
+    const store = emptyStore(true)
+    renderApp(store, '/app/chat')
+    const input = screen.getByRole('textbox', { name: '지원사업 검색어' })
+    fireEvent.change(input, { target: { value: originalMessage } })
+    await act(async () => fireEvent.submit(input.closest('form')!))
+    await act(async () => fireEvent.click(screen.getByRole('button', { name: '이 조건으로 검색' })))
+
+    const sidebar = () => screen.getByRole('complementary', { name: '작업 사이드바' })
+    const panel = () => within(sidebar()).getByRole('status', { name: '검색 상태' })
+    await act(async () => fireEvent.click(within(sidebar()).getByRole('link', { name: /파트너 관리/ })))
+    expect(panel().textContent).toContain('검색 중')
+    expect(panel().textContent).toContain(originalMessage)
+    expect(panel().querySelector('[data-activity="pending"]')).toBeTruthy()
+
+    await act(async () => {
+      complete(json(completeSearchResult({ query: context.query, programs: [program] })))
+      await pending
+    })
+    expect(panel().textContent).toContain('결과 1건 도착')
+    expect(panel().querySelector('[data-activity="done"]')).toBeTruthy()
+    expect(screen.getByRole('status', { name: '검색 알림' })).toBeTruthy()
+
+    fireEvent.click(within(screen.getByRole('status', { name: '검색 알림' })).getByRole('button', { name: '닫기' }))
+    expect(screen.queryByRole('status', { name: '검색 알림' })).toBeNull()
+    expect(panel().textContent).toContain('결과 1건 도착')
+
+    // 패널의 "보기"는 결과가 있는 현재 대화를 열고, 보고 나면 패널이 사라집니다.
+    fireEvent.click(within(panel()).getByRole('link', { name: '보기' }))
+    expect(screen.getByRole('heading', { name: program.title })).toBeTruthy()
+    expect(within(sidebar()).queryByRole('status', { name: '검색 상태' })).toBeNull()
+  })
+
+  it('검색 중 다른 메뉴에서 새검색을 누르면 묻지 않고 검색 화면으로 가고, 검색 화면에서 다시 누르면 대화상자로 확인해 계속할 때만 검색을 끊는다', async () => {
+    const pending = new Promise<Response>(() => {})
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce(json(readyConversationProposal(context))).mockReturnValueOnce(pending))
+    const store = emptyStore(true)
+    renderApp(store, '/app/chat')
+    const input = screen.getByRole('textbox', { name: '지원사업 검색어' })
+    fireEvent.change(input, { target: { value: originalMessage } })
+    await act(async () => fireEvent.submit(input.closest('form')!))
+    await act(async () => fireEvent.click(screen.getByRole('button', { name: '이 조건으로 검색' })))
+    const sidebar = () => screen.getByRole('complementary', { name: '작업 사이드바' })
+    await act(async () => fireEvent.click(within(sidebar()).getByRole('link', { name: /파트너 관리/ })))
+
+    // 다른 메뉴에서는 필터 검색 탭도 써야 하므로 묻지 않고 검색 화면으로 갑니다. 진행 중인 대화는 그대로입니다.
+    fireEvent.click(within(sidebar()).getByRole('button', { name: '지원사업 새검색' }))
+    expect(screen.queryByRole('dialog', { name: '검색이 진행 중입니다' })).toBeNull()
+    expect(screen.getByRole('tab', { name: '필터 검색' })).toBeTruthy()
+    expect(store.getState().chat.searchStatus).toBe('pending')
+    expect(store.getState().chat.messages.some((message) => message.role === 'user' && message.text === originalMessage)).toBe(true)
+
+    fireEvent.click(within(sidebar()).getByRole('button', { name: '지원사업 새검색' }))
+    const dialog = screen.getByRole('dialog', { name: '검색이 진행 중입니다' })
+    expect(within(dialog).getByText('새 검색을 시작하면 진행 중인 검색이 취소되고 결과를 받지 못합니다. 계속할까요?')).toBeTruthy()
+    fireEvent.click(within(dialog).getByRole('button', { name: '취소' }))
+    expect(screen.queryByRole('dialog', { name: '검색이 진행 중입니다' })).toBeNull()
+    expect(store.getState().chat.searchStatus).toBe('pending')
+    expect(store.getState().chat.messages.some((message) => message.role === 'user' && message.text === originalMessage)).toBe(true)
+
+    fireEvent.click(within(sidebar()).getByRole('button', { name: '지원사업 새검색' }))
+    fireEvent.click(within(screen.getByRole('dialog', { name: '검색이 진행 중입니다' })).getByRole('button', { name: '계속' }))
+    expect(screen.queryByRole('dialog', { name: '검색이 진행 중입니다' })).toBeNull()
+    expectEmptyChatScreen()
+    expect(store.getState().chat.searchStatus).toBe('idle')
+    expect(within(sidebar()).queryByRole('status', { name: '검색 상태' })).toBeNull()
   })
 
   it('StrictMode에서 검색 화면을 마운트해도 같은 검색 흐름의 대화를 초기화하지 않는다', () => {
@@ -204,6 +287,8 @@ function seededConversationStore(authenticated = false) {
   }, interpreted.payload.messageId)
   store.dispatch(searched)
   store.dispatch(searchSucceeded(completeSearchResult({ requestId: searched.payload.requestId, programs: [program] })))
+  // 이미 화면에서 본 대화를 흉내 냅니다. 보지 않은 결과가 있으면 비로그인 대화 초기화가 미뤄집니다.
+  store.dispatch(outcomeSeen())
   store.dispatch(draftChanged(unsentDraft))
   return store
 }

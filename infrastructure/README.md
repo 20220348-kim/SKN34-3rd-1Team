@@ -122,6 +122,7 @@ OPENAI_API_KEY=발급받은_OpenAI_API_키
 | `MSIT_SYNC_INITIAL_DELAY` / `CNTRADE_NOTICE_SYNC_INITIAL_DELAY` | `PT0S` | 첫 수집 지연 |
 | `MSIT_SYNC_FIXED_DELAY` / `CNTRADE_NOTICE_SYNC_FIXED_DELAY` | `PT6H` | 해당 수집 완료 후 다음 실행까지 지연 |
 | `CORE_API_HOST_PORT` / `WEB_HOST_PORT` | `8080` / `5173` | loopback 공개 포트. 격리 검증에서는 `18080` / `15173` 사용 |
+| `CHOKIDAR_INTERVAL` | `1000` | web 컨테이너의 Vite가 바인드 마운트 소스를 폴링하는 간격(ms). Windows/macOS 바인드 마운트는 파일 stat이 느려 간격이 짧으면 web CPU가 40%대로 오르고 `/api` 프록시 응답이 초 단위로 느려진다. `.pnpm-store`·`dist`는 감시에서 제외하며 pnpm 저장소는 `/home/node/.pnpm-store`(볼륨 밖)에 둔다 |
 | `ACCOUNT_SESSION_TTL` | `P30D` | "로그인 상태 유지"를 켠 세션의 절대 만료 기간 |
 | `ACCOUNT_SESSION_SHORT_TTL` | `PT12H` | "로그인 상태 유지"를 끈 세션의 절대 만료 기간 |
 | `ACCOUNT_SESSION_IDLE_TTL` | `P7D` | 마지막 사용 뒤 세션을 끝내는 유휴 기간 |

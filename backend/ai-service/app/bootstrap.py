@@ -129,9 +129,17 @@ def build_application_container(
             run_timeout_seconds=settings.llm_run_timeout_seconds,
         )
 
+    combination_openai_client = openai_client.with_options(
+        timeout=settings.llm_combination_review_model_timeout_seconds,
+    )
     combination_agent = CombinationReviewAgent(
-        model=general_model or OpenAIResponsesModel(model=settings.openai_model, openai_client=openai_client),
-        model_timeout_seconds=settings.llm_combination_review_model_timeout_seconds,
+        model=ChatOpenAI(
+            model=settings.openai_model, api_key=settings.openai_api_key,
+            use_responses_api=True, store=False, reasoning={"effort": "none"},
+            max_tokens=6000, timeout=settings.llm_combination_review_model_timeout_seconds,
+            max_retries=0, root_async_client=combination_openai_client,
+            async_client=combination_openai_client.chat.completions,
+        ),
         run_timeout_seconds=settings.llm_combination_review_run_timeout_seconds,
     )
 

@@ -14,6 +14,11 @@ export type SupportProgramChatMessage = ChatMessage
 
 type ChatSearchStatus = 'idle' | 'pending' | 'failed'
 
+/** 화면이 보지 않은 사이에 도착한 결과입니다. 채팅 화면이 열리면 `outcomeSeen`으로 지웁니다. */
+export type ChatOutcome =
+  | 'search-succeeded' | 'search-failed'
+  | 'interpretation-ready' | 'interpretation-clarification' | 'interpretation-answered' | 'interpretation-failed'
+
 type ChatInterpretation = {
   status: 'idle' | 'pending' | 'ready' | 'clarification' | 'failed'
   requestId?: string
@@ -39,6 +44,7 @@ type ChatState = {
   interpretation: ChatInterpretation
   pendingClarification: SupportProgramPendingClarification | null
   confirmedSearch: SupportProgramSearch | null
+  unseenOutcome: ChatOutcome | null
 }
 
 /** Core API의 query 최대 길이 계약과 일치합니다. */
@@ -104,6 +110,7 @@ const chatSlice = createSlice({
       reducer(state, action: PayloadAction<{ requestId: string; messageId: string; request: SupportProgramInterpretRequest }>) {
         if (isBusy(state)) return
         state.interpretation = { status: 'pending', ...action.payload }
+        state.unseenOutcome = null
         state.draft = ''
         state.searchError = null
         state.searchStatus = 'idle'
@@ -120,9 +127,11 @@ const chatSlice = createSlice({
       if (action.payload.result.status === 'ANSWERED') {
         state.messages.push({ id: `${action.payload.requestId}-answer`, role: 'assistant', text: action.payload.result.answer! })
         state.interpretation = { status: 'idle' }
+        state.unseenOutcome = 'interpretation-answered'
         return
       }
       state.interpretation.status = action.payload.result.status === 'READY' ? 'ready' : 'clarification'
+      state.unseenOutcome = action.payload.result.status === 'READY' ? 'interpretation-ready' : 'interpretation-clarification'
       state.interpretation.result = action.payload.result
       if (action.payload.result.status === 'CLARIFICATION_REQUIRED') {
         state.pendingProposal = null
@@ -139,6 +148,7 @@ const chatSlice = createSlice({
       if (state.interpretation.status !== 'pending' || state.interpretation.requestId !== action.payload.requestId) return
       state.interpretation.status = 'failed'
       state.interpretation.error = action.payload.message
+      state.unseenOutcome = 'interpretation-failed'
       state.messages.push({ id: `${action.payload.requestId}-failure`, role: 'assistant',
         text: action.payload.message, failure: 'interpretation' })
       if (!state.draft.trim()) state.draft = state.interpretation.request?.message ?? ''
@@ -184,6 +194,7 @@ const chatSlice = createSlice({
       }
       state.searchError = action.payload.message ?? '지원사업을 검색하지 못했습니다. 잠시 후 다시 시도해 주세요.'
       state.searchStatus = 'failed'
+      state.unseenOutcome = 'search-failed'
       state.messages.push({ id: `${action.payload.requestId}-failure`, role: 'assistant',
         text: state.searchError, failure: 'search' })
     },
@@ -196,8 +207,13 @@ const chatSlice = createSlice({
       }
       state.searchError = '검색 시간이 초과되었습니다. 잠시 후 다시 시도해 주세요.'
       state.searchStatus = 'failed'
+      state.unseenOutcome = 'search-failed'
       state.messages.push({ id: `${action.payload.requestId}-failure`, role: 'assistant',
         text: state.searchError, failure: 'search' })
+    },
+    /** 채팅 화면이 결과를 보여 주었습니다. 배지·알림을 지웁니다. */
+    outcomeSeen(state) {
+      state.unseenOutcome = null
     },
     searchValidationFailed(state, action: PayloadAction<{ queryLength: number }>) {
       if (state.searchStatus === 'pending') return
@@ -219,6 +235,7 @@ const chatSlice = createSlice({
         const existingMessage = state.messages.find((message) => message.id === action.payload.messageId)
         const snapshot = copySearchOptions(action.payload.searchOptions ?? state.searchOptions)
         state.activeSearchContext = searchOptionsToConversationContext(action.payload.query, snapshot)
+        state.unseenOutcome = null
         if (existingMessage) {
           existingMessage.searchOptions = snapshot
           existingMessage.searchQuery = action.payload.query
@@ -261,6 +278,7 @@ const chatSlice = createSlice({
         })
         state.searchError = null
         state.searchStatus = 'idle'
+        state.unseenOutcome = 'search-succeeded'
       },
       prepare(payload: Omit<SupportProgramSearchResult, 'query'> & { requestId: string }) {
         return {
@@ -294,6 +312,7 @@ export const {
   interpretationFailed,
   interpretationDismissed,
   interpretationCancelled,
+  outcomeSeen,
   proposalConfirmed,
   searchCancelled,
   searchFailed,
@@ -309,6 +328,28 @@ export const selectChatMessages = (state: RootState) => state.chat.messages
 export const selectChatSearchError = (state: RootState) => state.chat.searchError
 export const selectCanRetryChatSearch = (state: RootState) => state.chat.searchStatus === 'failed' && state.chat.confirmedSearch !== null
 export const selectIsChatSearching = (state: RootState) => state.chat.searchStatus === 'pending'
+export const selectChatUnseenOutcome = (state: RootState) => state.chat.unseenOutcome
+
+/** 채팅 화면 밖에서 보여 줄 진행 상태입니다. 진행 중이면 그 종류를, 아니면 아직 보지 않은 결과를 알립니다. */
+export type ChatActivity =
+  | { kind: 'searching' }
+  | { kind: 'interpreting' }
+  | { kind: 'unseen'; outcome: ChatOutcome; resultCount: number | null }
+export const selectChatActivity = createSelector(
+  [(state: RootState) => state.chat.searchStatus, (state: RootState) => state.chat.interpretation.status,
+    selectChatUnseenOutcome, (state: RootState) => state.chat.lastSearch?.resultCount ?? null],
+  (searchStatus, interpretationStatus, unseenOutcome, resultCount): ChatActivity | null => {
+    if (searchStatus === 'pending') return { kind: 'searching' }
+    if (interpretationStatus === 'pending') return { kind: 'interpreting' }
+    if (unseenOutcome !== null) return { kind: 'unseen', outcome: unseenOutcome, resultCount: unseenOutcome === 'search-succeeded' ? resultCount : null }
+    return null
+  },
+)
+/** 사이드바 진행 패널에 보여 줄 현재 대화 제목입니다. 대화 기록의 제목과 같은 첫 질문 본문입니다. */
+export const selectChatConversationTitle = createSelector(
+  [selectChatMessages],
+  (messages): string | null => messages.find((message) => message.role === 'user')?.text ?? null,
+)
 export const selectConversationCount = createSelector(
   [selectChatMessages],
   (messages) => messages.filter((message) => message.role === 'user').length,
@@ -358,6 +399,7 @@ function createInitialState(welcomeMessage = createWelcomeMessage()): ChatState 
     interpretation: { status: 'idle' },
     pendingClarification: null,
     confirmedSearch: null,
+    unseenOutcome: null,
   }
 }
 

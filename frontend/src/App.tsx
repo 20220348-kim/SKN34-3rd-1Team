@@ -2,7 +2,9 @@ import { useEffect } from 'react'
 
 import { useAppDispatch, useAppSelector } from './app/hooks'
 import { conversationReset } from './presentation/features/chat/state/chatSlice'
+import { useChatRequestLifecycle } from './presentation/features/chat/hooks/useChatRequestLifecycle'
 import { useRestoreSupportProgramSearch } from './presentation/features/chat/hooks/useRestoreSupportProgramSearch'
+import { ChatActivityToast } from './presentation/shared/chat-activity/ChatActivityToast'
 import { selectAuthStatus } from './presentation/shared/auth/state/authSlice'
 import { CombinationReviewListPage, CombinationReviewEditorPage, CombinationReviewRunResultPage } from './presentation/features/combination-review/view/CombinationReviewPages'
 import { ApplicationPreparationEditorPage, ApplicationPreparationListPage } from './presentation/features/application-preparation/view/ApplicationPreparationPages'
@@ -68,9 +70,13 @@ function PublicLayout() {
 function App() {
   useRestoreAuthSession()
   useRestoreSupportProgramSearch()
+  useChatRequestLifecycle()
   useReviewSessionIsolation()
   const dispatchToStore = useAppDispatch()
   const authStatus = useAppSelector(selectAuthStatus)
+  // 검색·해석이 진행 중이거나 아직 보지 않은 결과가 있으면 다른 메뉴로 나가도 비로그인 대화를 지키고, 결과를 본 뒤에야 비웁니다.
+  const isChatActive = useAppSelector((state) => state.chat.searchStatus === 'pending'
+    || state.chat.interpretation.status === 'pending' || state.chat.unseenOutcome !== null)
   const { pathname } = useLocation()
 
   useEffect(() => {
@@ -79,13 +85,14 @@ function App() {
     const inSearchFlow = path === publicPaths.landing
       || path === publicPaths.supportProgramDetail
       || path === publicPaths.supportProgramQuestion
-    if (authStatus === 'anonymous' && !inSearchFlow) {
+    if (authStatus === 'anonymous' && !inSearchFlow && !isChatActive) {
       dispatchToStore(conversationReset())
     }
-  }, [authStatus, dispatchToStore, pathname])
+  }, [authStatus, dispatchToStore, isChatActive, pathname])
 
   return (
     <>
+    <ChatActivityToast />
     <Routes>
       <Route element={<PublicLayout />}>
         <Route path={publicPaths.reportEmail} element={<DailyReportEmailPage />} />

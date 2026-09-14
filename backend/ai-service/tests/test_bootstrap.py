@@ -1,5 +1,6 @@
 import json
 from dataclasses import replace
+from types import SimpleNamespace
 
 import pytest
 from agents.testing import ScriptedModel, assistant_message
@@ -35,6 +36,12 @@ OPENAI_SETTINGS = Settings(
 class FakeOpenAIClient:
     def __init__(self) -> None:
         self.closed = False
+        self.chat = SimpleNamespace(completions=object())
+        self.options = []
+
+    def with_options(self, **kwargs):
+        self.options.append(kwargs)
+        return SimpleNamespace(chat=self.chat, **kwargs)
 
     async def close(self) -> None:
         self.closed = True
@@ -134,8 +141,7 @@ async def test_builds_and_wires_agent_in_the_composition_root(
     assert evidence_agent._agent.model_settings.timeout == 1.25
     assert evidence_agent._run_timeout_seconds == 1.75
     combination_agent = container.combination_review_service.agent
-    assert combination_agent._agent.model_settings.timeout == 60
-    assert combination_agent._agent.model_settings.extra_args == {"timeout": 60}
+    assert client.options == [{"timeout": 60}]
     assert combination_agent._run_timeout_seconds == 70
     assert captured_client_arguments == {
         "api_key": "private-key",
