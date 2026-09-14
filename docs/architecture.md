@@ -595,6 +595,15 @@ V4 적용 전부터 있던 공고는 과거 공개 세대를 복원하지 않습
 K-Startup은 별도 구체 Client·Facade·SyncService·Scheduler를 사용하고 기존 색인 Service·Repository를 공유합니다.
 제공처별 Facade는 명시적 Qualifier로 구분하며 제공처 Registry나 새 production 의존성은 추가하지 않습니다.
 
+초기 데이터만 한 번 반영할 때는 별도 `catalog-sync-once` CLI 프로필을 사용합니다. 흐름은
+`CLI → SupportProgramCatalogSyncOnceService → 제공처 Facade/Client 전체 수집 → 비용 상한 검사 →
+SupportProgramIndexSyncService(Elasticsearch·AI Service/OpenAI/Qdrant) → Repository/MyBatis/MySQL 공개`입니다.
+합산 비용 검사 전에는 DB 쓰기와 유료 호출을 하지 않으며, 검사한 동일 스냅샷을 사용합니다.
+전용 프로필은 Bean 생성 전에 자동 수집·복구·큐/메일 작업과 Flyway를 비활성화하고 HTTP 서버 없이 종료합니다.
+적용 직전 호스트에 영속화한 배타적 receipt로 중복 실행을 막습니다. 실패한 시도도 자동 재시도하지 않습니다.
+일반 API 서버 설정/공개 HTTP 계약은 바뀌지 않습니다. 모델·예산 전제와 실행법은
+[Core API 일회성 수집](../backend/core-api/README.md#예산을-지정한-일회성-수집)을 참고하세요.
+
 ## K-Startup 수집 범위와 추가 분류
 
 `KStartupSupportProgramCatalogSyncScheduler → KStartupSupportProgramCatalogSyncService →

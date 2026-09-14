@@ -40,11 +40,56 @@ class ProductionConfigTest(unittest.TestCase):
         env = self.config["services"]["core-api"]["environment"]
         for key in ["BIZINFO_SYNC_ENABLED", "KSTARTUP_SYNC_ENABLED", "MSIT_SYNC_ENABLED",
                     "CNTRADE_NOTICE_SYNC_ENABLED", "SUPPORT_PROGRAM_INDEX_ENABLED", "DAILY_REPORT_ENABLED",
-                    "DAILY_REPORT_MAIL_ENABLED", "ACCOUNT_PASSWORD_RESET_MAIL_ENABLED",
+                    "DAILY_REPORT_MAIL_ENABLED", "ACCOUNT_PASSWORD_RESET_MAIL_ENABLED", "ACCOUNT_EMAIL_VERIFICATION_MAIL_ENABLED",
                     "DAILY_REPORT_QUEUE_ENABLED", "DAILY_REPORT_DELIVERY_QUEUE_ENABLED",
                     "COMBINATION_REVIEW_QUEUE_ENABLED", "APPLICATION_FORM_DISCOVERY_QUEUE_ENABLED",
                     "ACCOUNT_OAUTH_UNLINK_QUEUE_ENABLED", "ACCOUNT_OAUTH_UNLINK_ENABLED"]:
             self.assertEqual(env[key], "false", key)
+
+    def mail_config(self):
+        environment = {**self.env,
+                       "ACCOUNT_EMAIL_VERIFICATION_MAIL_ENABLED": "true",
+                       "ACCOUNT_EMAIL_VERIFICATION_FROM": "sender@example.com",
+                       "ACCOUNT_PASSWORD_RESET_MAIL_ENABLED": "true",
+                       "ACCOUNT_PASSWORD_RESET_FROM": "sender@example.com",
+                       "SMTP_HOST": "smtp.example.com", "SMTP_PORT": "587",
+                       "SMTP_USERNAME": "sender@example.com", "SMTP_PASSWORD": "dummy-$# password",
+                       "SMTP_AUTH": "true", "SMTP_STARTTLS_ENABLED": "true", "SMTP_SSL_ENABLED": "false"}
+        result = subprocess.run(["docker", "compose", "--env-file", os.devnull, "-f", str(checker.COMPOSE),
+                                 "config", "--format", "json"], env=environment, capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0)
+        config = json.loads(result.stdout)
+        core = config["services"]["core-api"]["environment"]
+        for key in environment.keys() - self.env.keys():
+            # Compose config는 다시 파싱할 수 있도록 리터럴 $를 $$로 직렬화한다.
+            self.assertEqual(core[key], environment[key].replace("$", "$$"), key)
+        return config
+
+    def test_account_mail_configuration_is_forwarded(self):
+        config = self.mail_config()
+        self.assertEqual(checker.validate(config), [])
+        core = config["services"]["core-api"]["environment"]
+        self.assertEqual(core["ACCOUNT_PASSWORD_RESET_FRONTEND_BASE_URL"], self.env["GOVBIZ_FRONTEND_ORIGIN"])
+        self.assertEqual(core["ACCOUNT_DEV_LOGIN_ENABLED"], "false")
+        self.assertEqual(core["ACCOUNT_COOKIE_SECURE"], "true")
+        self.assertEqual(core["DAILY_REPORT_MAIL_ENABLED"], "false")
+
+    def test_incomplete_or_unencrypted_mail_is_rejected(self):
+        base = self.mail_config()
+        for key, value in [("SMTP_HOST", ""), ("SMTP_USERNAME", ""), ("SMTP_PASSWORD", " "),
+                           ("SMTP_PORT", "0"), ("SMTP_PORT", "65536"), ("SMTP_PORT", "smtp"),
+                           ("SMTP_AUTH", "false"), ("SMTP_STARTTLS_ENABLED", "false"),
+                           ("SMTP_SSL_ENABLED", "true"), ("ACCOUNT_EMAIL_VERIFICATION_FROM", ""),
+                           ("ACCOUNT_PASSWORD_RESET_FROM", "a@b.com,c@d.com"),
+                           ("ACCOUNT_EMAIL_VERIFICATION_MAIL_ENABLED", "yes")]:
+            with self.subTest(key=key, value=value):
+                config = copy.deepcopy(base)
+                config["services"]["core-api"]["environment"][key] = value
+                self.assertTrue(checker.validate(config))
+        ssl_config = copy.deepcopy(base)
+        ssl_config["services"]["core-api"]["environment"].update(
+            SMTP_PORT="465", SMTP_STARTTLS_ENABLED="false", SMTP_SSL_ENABLED="true")
+        self.assertEqual(checker.validate(ssl_config), [])
 
     def test_separate_named_volumes_and_no_dev_mounts(self):
         self.assertEqual(self.config["name"], "govbiz-prod")
