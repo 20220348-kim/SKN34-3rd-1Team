@@ -45,7 +45,7 @@ function ReviewList({ account }: { account: string }) {
   const header = <WorkspacePageHeader title={listTitle} actions={<Link className={workspacePageStyles.primaryButton} to={appPaths.combinationReviewNew}>새 검토</Link>} />
   if (vm.error?.status === 401) return <>{header}<main className={workspacePageStyles.content}><ReviewError error={vm.error} /></main></>
   return <>{header}<main className={workspacePageStyles.content}>
-    <p className={s.muted}>두 사업의 참여 사실과 공식 원문을 비교합니다. 저장한 검토와 실행 이력은 본인만 조회할 수 있습니다.</p>
+    <p className={s.muted}>저장한 검토와 실행 이력은 본인만 조회할 수 있습니다.</p>
     <ReviewError error={vm.error} />
     {vm.busy.length > 0 && <p role="status">검토 목록을 불러오는 중입니다.</p>}
     {vm.page?.items.length === 0 && <div className={s.card}><h2 className="font-semibold">아직 저장한 검토가 없습니다.</h2><p className={s.muted}>새 검토에서 공고 2개와 참여 상태를 입력하면 분석을 시작할 수 있습니다.</p></div>}
@@ -189,18 +189,12 @@ function ReviewEditor({ id, account }: { id: number | null; account: string }) {
       {step === 'participation' && <>
         <form className="space-y-4" onSubmit={(event) => { event.preventDefault(); vm.saveAndStart(() => changeStep('analysis')) }}>
           <fieldset disabled={inputBusy} className="space-y-4">
-            <div className={s.card}><h2 className="font-bold">공고별 현재 상태</h2><p className={s.muted}>신청·선정·확약·협약·수행·교부는 서로 독립된 사실입니다. 모르는 항목은 ‘모름’을 유지하세요.</p></div>
             {vm.draft.programs.map((program, index) => <ReviewParticipation key={reviewProgramKey(program)} program={program} index={index} name={vm.names[reviewProgramKey(program)]} onChange={(participation) => vm.setDraft({ ...vm.draft, programs: vm.draft.programs.map((p, i) => i === index ? { ...p, participation } : p) })} />)}
             <div className={s.card}><label className="block text-sm font-semibold">분석에 참고할 추가 설명 <span className="font-normal text-slate-500">(선택)</span><textarea className={s.input} rows={4} maxLength={8000} value={vm.facts} onChange={(e) => vm.setFacts(e.target.value)} /></label><p className={s.muted}>{vm.facts.length}/8000 · 이 실행에만 저장됩니다.</p></div>
             {unsupported && <p className={s.warning}>선택한 공고는 현재 자동 분석을 지원하지 않습니다. 기업마당의 숫자형 PBLN_ 공고와 K-Startup·과기정통부·충남 수출지원의 숫자형 공고를 지원하며, 세부사업은 지정하지 않아야 합니다.</p>}
             <div className="flex flex-wrap justify-between gap-3"><button className={s.button} type="button" onClick={() => changeStep('selection')}>이전: 제목·공고 선택</button><button className={s.primary} type="submit" disabled={unsupported}>{inputBusy ? '입력 저장 중…' : '입력 저장 후 분석 시작'}</button></div>
           </fieldset>
         </form>
-        {id && <>
-        <section className={s.card}><h2 className="font-bold">최신 저장 입력 확인</h2><p className={s.muted}>충돌이 발생해도 작성 중인 입력은 유지됩니다. 조회만으로 폼을 덮어쓰지 않습니다.</p><button className={`${s.button} mt-3`} disabled={inputBusy || vm.busy.includes('latest')} onClick={vm.reloadLatest}>최신 입력 조회</button>
-          {vm.latest && <div className="mt-4 space-y-3"><p className="font-semibold">최신 버전 {vm.latest.inputRevision} · {vm.latest.title}</p>{vm.latest.programs.map((p, i) => <ReviewParticipation key={i} program={p} index={i} name={vm.names[reviewProgramKey(p)]} />)}<button className={s.button} onClick={vm.adoptLatest} disabled={inputBusy}>내 편집 내용을 버리고 최신 입력 사용</button></div>}
-        </section>
-        </>}
       </>}
       {step === 'analysis' && id && <>
         <button className={s.button} type="button" onClick={() => changeStep('participation')}>← 참여 상태 수정</button>

@@ -253,6 +253,8 @@ describe('review screens and execution safety', () => {
   it('mounts with GET only and renders empty list', async () => {
     mount('/app/combination-reviews')
     await screen.findByText('아직 저장한 검토가 없습니다.')
+    expect(screen.queryByText(/두 사업의 참여 사실과 공식 원문을 비교합니다/)).toBeNull()
+    expect(screen.getByText('저장한 검토와 실행 이력은 본인만 조회할 수 있습니다.')).toBeTruthy()
     expect(repository.create).not.toHaveBeenCalled(); expect(repository.start).not.toHaveBeenCalled()
   })
   it('appends cursor pages', async () => {
@@ -275,23 +277,19 @@ describe('review screens and execution safety', () => {
     await screen.findByText('아직 저장한 검토가 없습니다.')
     expect(repository.delete).toHaveBeenCalledWith(reviewFixture.id, expect.any(AbortSignal))
   })
-  it('preserves form on 409 and only adopts latest after explicit selection', async () => {
+  it('preserves form on 409 without rendering latest saved input controls', async () => {
     repository.replace.mockRejectedValue(new CombinationReviewError(409, 'COMBINATION_REVIEW_REVISION_CONFLICT'))
     mount('/app/combination-reviews/12'); await screen.findByDisplayValue(reviewFixture.title)
     fireEvent.change(screen.getByLabelText('검토 제목'), { target: { value: '내 편집 내용' } })
     fireEvent.click(screen.getByText('다음: 참여 상태 설정'))
+    expect(screen.queryByText('공고별 현재 상태')).toBeNull()
     fireEvent.click(screen.getByText('입력 저장 후 분석 시작'))
     await screen.findByRole('alert')
     expect(repository.replace.mock.calls[0][1]).toBe(2)
-    repository.get.mockResolvedValue({ ...reviewFixture, inputRevision: 3, title: '서버 최신 제목' })
-    fireEvent.click(screen.getByText('최신 입력 조회'))
-    await screen.findByText('최신 버전 3 · 서버 최신 제목')
+    expect(screen.queryByText('최신 저장 입력 확인')).toBeNull()
+    expect(screen.queryByText('최신 입력 조회')).toBeNull()
     fireEvent.click(screen.getByText('이전: 제목·공고 선택'))
     expect(screen.getByDisplayValue('내 편집 내용')).toBeTruthy()
-    fireEvent.click(screen.getByText('다음: 참여 상태 설정'))
-    fireEvent.click(screen.getByText('내 편집 내용을 버리고 최신 입력 사용'))
-    fireEvent.click(screen.getByText('이전: 제목·공고 선택'))
-    expect(screen.getByDisplayValue('서버 최신 제목')).toBeTruthy()
     expect(repository.replace).toHaveBeenCalledTimes(1)
   })
   it('retains one logical request after response loss and across remount, with no automatic POST', async () => {

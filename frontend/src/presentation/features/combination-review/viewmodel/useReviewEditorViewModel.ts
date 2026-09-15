@@ -25,7 +25,6 @@ export function useReviewEditorViewModel(id: number | null, account: string, aut
   const savedProgramChoices = useSavedSupportProgramChoices(loadSavedPrograms)
   const { perform, ...scope } = useReviewScope()
   const [review, setReview] = useState<CombinationReview | null>(null)
-  const [latest, setLatest] = useState<CombinationReview | null>(null)
   const [draft, setDraft] = useState<ReviewDraft>({ title: '', programs: [] })
   const [catalog, setCatalog] = useState<SupportProgramCatalog | null>(null)
   const [keyword, setKeyword] = useState('')
@@ -71,8 +70,6 @@ export function useReviewEditorViewModel(id: number | null, account: string, aut
     if (draft.programs.length >= 2) return
     setDraft({ ...draft, programs: [...draft.programs, selected] }); setNames({ ...names, [reviewProgramKey(selected)]: `${program.title} · ${program.organization}` })
   }
-  const reloadLatest = () => { if (id) void perform('latest', (signal) => useCase.get(id, signal), setLatest) }
-  const adoptLatest = () => { if (latest) { setReview(latest); setDraft({ title: latest.title, programs: latest.programs }); setLatest(null); setNotice('최신 저장 입력으로 바꿨습니다.') } }
   const history = useCallback((before?: number) => {
     if (id) void perform('history', (signal) => useCase.runs(id, before, signal), (value) => setRuns((old) => ({ ...value, items: before ? [...(old?.items ?? []), ...value.items] : value.items })))
   }, [id, perform, useCase])
@@ -113,7 +110,7 @@ export function useReviewEditorViewModel(id: number | null, account: string, aut
   const rejectedRevision = error?.status === 409 && error.code === 'COMBINATION_REVIEW_REVISION_CONFLICT' && !error.runId
   const clearRejectedRequest = () => {
     if (!id || !pending || !rejectedRevision) return
-    try { journal.remove(account, id); setPending(null); setNotice('버전 충돌로 생성되지 않은 요청을 정리했습니다. 최신 입력을 확인한 뒤 직접 새 분석을 시작하세요.') }
+    try { journal.remove(account, id); setPending(null); setNotice('버전 충돌로 생성되지 않은 요청을 정리했습니다. 화면을 새로고침한 뒤 직접 새 분석을 시작하세요.') }
     catch { setError({ message: '보관한 요청을 지우지 못했습니다. 브라우저 저장소 설정을 확인해 주세요.' }) }
   }
   const start = useCallback((retry: boolean) => {
@@ -159,7 +156,7 @@ export function useReviewEditorViewModel(id: number | null, account: string, aut
       if (unchanged) { launch(review); return }
       const saved = { ...review, ...input, inputRevision: review.inputRevision + 1 }
       void perform('save', (signal) => useCase.replace(id, review.inputRevision, input, signal), () => {
-        setReview(saved); setDraft(input); setLatest(null); setNotice('입력을 저장하고 분석을 시작합니다.'); launch(saved)
+        setReview(saved); setDraft(input); setNotice('입력을 저장하고 분석을 시작합니다.'); launch(saved)
       })
       return
     }
@@ -185,6 +182,6 @@ export function useReviewEditorViewModel(id: number | null, account: string, aut
       anchor.click(); setTimeout(() => URL.revokeObjectURL(url), 1000)
     })
   }
-  return { ...scope, review, latest, draft, setDraft, catalog, savedProgramChoices, keyword, setKeyword, appliedKeyword, names, runs, run, facts, setFacts,
-    pending, notice, dirty, pollingPaused, rejectedRevision, clearRejectedRequest, load, search, toggle, saveAndStart, reloadLatest, adoptLatest, history, selectRun, start, download }
+  return { ...scope, review, draft, setDraft, catalog, savedProgramChoices, keyword, setKeyword, appliedKeyword, names, runs, run, facts, setFacts,
+    pending, notice, dirty, pollingPaused, rejectedRevision, clearRejectedRequest, load, search, toggle, saveAndStart, history, selectRun, start, download }
 }
