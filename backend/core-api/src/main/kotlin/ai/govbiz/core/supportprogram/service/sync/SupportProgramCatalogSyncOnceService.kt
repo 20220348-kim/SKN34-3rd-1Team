@@ -25,6 +25,7 @@ class SupportProgramCatalogSyncOnceService(
     private val cnTrade: SupportProgramCatalogFacade,
     private val repository: SupportProgramRepository,
     private val indexService: SupportProgramIndexSyncService,
+    private val publicationService: SupportProgramCatalogPublicationService,
 ) {
     fun run(properties: SupportProgramCatalogSyncOnceProperties) {
         // 실패/중단한 작업도 다시 청구할 수 있으므로 기존 기록을 삭제하거나 재사용하지 않습니다.
@@ -65,7 +66,7 @@ class SupportProgramCatalogSyncOnceService(
                 val generation = repository.startSyncGeneration(source)
                 try {
                     check(indexService.indexSnapshot(snapshot) == snapshot.size) { "index count mismatch" }
-                    check(repository.publishSnapshotIfCurrent(source, snapshot, generation)) { "a newer sync superseded this run" }
+                    check(publicationService.publish(source, snapshot, generation)) { "a newer sync superseded this run" }
                     append(receipt, "PUBLISHED source=$source count=${snapshot.size} generation=$generation\n")
                     logger.info("CATALOG_SYNC_ONCE_PUBLISHED source={} count={}", source, snapshot.size)
                 } catch (exception: RuntimeException) {

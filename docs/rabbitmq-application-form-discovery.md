@@ -160,3 +160,11 @@ Core 테스트 컨텍스트 캐시를 제한할 때만 `JAVA_TOOL_OPTIONS=-Dspri
   기존 네 제공처 스텁 동기화·문항 입력 저장·Elasticsearch/Qdrant/Redis/AI 장애 복구도 통과했다.
   실제 OpenAI·공식 공고 API·SMTP는 사용하지 않았다. 검증 종료 시 해당 프로젝트의 임시 컨테이너·볼륨만 정리한다.
 - Frontend 빌드의 500KB 초과 번들 경고는 남아 있으며 이번 작업에서 번들 분할은 변경하지 않았다.
+
+## 공고별 신청 양식 사전분석
+
+신규·변경 공고의 상태와 시스템 분석 Outbox는 `application_form_availability`에 저장합니다. 공식 제공처 전체 동기화 성공 transaction에서 등록하고, 별도 Worker가 첨부 수집·파싱·AI 분석을 수행합니다. 성공 snapshot 저장과 AVAILABLE 활성화는 하나의 짧은 transaction입니다.
+
+현재 사용자 작성 화면은 계정별 Discovery Job을 실행하지 않고 공고별 availability API에서 활성 snapshot을 읽습니다. 기존 계정별 discovery job API는 별도 책임으로 남아 있습니다. 새 작성은 활성 formVersionId만 허용하고, 기존 작성의 과거 버전과 최종 생성의 공식 원본 해시 대조는 유지합니다.
+
+Discovery 전용 timeout은 model 210초 < AI run 240초 < Core read 270초 < Worker lease 1,800초입니다. 다른 신청 준비 기능의 전역 timeout은 변경하지 않습니다. [상태·재시도·백필 실행 방법](application-form-availability.md)을 참고하세요.

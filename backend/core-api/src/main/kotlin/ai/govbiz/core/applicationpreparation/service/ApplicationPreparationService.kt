@@ -34,6 +34,7 @@ class ApplicationPreparationService(
 ) {
     fun supportedForms(account: Account) = forms.listSupported().also { require(account.id > 0) }
 
+    @org.springframework.transaction.annotation.Transactional
     fun create(account: Account, draft: NewApplicationPreparation): ApplicationPreparationDetailResult {
         val form = forms.requireSupported(
             draft.sourceCode,

@@ -10,6 +10,11 @@ export class ApplicationPreparationUseCase {
     this.repository = repository
   }
 
+  availability(sourceCode: string, value: string, signal?: AbortSignal) {
+    const id = value.trim().startsWith('https://') ? extractBizInfoProgramId(value.trim()) : value.trim()
+    if (!id) throw new Error('올바른 공고 ID를 입력해 주세요.')
+    return this.repository.availability(sourceCode || 'BIZINFO', id, signal)
+  }
   forms(signal?: AbortSignal) { return this.repository.forms(signal) }
   documents(id: number, signal?: AbortSignal) { return this.repository.documents(id, signal) }
   generateDocuments(id: number, revision: number, signal?: AbortSignal) { return this.repository.generateDocuments(id, revision, signal) }

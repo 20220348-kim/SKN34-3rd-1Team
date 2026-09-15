@@ -208,7 +208,7 @@ class ApplicationFormDiscoveryContractIntegrationTest {
         val aiContractFailure = AtomicReference<String?>()
         val aiServer: HttpServer = HttpServer.create(InetSocketAddress(InetAddress.getLoopbackAddress(), 0), 0).apply {
             createContext("/internal/v1/application-preparations/discovery/configuration") { exchange ->
-                respond(exchange, """{"contractVersion":"application-form-discovery-v1","model":"test-model","promptVersion":"$PROMPT_VERSION"}""")
+                respond(exchange, """{"modelTimeoutSeconds":210,"runTimeoutSeconds":240,"contractVersion":"application-form-discovery-v1","model":"test-model","promptVersion":"$PROMPT_VERSION"}""")
             }
             createContext("/internal/v1/application-preparations/discovery") { exchange ->
                 aiDiscoveryCalls.incrementAndGet()

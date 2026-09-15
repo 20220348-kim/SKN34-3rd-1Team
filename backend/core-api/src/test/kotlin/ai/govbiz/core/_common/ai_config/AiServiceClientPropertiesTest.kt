@@ -204,6 +204,17 @@ class AiServiceClientPropertiesTest {
         )
     }
 
+    @Test fun discoveryReadTimeoutMustFitInsideWorkerLease() {
+        assertThrows(IllegalArgumentException::class.java) {
+            AiServiceClientProperties(URI.create("http://ai.test"), CONNECT_TIMEOUT, READ_TIMEOUT,
+                applicationFormDiscoveryReadTimeout=Duration.ofSeconds(300), applicationFormWorkerLease=Duration.ofSeconds(300))
+        }
+        val properties = AiServiceClientProperties(URI.create("http://ai.test"), CONNECT_TIMEOUT, READ_TIMEOUT)
+        assertEquals(Duration.ofSeconds(270), properties.applicationFormDiscoveryReadTimeout)
+        assertEquals(Duration.ofSeconds(1800), properties.applicationFormWorkerLease)
+        assertEquals(READ_TIMEOUT, properties.readTimeout)
+    }
+
     private fun assertConstructorRejectsNull(
         baseUrl: URI?,
         connectTimeout: Duration?,
@@ -218,11 +229,13 @@ class AiServiceClientPropertiesTest {
             Duration::class.java,
             Duration::class.java,
             Duration::class.java,
+            Duration::class.java,
+            Duration::class.java,
         )
         val exception = assertThrows(InvocationTargetException::class.java) {
             constructor.newInstance(
                 baseUrl, connectTimeout, readTimeout, Duration.ofSeconds(30), rankingReadTimeout,
-                combinationReviewReadTimeout,
+                combinationReviewReadTimeout, Duration.ofSeconds(270), Duration.ofSeconds(1800),
             )
         }
         assertInstanceOf(

@@ -112,7 +112,7 @@ class CnTradeNoticeSupportProgramCatalogSyncServiceTest {
         assertEquals(listOf(recordingFailure), thrown.suppressed.toList())
     }
 
-    private fun service() = CnTradeNoticeSupportProgramCatalogSyncService(facade, repository, index)
+    private fun service() = CnTradeNoticeSupportProgramCatalogSyncService(facade, repository, index, ai.govbiz.core.supportprogram.service.sync.SupportProgramCatalogPublicationService(repository, org.mockito.Mockito.mock(ai.govbiz.core.applicationpreparation.repository.ApplicationFormAvailabilityRepository::class.java)))
 
     private fun program(id: String) = CatalogSupportProgram(
         program = SupportProgram(

@@ -781,3 +781,12 @@ HWP/HWPX 위치 응답이 서로 다른 답변을 같은 텍스트 칸에 배치
 공유 계약 fixture와 ScriptedModel 테스트는 실제 양식의 위치 선택 품질을 보장하지 않습니다.
 문서 생성 실패 로그에는 모델 호출/응답 검증 단계, 예외 종류, 고정 검증 사유, 입력 개수와 소요 시간만 기록합니다. 답변·문서 본문·외부 예외 메시지는 기록하지 않습니다.
 기입 대상의 `kind`는 `TEXT` 또는 `CHECKBOX`이며, `groupId`는 선택 그룹입니다. 정확히 일치하는 유일한 체크박스 값은 Core에서 직접 처리하므로 AI 요청에는 남은 답변만 포함될 수 있습니다. 서로 다른 답변을 같은 HWP/HWPX 문단에 넣는 응답은 거절합니다.
+
+## 신청 양식 발견 전용 timeout
+
+신청 양식 발견만 `APPLICATION_FORM_DISCOVERY_MODEL_TIMEOUT_SECONDS`(기본 210초),
+`APPLICATION_FORM_DISCOVERY_RUN_TIMEOUT_SECONDS`(기본 240초)를 사용합니다. model < run을 기동 시 검증하며,
+실제 OpenAI 요청에 전용 timeout을 전달합니다. 입력 해석·초안 작성·최종 문서 배치의 전역 timeout은 유지합니다.
+Discovery configuration 응답은 두 값을 Core에 알려 Core read timeout(기본 270초)보다 작은지 검증하게 합니다.
+실행 로그에는 공고 식별자, durationMs, AI_MODEL / AI_RUN timeoutStage를 기록하고 504 응답에도 단계를 제공합니다.
+[운영값의 근거와 상태·재시도 정책](../../docs/application-form-availability.md)을 참고하세요.

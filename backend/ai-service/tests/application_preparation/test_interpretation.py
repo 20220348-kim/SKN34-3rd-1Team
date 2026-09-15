@@ -153,7 +153,7 @@ def test_discovery_normalizes_display_text_and_whitespace_only_quote_differences
     request_data = discovery_request_data()
     output = discovery_selection_data()
     section = output["forms"][0]["sections"][0]
-    agent = SimpleNamespace(discover=AsyncMock(return_value=FormDiscoverySelection.model_validate(output)))
+    agent = SimpleNamespace(discovery_model_timeout_seconds=210.0, discovery_run_timeout_seconds=240.0, discover=AsyncMock(return_value=FormDiscoverySelection.model_validate(output)))
 
     result = asyncio.run(ApplicationPreparationService(agent, "test-model").discover(
         DiscoverFormsRequest.model_validate(request_data),
@@ -170,7 +170,7 @@ def test_discovery_normalizes_display_text_and_whitespace_only_quote_differences
 def test_discovery_rejects_non_layout_control_or_format_characters_with_a_safe_path():
     output = discovery_selection_data()
     output["forms"][0]["sections"][0]["fields"][0]["guidance"] = "사업\u200b내용"
-    agent = SimpleNamespace(discover=AsyncMock(return_value=FormDiscoverySelection.model_validate(output)))
+    agent = SimpleNamespace(discovery_model_timeout_seconds=210.0, discovery_run_timeout_seconds=240.0, discover=AsyncMock(return_value=FormDiscoverySelection.model_validate(output)))
 
     with pytest.raises(ApplicationPreparationError, match="APPLICATION_PREPARATION_FAILED") as failure:
         asyncio.run(ApplicationPreparationService(agent, "test-model").discover(
@@ -189,7 +189,7 @@ def test_discovery_merges_repeated_document_candidates_and_makes_generated_keys_
     duplicate = deepcopy(output["forms"][0])
     duplicate["sections"][0]["title"] = "두 번째 사업 계획"
     output["forms"].append(duplicate)
-    agent = SimpleNamespace(discover=AsyncMock(return_value=FormDiscoverySelection.model_validate(output)))
+    agent = SimpleNamespace(discovery_model_timeout_seconds=210.0, discovery_run_timeout_seconds=240.0, discover=AsyncMock(return_value=FormDiscoverySelection.model_validate(output)))
 
     result = asyncio.run(ApplicationPreparationService(agent, "test-model").discover(
         DiscoverFormsRequest.model_validate(discovery_request_data()),
@@ -203,7 +203,7 @@ def test_discovery_merges_repeated_document_candidates_and_makes_generated_keys_
 def test_discovery_recovers_a_verbatim_quote_from_the_grounded_field_label():
     output = discovery_selection_data()
     output["forms"][0]["sections"][0]["fields"][0]["evidenceQuote"] = "문서에 없는 항목"
-    agent = SimpleNamespace(discover=AsyncMock(return_value=FormDiscoverySelection.model_validate(output)))
+    agent = SimpleNamespace(discovery_model_timeout_seconds=210.0, discovery_run_timeout_seconds=240.0, discover=AsyncMock(return_value=FormDiscoverySelection.model_validate(output)))
 
     result = asyncio.run(ApplicationPreparationService(agent, "test-model").discover(
         DiscoverFormsRequest.model_validate(discovery_request_data()),
@@ -219,7 +219,7 @@ def test_discovery_recovers_the_original_punctuation_in_a_field_quote():
     field = output["forms"][0]["sections"][0]["fields"][0]
     block["text"] += "\n사업명(국문)을 작성해 주세요."
     field.update(label="사업명(국문)", evidenceQuote="사업명【국문】")
-    agent = SimpleNamespace(discover=AsyncMock(return_value=FormDiscoverySelection.model_validate(output)))
+    agent = SimpleNamespace(discovery_model_timeout_seconds=210.0, discovery_run_timeout_seconds=240.0, discover=AsyncMock(return_value=FormDiscoverySelection.model_validate(output)))
 
     result = asyncio.run(ApplicationPreparationService(agent, "test-model").discover(
         DiscoverFormsRequest.model_validate(request),
@@ -232,7 +232,7 @@ def test_discovery_still_rejects_a_field_without_any_source_anchor():
     output = discovery_selection_data()
     field = output["forms"][0]["sections"][0]["fields"][0]
     field.update(label="원문에 없는 문항", evidenceQuote="원문에 없는 근거")
-    agent = SimpleNamespace(discover=AsyncMock(return_value=FormDiscoverySelection.model_validate(output)))
+    agent = SimpleNamespace(discovery_model_timeout_seconds=210.0, discovery_run_timeout_seconds=240.0, discover=AsyncMock(return_value=FormDiscoverySelection.model_validate(output)))
     with pytest.raises(ApplicationPreparationError, match="APPLICATION_PREPARATION_FAILED"):
         asyncio.run(ApplicationPreparationService(agent, "test-model").discover(
             DiscoverFormsRequest.model_validate(discovery_request_data()),
@@ -281,7 +281,7 @@ def test_fastapi_contract_hides_private_failures():
         assert client.get("/internal/v1/application-preparations/discovery/configuration").json() == service.discovery_configuration()
         response = client.post("/internal/v1/application-preparations/interpret", json=request_data())
         assert response.status_code == 200
-        service.agent = SimpleNamespace(discover=AsyncMock(return_value=FormDiscoverySelection.model_validate(discovery_selection_data())))
+        service.agent = SimpleNamespace(discovery_model_timeout_seconds=210.0, discovery_run_timeout_seconds=240.0, discover=AsyncMock(return_value=FormDiscoverySelection.model_validate(discovery_selection_data())))
         discovered = client.post("/internal/v1/application-preparations/discovery", json=discovery_request_data())
         assert discovered.status_code == 200
         assert discovered.json()["forms"][0]["documentIndex"] == 0
@@ -303,7 +303,7 @@ def test_discovery_failure_log_keeps_only_safe_path_and_counts(caplog):
         llm_run_timeout_seconds=3,
     ))
     app.state.container.application_preparation_service = ApplicationPreparationService(
-        SimpleNamespace(discover=AsyncMock(return_value=FormDiscoverySelection.model_validate(output))),
+        SimpleNamespace(discovery_model_timeout_seconds=210.0, discovery_run_timeout_seconds=240.0, discover=AsyncMock(return_value=FormDiscoverySelection.model_validate(output))),
         "test-model",
     )
     caplog.set_level("WARNING", logger="app.application_preparation.router")
@@ -327,7 +327,7 @@ def test_discovery_failure_log_keeps_only_safe_path_and_counts(caplog):
 def test_discovery_execution_errors_are_not_reported_as_confirmed_validation_failures(error, expected_status):
     app = create_app(settings=Settings(openai_api_key="unused", openai_model="test-model", llm_model_timeout_seconds=2, llm_run_timeout_seconds=3))
     app.state.container.application_preparation_service = ApplicationPreparationService(
-        SimpleNamespace(discover=AsyncMock(side_effect=error)), "test-model",
+        SimpleNamespace(discovery_model_timeout_seconds=210.0, discovery_run_timeout_seconds=240.0, discover=AsyncMock(side_effect=error)), "test-model",
     )
     with TestClient(app) as client:
         response = client.post("/internal/v1/application-preparations/discovery", json=discovery_request_data())
@@ -341,7 +341,7 @@ def test_discovery_evidence_mismatch_returns_confirmed_validation_failure():
     field.update(label="원문에 없는 문항", evidenceQuote="원문에 없는 근거")
     app = create_app(settings=Settings(openai_api_key="unused", openai_model="test-model", llm_model_timeout_seconds=2, llm_run_timeout_seconds=3))
     app.state.container.application_preparation_service = ApplicationPreparationService(
-        SimpleNamespace(discover=AsyncMock(return_value=FormDiscoverySelection.model_validate(output))), "test-model",
+        SimpleNamespace(discovery_model_timeout_seconds=210.0, discovery_run_timeout_seconds=240.0, discover=AsyncMock(return_value=FormDiscoverySelection.model_validate(output))), "test-model",
     )
     with TestClient(app) as client:
         response = client.post("/internal/v1/application-preparations/discovery", json=discovery_request_data())

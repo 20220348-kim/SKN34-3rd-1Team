@@ -39,7 +39,7 @@ import ai.govbiz.core.applicationpreparation.domain.ApplicationFormSectionDefini
 import ai.govbiz.core.applicationpreparation.domain.ApplicationFormFieldDefinition
 
 /** AI Service producer test와 공유하는 JSON으로 HTTP 디코딩과 Facade 검증을 함께 확인합니다. */
-@RestClientTest(AiApplicationPreparationClient::class)
+@RestClientTest(value = [AiApplicationPreparationClient::class], properties = ["app.ai-service.base-url=http://ai.test", "app.ai-service.connect-timeout=1s", "app.ai-service.read-timeout=35s"])
 @Import(AiApplicationPreparationClientTest.Config::class)
 class AiApplicationPreparationClientTest {
     @Autowired private lateinit var client: AiApplicationPreparationClient
@@ -95,7 +95,7 @@ class AiApplicationPreparationClientTest {
         for ((status, body, expected) in listOf(
             Triple(HttpStatus.UNPROCESSABLE_CONTENT, """{"detail":{"code":"REQUEST_VALIDATION_FAILED"}}""", AiServiceFailure.UNAVAILABLE),
             Triple(HttpStatus.SERVICE_UNAVAILABLE, """{"detail":{"code":"APPLICATION_PREPARATION_FAILED"}}""", AiServiceFailure.INVALID_RESPONSE),
-            Triple(HttpStatus.GATEWAY_TIMEOUT, "{}", AiServiceFailure.TIMEOUT),
+
         )) {
             server.expect(requestTo("http://ai.test/internal/v1/application-preparations/discovery"))
                 .andRespond(withStatus(status).contentType(MediaType.APPLICATION_JSON).body(body))
@@ -111,7 +111,7 @@ class AiApplicationPreparationClientTest {
         val responseBody = resource("discovery-contract-response.json")
         val request = json.readValue(requestBody, AiApplicationFormDiscoveryRequest::class.java)
         val expected = json.readTree(responseBody)
-        val configurationBody = """{"contractVersion":"${expected["contractVersion"].asString()}","model":"${expected["model"].asString()}","promptVersion":"${expected["promptVersion"].asString()}"}"""
+        val configurationBody = """{"modelTimeoutSeconds":210,"runTimeoutSeconds":240,"contractVersion":"${expected["contractVersion"].asString()}","model":"${expected["model"].asString()}","promptVersion":"${expected["promptVersion"].asString()}"}"""
         server.expect(requestTo("http://ai.test/internal/v1/application-preparations/discovery/configuration"))
             .andExpect(method(HttpMethod.GET))
             .andRespond(withSuccess(configurationBody, MediaType.APPLICATION_JSON))
@@ -158,6 +158,17 @@ class AiApplicationPreparationClientTest {
         server.verify()
     }
 
+    @Test fun preservesDiscoveryTimeoutStage() {
+        val request = json.readValue(resource("discovery-contract-request.json"), AiApplicationFormDiscoveryRequest::class.java)
+        for (stage in listOf("AI_MODEL", "AI_RUN")) {
+            server.expect(requestTo("http://ai.test/internal/v1/application-preparations/discovery"))
+                .andRespond(withStatus(HttpStatus.GATEWAY_TIMEOUT).contentType(MediaType.APPLICATION_JSON)
+                    .body("""{"detail":{"code":"APPLICATION_PREPARATION_TIMEOUT","timeoutStage":"$stage"}}"""))
+            assertEquals(stage, assertThrows(ai.govbiz.core.applicationpreparation.client.ai.exception.ApplicationFormTimeoutException::class.java) { client.discover(request) }.stage)
+            server.verify(); server.reset()
+        }
+    }
+
     private fun input(request: AiApplicationFormDiscoveryRequest) = ApplicationFormDiscoveryInput(
         request.sourceCode,
         request.sourceProgramId,
@@ -181,8 +192,9 @@ class AiApplicationPreparationClientTest {
     ).bufferedReader().use { it.readText() }
 
     @TestConfiguration(proxyBeanMethods = false)
+    @org.springframework.boot.context.properties.EnableConfigurationProperties(ai.govbiz.core._common.ai_config.AiServiceClientProperties::class)
     class Config {
-        @Bean("aiServiceRestClient")
+        @Bean("aiServiceRestClient", "aiApplicationFormDiscoveryRestClient")
         fun restClient(builder: RestClient.Builder): RestClient = builder.baseUrl("http://ai.test").build()
     }
 }

@@ -8,14 +8,15 @@ import org.springframework.core.io.ClassPathResource
 import org.springframework.stereotype.Service
 import tools.jackson.databind.ObjectMapper
 
-/** 첫 지원 대상의 고정 manifest만 읽는다. 원격 파일을 runtime에 다시 받아 자동 채택하지 않는다. */
+/** 새 작성에는 활성 snapshot만 사용하며 기존 작성의 고정 manifest와 과거 버전은 읽기용으로 보존한다. */
 @Service
-class ApplicationFormService(objectMapper: ObjectMapper, private val snapshots: ApplicationFormSnapshotRepository) {
+class ApplicationFormService(objectMapper: ObjectMapper, private val snapshots: ApplicationFormSnapshotRepository,
+    private val availability: ai.govbiz.core.applicationpreparation.repository.ApplicationFormAvailabilityRepository) {
     private val form: ApplicationFormManifest = ClassPathResource(MANIFEST_PATH).inputStream.use {
         objectMapper.readValue(it, ApplicationFormManifest::class.java)
     }
 
-    fun listSupported(): List<ApplicationFormManifest> = listOf(form)
+    fun listSupported(): List<ApplicationFormManifest> = availability.listActiveForms()
 
     fun requireSupported(
         sourceCode: String,
@@ -23,7 +24,7 @@ class ApplicationFormService(objectMapper: ObjectMapper, private val snapshots: 
         formVersionId: String,
         serviceField: ApplicationServiceField,
     ): ApplicationFormManifest {
-        val selected = requireVersion(formVersionId)
+        val selected = availability.requireActive(sourceCode, sourceProgramId, formVersionId)
         if (selected.sourceCode != sourceCode || selected.sourceProgramId != sourceProgramId || !selected.supports(serviceField)) {
             throw ApplicationFormNotSupportedException()
         }

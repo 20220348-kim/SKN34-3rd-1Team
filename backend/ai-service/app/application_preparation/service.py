@@ -146,6 +146,8 @@ class ApplicationPreparationService:
 
     def discovery_configuration(self) -> dict:
         return {
+            "modelTimeoutSeconds": self.agent.discovery_model_timeout_seconds,
+            "runTimeoutSeconds": self.agent.discovery_run_timeout_seconds,
             "contractVersion": DISCOVERY_CONTRACT_VERSION,
             "model": self.model_name,
             "promptVersion": DISCOVERY_PROMPT_VERSION,
@@ -169,11 +171,19 @@ class ApplicationPreparationService:
             raise ApplicationPreparationError("APPLICATION_PREPARATION_FAILED") from error
 
     async def discover(self, request: DiscoverFormsRequest) -> dict:
+        started = perf_counter()
+        timeout_stage = "NONE"
         try:
             output: FormDiscoverySelection = await self.agent.discover(request)
             validate_discovery(request, output)
-            return {**self.discovery_configuration(), **output.model_dump()}
+            return {"contractVersion": DISCOVERY_CONTRACT_VERSION, "model": self.model_name,
+                    "promptVersion": DISCOVERY_PROMPT_VERSION, **output.model_dump()}
         except TimeoutError as error:
+            timeout_stage = getattr(error, "stage", "AI_UNKNOWN")
             raise ApplicationPreparationError("APPLICATION_PREPARATION_TIMEOUT") from error
         except Exception as error:
             raise ApplicationPreparationError("APPLICATION_PREPARATION_FAILED") from error
+
+        finally:
+            logger.info("application_form_discovery sourceCode=%s sourceProgramId=%s durationMs=%d timeoutStage=%s",
+                        request.sourceCode, request.sourceProgramId, round((perf_counter() - started) * 1000), timeout_stage)

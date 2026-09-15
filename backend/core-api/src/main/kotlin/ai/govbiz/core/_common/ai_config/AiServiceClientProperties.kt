@@ -14,9 +14,13 @@ data class AiServiceClientProperties(
     val semanticSearchReadTimeout: Duration = Duration.ofSeconds(30),
     val rankingReadTimeout: Duration = Duration.ofSeconds(55),
     val combinationReviewReadTimeout: Duration = Duration.ofSeconds(75),
+    val applicationFormDiscoveryReadTimeout: Duration = Duration.ofSeconds(270),
+    val applicationFormWorkerLease: Duration = Duration.ofSeconds(1800),
 ) {
 
     init {
+        validatePositiveDuration(applicationFormDiscoveryReadTimeout, "app.ai-service.application-form-discovery-read-timeout")
+        require(applicationFormDiscoveryReadTimeout < applicationFormWorkerLease) { "Discovery read timeout must be less than worker lease" }
         validateHttpBaseUrl(baseUrl, "app.ai-service.base-url")
         validatePositiveDuration(connectTimeout, "app.ai-service.connect-timeout")
         validatePositiveDuration(readTimeout, "app.ai-service.read-timeout")

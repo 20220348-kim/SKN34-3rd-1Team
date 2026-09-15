@@ -70,7 +70,7 @@ class AiApplicationPreparationFacade(private val client: AiApplicationPreparatio
         throw AiServiceCallException.invalidResponse("Application form discovery configuration violated its contract", error)
     }
 
-    fun discover(input: ApplicationFormDiscoveryInput, configuration: ApplicationFormDiscoveryConfiguration): List<ExtractedApplicationForm> = try {
+    fun discover(input: ApplicationFormDiscoveryInput, configuration: ApplicationFormDiscoveryConfiguration): List<ExtractedApplicationForm> {
         val request = AiApplicationFormDiscoveryRequest(
             AI_APPLICATION_FORM_DISCOVERY_CONTRACT_VERSION,
             input.sourceCode,
@@ -85,7 +85,12 @@ class AiApplicationPreparationFacade(private val client: AiApplicationPreparatio
                 )
             },
         )
-        val payload = client.discover(request)
+        return validateDiscoveryPayload(input, configuration, client.discover(request))
+    }
+
+    /** 일회성 백필도 원문 block과 동일한 AI 계약 검증을 통과해야 한다. 외부 호출 없음. */
+    fun validateDiscoveryPayload(input: ApplicationFormDiscoveryInput, configuration: ApplicationFormDiscoveryConfiguration,
+        payload: ai.govbiz.core.applicationpreparation.client.ai.dto.AiApplicationFormDiscoveryPayload): List<ExtractedApplicationForm> = try {
         validateDiscovery(
             payload.contractVersion == configuration.contractVersion && payload.model == configuration.model &&
                 payload.promptVersion == configuration.promptVersion && payload.forms.size <= input.documents.size,

@@ -43,7 +43,7 @@ class SupportProgramCatalogSyncOnceServiceTest {
         val first = SupportProgramCatalogFacade { loads++; snapshot }
         val second = SupportProgramCatalogFacade { error("later source collection failed") }
         assertThrows(IllegalStateException::class.java) {
-            SupportProgramCatalogSyncOnceService(first, second, unused, unused, repository, index)
+            SupportProgramCatalogSyncOnceService(first, second, unused, unused, repository, index, ai.govbiz.core.supportprogram.service.sync.SupportProgramCatalogPublicationService(repository, org.mockito.Mockito.mock(ai.govbiz.core.applicationpreparation.repository.ApplicationFormAvailabilityRepository::class.java)))
                 .run(properties().copy(sources = listOf("BIZINFO", "KSTARTUP")))
         }
         assertEquals(1, loads)
@@ -61,7 +61,7 @@ class SupportProgramCatalogSyncOnceServiceTest {
             1
         }
         `when`(repository.publishSnapshotIfCurrent("BIZINFO", snapshot, 1)).thenReturn(true)
-        val service = SupportProgramCatalogSyncOnceService(facade, unused, unused, unused, repository, index)
+        val service = SupportProgramCatalogSyncOnceService(facade, unused, unused, unused, repository, index, ai.govbiz.core.supportprogram.service.sync.SupportProgramCatalogPublicationService(repository, org.mockito.Mockito.mock(ai.govbiz.core.applicationpreparation.repository.ApplicationFormAvailabilityRepository::class.java)))
         service.run(properties())
         assertTrue(Files.readString(directory.resolve("receipt")).endsWith("COMPLETED\n"))
         assertEquals("rw-------", java.nio.file.attribute.PosixFilePermissions.toString(Files.getPosixFilePermissions(directory.resolve("receipt"))))
@@ -123,14 +123,14 @@ class SupportProgramCatalogSyncOnceServiceTest {
             Files.writeString(directory.resolve("receipt"), "other run reserved")
             listOf(program())
         }
-        val service = SupportProgramCatalogSyncOnceService(facade, unused, unused, unused, repository, index)
+        val service = SupportProgramCatalogSyncOnceService(facade, unused, unused, unused, repository, index, ai.govbiz.core.supportprogram.service.sync.SupportProgramCatalogPublicationService(repository, org.mockito.Mockito.mock(ai.govbiz.core.applicationpreparation.repository.ApplicationFormAvailabilityRepository::class.java)))
         assertThrows(java.nio.file.FileAlreadyExistsException::class.java) { service.run(properties()) }
         verifyNoInteractions(repository, index)
         assertEquals("other run reserved", Files.readString(directory.resolve("receipt")))
     }
 
     private fun service(snapshot: List<CatalogSupportProgram> = listOf(program())) =
-        SupportProgramCatalogSyncOnceService(SupportProgramCatalogFacade { snapshot }, unused, unused, unused, repository, index)
+        SupportProgramCatalogSyncOnceService(SupportProgramCatalogFacade { snapshot }, unused, unused, unused, repository, index, ai.govbiz.core.supportprogram.service.sync.SupportProgramCatalogPublicationService(repository, org.mockito.Mockito.mock(ai.govbiz.core.applicationpreparation.repository.ApplicationFormAvailabilityRepository::class.java)))
 
     private fun properties(apply: Boolean = true) =
         SupportProgramCatalogSyncOnceProperties(listOf("BIZINFO"), BigDecimal.ONE, directory.resolve("receipt"), apply)

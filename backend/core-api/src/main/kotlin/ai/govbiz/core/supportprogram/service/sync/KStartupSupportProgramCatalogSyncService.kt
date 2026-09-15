@@ -11,13 +11,14 @@ class KStartupSupportProgramCatalogSyncService(
     @param:Qualifier("kStartupSupportProgramCatalogFacade") private val catalogFacade: SupportProgramCatalogFacade,
     private val repository: SupportProgramRepository,
     private val indexSyncService: SupportProgramIndexSyncService,
+    private val publicationService: SupportProgramCatalogPublicationService,
 ) {
     fun sync(): Int? {
         val generation = repository.startSyncGeneration("KSTARTUP")
         try {
             val programs = catalogFacade.load()
             indexSyncService.indexSnapshot(programs)
-            if (!repository.publishSnapshotIfCurrent("KSTARTUP", programs, generation)) return null
+            if (!publicationService.publish("KSTARTUP", programs, generation)) return null
             return programs.size
         } catch (exception: RuntimeException) {
             try {

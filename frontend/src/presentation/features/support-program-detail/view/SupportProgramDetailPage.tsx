@@ -252,18 +252,16 @@ function SupportProgramDetail({ program, searchReturnTo }: {
               </Link>
             )
           ) : null}
-          {['BIZINFO', 'KSTARTUP', 'MSIT', 'CNTRADE_NOTICE'].includes(program.sourceCode) ? (
-            save.isAuthenticated ? (
+          {save.isAuthenticated ? (
               <Link className={supportProgramDetailStyles.questionLink} to={applicationPreparationPath}>
-                이 공고의 신청 문서 작성하기
+                이 공고의 신청 양식 상태 확인
               </Link>
             ) : (
               // 신청 문서 작성은 로그인 화면이라 비로그인에는 로그인 뒤 그 화면으로 이어지는 링크를 둡니다.
               <Link className={supportProgramDetailStyles.questionLink} to={loginPathFor(applicationPreparationPath)}>
-                로그인하고 신청 문서 작성하기
+                로그인하고 신청 양식 상태 확인
               </Link>
-            )
-          ) : null}
+          )}
         </div>
       </section>
 

@@ -79,7 +79,7 @@ class ApplicationFormDiscoveryQueueIntegrationTest {
     private val listener get() = requireNotNull(registry.getListenerContainer("applicationFormDiscoveryRun"))
     private val publisher get() = ApplicationFormDiscoveryOutboxScheduler(jobs, client)
     private lateinit var account: Account
-    private val form get() = forms.listSupported().first()
+    private val form get() = forms.requireVersion("bizinfo-pbln-000000000118979-innovation-voucher-2026-v1")
     private val result get() = ApplicationFormDiscoveryResult(listOf(form), listOf("한글 & 특수문자 🧪 원문 대조"), false)
 
     @BeforeEach

@@ -58,6 +58,8 @@ import ai.govbiz.core.applicationpreparation.client.ai.dto.AiApplicationDraftReq
 import ai.govbiz.core.applicationpreparation.client.ai.dto.AiApplicationDraftPayload
 import ai.govbiz.core.applicationpreparation.client.ai.dto.AiApplicationDocumentRequest
 import ai.govbiz.core.applicationpreparation.client.ai.dto.AiApplicationDocumentPayload
+import ai.govbiz.core.applicationpreparation.domain.ApplicationFormManifest
+import ai.govbiz.core.applicationpreparation.domain.ApplicationFormDiscoveryConfiguration
 import ai.govbiz.core.applicationpreparation.domain.ApplicationDocumentPlacement
 import ai.govbiz.core.applicationpreparation.service.ApplicationDocumentEditor
 
@@ -72,6 +74,7 @@ import ai.govbiz.core.applicationpreparation.service.ApplicationDocumentEditor
 @AutoConfigureMockMvc
 @Import(MySqlTestContainerConfig::class)
 class ApplicationPreparationApiIntegrationTest {
+    @Autowired private lateinit var snapshotRepository: ai.govbiz.core.applicationpreparation.repository.ApplicationFormSnapshotRepository
     @Autowired private lateinit var documentEditor: ApplicationDocumentEditor
     @Autowired private lateinit var mvc: MockMvc
     @Autowired private lateinit var accounts: AccountRepository
@@ -89,10 +92,24 @@ class ApplicationPreparationApiIntegrationTest {
     private lateinit var other: Cookie
     private var ownerId = 0L
 
+    private fun activateStored(version: String) {
+        jdbc.update("""INSERT INTO application_form_availability
+          (source_code, source_program_id, catalog_fingerprint, source_fingerprint, parser_version, extraction_model,
+           extraction_prompt_version, status, reason_code, active_form_version_id)
+          SELECT source_code, source_program_id, source_fingerprint, source_fingerprint, parser_version, extraction_model,
+           extraction_prompt_version, 'AVAILABLE', 'FORM_FOUND', form_version_id FROM application_form_snapshot WHERE form_version_id=?""", version)
+    }
+
     @BeforeEach
     fun prepareSessions() {
         jdbc.update("DELETE FROM application_preparation")
+        jdbc.update("DELETE FROM application_form_availability")
         jdbc.update("DELETE FROM application_form_snapshot")
+        val seed = org.springframework.core.io.ClassPathResource("application-preparation/innovation-voucher-2026-v1.json").inputStream.use {
+            json.readValue(it, ApplicationFormManifest::class.java)
+        }
+        snapshotRepository.save(listOf(seed), "a".repeat(64), "test", ApplicationFormDiscoveryConfiguration("application-form-discovery-v1", "test-model", DISCOVERY_PROMPT_VERSION))
+        activateStored(seed.formVersionId)
         val first = newSession()
         ownerId = first.first
         owner = first.second
@@ -195,6 +212,16 @@ class ApplicationPreparationApiIntegrationTest {
         )
     }
 
+    @Test fun readsAvailabilityWithoutDiscoveryAndRejectsStaleNewDrafts() {
+        mvc.perform(get("$BASE/forms/availability").cookie(owner).param("sourceCode", "BIZINFO").param("sourceProgramId", "PBLN_000000000118979"))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.state.status").value("AVAILABLE"))
+            .andExpect(jsonPath("$.forms.items[0].formVersionId").value(FORM_VERSION))
+        verify(ai, org.mockito.Mockito.never()).discoveryConfiguration()
+        jdbc.update("UPDATE application_form_availability SET status='STALE', active_form_version_id=NULL, reason_code='SOURCE_CHANGED'")
+        mvc.perform(post(BASE).cookie(owner).header(HttpHeaders.ORIGIN, ORIGIN).contentType(MediaType.APPLICATION_JSON).content(payload()))
+            .andExpect(status().isUnprocessableEntity())
+    }
+
     @Test
     fun listsTheVerifiedFormWithoutCreatingAPreparation() {
         mvc.perform(get("$BASE/forms").cookie(owner))
@@ -223,6 +250,7 @@ class ApplicationPreparationApiIntegrationTest {
             .andExpect(jsonPath("$.items[0].sections[0].fields[0].label").value("사업 개요"))
             .andReturn().response
         val formVersionId = json.readTree(response.contentAsString).path("items").path(0).path("formVersionId").asString()
+        activateStored(formVersionId)
         mvc.perform(post(BASE).cookie(owner).header(HttpHeaders.ORIGIN, ORIGIN).contentType(MediaType.APPLICATION_JSON)
             .content("""{"sourceCode":"BIZINFO","sourceProgramId":"$DISCOVERY_PROGRAM_ID","formVersionId":"$formVersionId","serviceField":"GENERAL"}"""))
             .andExpect(status().isCreated())
@@ -540,6 +568,7 @@ class ApplicationPreparationApiIntegrationTest {
         val discovered = mvc.perform(post("$BASE/forms/discover").cookie(owner).header(HttpHeaders.ORIGIN, ORIGIN).contentType(MediaType.APPLICATION_JSON)
             .content("""{"sourceCode":"BIZINFO","sourceProgramId":"$DISCOVERY_PROGRAM_ID"}""")).andExpect(status().isOk()).andReturn().response
         val version = json.readTree(discovered.contentAsString).path("items").path(0).path("formVersionId").asString()
+        activateStored(version)
         val created = mvc.perform(post(BASE).cookie(owner).header(HttpHeaders.ORIGIN, ORIGIN).contentType(MediaType.APPLICATION_JSON)
             .content("""{"sourceCode":"BIZINFO","sourceProgramId":"$DISCOVERY_PROGRAM_ID","formVersionId":"$version","serviceField":"GENERAL"}""")).andExpect(status().isCreated()).andReturn().response
         val id = json.readTree(created.contentAsString).path("id").asLong()

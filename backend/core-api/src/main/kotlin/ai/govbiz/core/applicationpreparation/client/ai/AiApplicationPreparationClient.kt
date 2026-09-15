@@ -24,6 +24,9 @@ import ai.govbiz.core.applicationpreparation.client.ai.dto.AiApplicationDraftPay
 class AiApplicationPreparationClient(
     @param:Qualifier("aiServiceRestClient") private val client: RestClient,
     private val json: ObjectMapper,
+    @param:Qualifier("aiApplicationFormDiscoveryRestClient") private val discoveryClient: RestClient,
+    private val properties: ai.govbiz.core._common.ai_config.AiServiceClientProperties,
+
 ) {
     fun placeDocument(request: ai.govbiz.core.applicationpreparation.client.ai.dto.AiApplicationDocumentRequest): ai.govbiz.core.applicationpreparation.client.ai.dto.AiApplicationDocumentPayload = executeAiServiceCall {
         client.post().uri("/internal/v1/application-preparations/document").contentType(MediaType.APPLICATION_JSON).body(request).retrieve()
@@ -77,15 +80,20 @@ class AiApplicationPreparationClient(
     }
 
     fun discoveryConfiguration(): AiApplicationPreparationConfigurationPayload = executeAiServiceCall {
-        client.get().uri("/internal/v1/application-preparations/discovery/configuration").retrieve()
+        discoveryClient.get().uri("/internal/v1/application-preparations/discovery/configuration").retrieve()
             .onStatus({ it.value() != 200 }, { _, _ -> throw AiServiceCallException.unavailable(null) })
             .body(AiApplicationPreparationConfigurationPayload::class.java)
+            ?.also { config ->
+                val model = requireNotNull(config.modelTimeoutSeconds) { "Discovery model timeout missing" }
+                val run = requireNotNull(config.runTimeoutSeconds) { "Discovery run timeout missing" }
+                require(model.isFinite() && run.isFinite() && model > 0 && model < run && run * 1000 < properties.applicationFormDiscoveryReadTimeout.toMillis()) { "Discovery timeout ordering mismatch" }
+            }
             ?: throw AiServiceCallException.invalidResponse("Application form discovery configuration was empty", null)
     }
 
     fun discover(request: AiApplicationFormDiscoveryRequest): AiApplicationFormDiscoveryPayload = try {
         executeAiServiceCall {
-            client.post().uri("/internal/v1/application-preparations/discovery")
+            discoveryClient.post().uri("/internal/v1/application-preparations/discovery")
                 .contentType(MediaType.APPLICATION_JSON).body(request).retrieve()
                 .onStatus({ it.value() == 422 }, { _, response ->
                     if (readErrorCode(response) == "APPLICATION_FORM_AI_INVALID_RESPONSE") {
@@ -99,12 +107,18 @@ class AiApplicationPreparationClient(
                     }
                     throw AiServiceCallException.unavailable(null)
                 })
-                .onStatus({ it.value() == 504 }, { _, _ -> throw AiServiceCallException.timeout(null) })
+                .onStatus({ it.value() == 504 }, { _, response ->
+                    val stage = runCatching { json.readTree(response.body.readNBytes(8192)).path("detail").path("timeoutStage").asString("AI_UNKNOWN") }
+                        .getOrDefault("AI_UNKNOWN")
+                    throw ai.govbiz.core.applicationpreparation.client.ai.exception.ApplicationFormTimeoutException(
+                        stage.takeIf { it in setOf("AI_MODEL", "AI_RUN") } ?: "AI_UNKNOWN")
+                })
                 .onStatus({ it.value() != 200 }, { _, _ -> throw AiServiceCallException.unavailable(null) })
                 .body(AiApplicationFormDiscoveryPayload::class.java)
                 ?: throw AiServiceCallException.invalidResponse("Application form discovery response was empty", null)
         }
     } catch (error: AiServiceCallException) {
+        if (error.failure == AiServiceFailure.TIMEOUT) throw ai.govbiz.core.applicationpreparation.client.ai.exception.ApplicationFormTimeoutException("CORE_READ", error)
         if (error.failure == AiServiceFailure.INVALID_RESPONSE) {
             val decoding = generateSequence(error as Throwable?) { it.cause }
                 .filterIsInstance<JacksonException>()

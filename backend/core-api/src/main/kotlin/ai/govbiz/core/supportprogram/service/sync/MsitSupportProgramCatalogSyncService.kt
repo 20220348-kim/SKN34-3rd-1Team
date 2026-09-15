@@ -11,13 +11,14 @@ class MsitSupportProgramCatalogSyncService(
     @param:Qualifier("msitSupportProgramCatalogFacade") private val catalogFacade: SupportProgramCatalogFacade,
     private val repository: SupportProgramRepository,
     private val indexSyncService: SupportProgramIndexSyncService,
+    private val publicationService: SupportProgramCatalogPublicationService,
 ) {
     fun sync(): Int? {
         val generation = repository.startSyncGeneration("MSIT")
         try {
             val programs = catalogFacade.load()
             indexSyncService.indexSnapshot(programs)
-            if (!repository.publishSnapshotIfCurrent("MSIT", programs, generation)) return null
+            if (!publicationService.publish("MSIT", programs, generation)) return null
             return programs.size
         } catch (exception: RuntimeException) {
             try {

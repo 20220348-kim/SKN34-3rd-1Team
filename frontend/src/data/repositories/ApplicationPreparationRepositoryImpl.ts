@@ -28,6 +28,20 @@ const documentsSchema = z.array(z.object({
 })).max(20)
 
 export class ApplicationPreparationRepositoryImpl implements ApplicationPreparationRepository {
+  async availability(sourceCode: string, sourceProgramId: string, signal?: AbortSignal) {
+    const schema = z.object({
+      state: z.object({ sourceCode: z.string(), sourceProgramId: z.string(),
+        status: z.enum(['PENDING', 'AVAILABLE', 'NO_FORM', 'DOCUMENT_UNAVAILABLE', 'TOO_LARGE', 'RETRY_WAITING', 'STALE', 'REVIEW_REQUIRED']),
+        reasonCode: z.string(), nextRetryAt: z.string().nullable(), attemptCount: z.number().int().nonnegative(),
+      }), forms: supportedApplicationFormsSchema,
+    })
+    const result = await request(`/forms/availability?${new URLSearchParams({ sourceCode, sourceProgramId })}`, schema, 'GET', undefined, signal)
+    if (result.state.sourceCode !== sourceCode || result.state.sourceProgramId !== sourceProgramId ||
+        (result.state.status === 'AVAILABLE') !== (result.forms.items.length > 0) ||
+        result.forms.items.some((form) => form.sourceCode !== sourceCode || form.sourceProgramId !== sourceProgramId)) throw new ApplicationPreparationError(502, 'INVALID_RESPONSE')
+    return result
+  }
+
   documents(id: number, signal?: AbortSignal) { return request(`/${id}/documents`, documentsSchema, 'GET', undefined, signal, 'preparation') }
   async generateDocuments(id: number, expectedRevision: number, signal?: AbortSignal) {
     const files = await request(`/${id}/documents`, documentsSchema, 'POST', { expectedRevision }, signal, 'preparation')

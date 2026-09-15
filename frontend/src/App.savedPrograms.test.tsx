@@ -105,7 +105,7 @@ describe('관심 공고함', () => {
     expect(await screen.findByText(supportProgramSaveMessages.saved)).toBeTruthy()
     expect(screen.getByRole('button', { name: '관심 공고 저장됨' }).getAttribute('aria-pressed')).toBe('true')
     // 로그인 상태에서는 신청 문서 작성으로 바로 갑니다.
-    expect(screen.getByRole('link', { name: '이 공고의 신청 문서 작성하기' }).getAttribute('href')).toBe(
+    expect(screen.getByRole('link', { name: '이 공고의 신청 양식 상태 확인' }).getAttribute('href')).toBe(
       `/app/application-preparations/new?${new URLSearchParams({ sourceCode: program.sourceCode, sourceProgramId: program.id })}`,
     )
   })
