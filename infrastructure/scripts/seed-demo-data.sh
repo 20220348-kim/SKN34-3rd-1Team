@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# 로컬 Compose의 MySQL에 데모 데이터(infrastructure/seed/demo-data.sql)를 넣습니다.
+# 로컬 Compose의 demo-seed 서비스를 강제 실행해 공용 및 사용자별 데모 데이터를 넣습니다.
 # Keep this Linux/WSL entrypoint LF-terminated; the root .gitattributes enforces it.
 set -Eeuo pipefail
 
@@ -8,20 +8,10 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 REPOSITORY_DIR="$(cd -- "${SCRIPT_DIR}/../.." && pwd)"
 COMPOSE_FILE="${REPOSITORY_DIR}/infrastructure/compose.yaml"
 ENV_FILE="${GOVBIZ_ENV_FILE:-${REPOSITORY_DIR}/.env}"
-SEED_FILE="${GOVBIZ_SEED_FILE:-${REPOSITORY_DIR}/infrastructure/seed/demo-data.sql}"
-APPLICATION_SEED_FILE="$(dirname "${SEED_FILE}")/application-preparations.sql"
 PROJECT_NAME="${GOVBIZ_COMPOSE_PROJECT_NAME:-govbiz}"
 
 if [[ ! -f "${ENV_FILE}" ]]; then
   echo "Missing ${ENV_FILE}. Create it from .env.example or point GOVBIZ_ENV_FILE at your env file." >&2
-  exit 1
-fi
-if [[ ! -f "${SEED_FILE}" ]]; then
-  echo "Missing seed file ${SEED_FILE}." >&2
-  exit 1
-fi
-if [[ ! -f "${APPLICATION_SEED_FILE}" ]]; then
-  echo "Missing seed file ${APPLICATION_SEED_FILE}." >&2
   exit 1
 fi
 if [[ ! "${PROJECT_NAME}" =~ ^[a-zA-Z0-9][a-zA-Z0-9_.-]*$ ]]; then
@@ -45,8 +35,7 @@ for service in mysql core-api; do
   fi
 done
 
-echo "Seeding demo data from ${SEED_FILE} into Compose project '${PROJECT_NAME}'"
-# 자격 증명은 컨테이너 환경 변수에 있으므로 호스트로 꺼내지 않고 컨테이너 안에서 mysql 클라이언트를 부릅니다.
-{ printf 'SET @reset_application_preparations = 1;\n'; cat "${SEED_FILE}" "${APPLICATION_SEED_FILE}"; } | "${COMPOSE[@]}" exec --no-TTY mysql sh -c \
-  'exec mysql --default-character-set=utf8mb4 --user="$MYSQL_USER" --password="$MYSQL_PASSWORD" "$MYSQL_DATABASE"'
-echo "Demo data seeded. Log in with member@govbiz.local (dev login) or any @demo.govbiz.local account (password govbiz-demo1)."
+echo "Running the demo-seed service in Compose project '${PROJECT_NAME}'"
+# compose.yaml의 동일한 진입점을 사용해 대상 이메일 전달·공용 초기화·개인 seed 순서를 한 곳에서 유지합니다.
+"${COMPOSE[@]}" run --rm -e DEMO_SEED_FORCE=true demo-seed
+echo "Demo data seeded for the configured target accounts."

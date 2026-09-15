@@ -41,6 +41,57 @@ class FlywayMigrationIntegrationTest {
     }
 
     @Test
+    fun combinationReviewDemoSeedKeysAreUniquePerOwnerAndLeaveNullUserRowsUnlimited() = withDatabase { mysql, jdbc ->
+        migration(mysql, "36").migrate()
+        jdbc.update("""INSERT INTO account (email, password_hash, terms_agreed_at)
+            VALUES ('member@govbiz.local', 'test', NOW()), ('second@test.local', 'test', NOW())""")
+        val firstOwner = jdbc.queryForObject("SELECT id FROM account WHERE email = 'member@govbiz.local'", Long::class.java)!!
+        val secondOwner = jdbc.queryForObject("SELECT id FROM account WHERE email = 'second@test.local'", Long::class.java)!!
+        val insert = """INSERT INTO combination_review (owner_account_id, title, created_at, updated_at)
+            VALUES (?, ?, NOW(), NOW())"""
+        jdbc.update(insert, firstOwner, "기존 사용자 검토")
+        val userReviewId = jdbc.queryForObject("SELECT id FROM combination_review WHERE title = '기존 사용자 검토'", Long::class.java)!!
+        jdbc.update(insert, firstOwner, "진행 중인 지원사업과 신규 신청 중복 검토")
+        val completedReviewId = jdbc.queryForObject("SELECT id FROM combination_review WHERE title = '진행 중인 지원사업과 신규 신청 중복 검토'", Long::class.java)!!
+        jdbc.update("""INSERT INTO combination_review_run
+            (review_id, input_revision, request_key, request_hash, status, input_json, evidence_json, configuration_json,
+             analysis_json, runner_instance_id, started_at, finished_at, execution_started_at)
+            VALUES (?, 1, '10000000-0000-4000-8000-000000000001', ?, 'SUCCEEDED', JSON_OBJECT(), JSON_OBJECT(),
+                    JSON_OBJECT('model', 'demo-seed-no-paid-call'), JSON_OBJECT(),
+                    '20000000-0000-4000-8000-000000000001', NOW(), NOW(), NOW())""", completedReviewId, "a".repeat(64))
+        jdbc.update(insert, firstOwner, "마케팅·기술지원 사업 동시 신청 검토")
+        val draftReviewId = jdbc.queryForObject("SELECT id FROM combination_review WHERE title = '마케팅·기술지원 사업 동시 신청 검토'", Long::class.java)!!
+        jdbc.update("""INSERT INTO combination_review_program
+            (review_id, position, source_code, source_program_id, application_submitted, selected,
+             commitment_submitted, agreement_signed, execution_status, funding_received)
+            VALUES
+                (?, 0, 'BIZINFO', 'legacy-1', 'YES', 'UNKNOWN', 'NO', 'NO', 'NOT_STARTED', 'NO'),
+                (?, 1, 'BIZINFO', 'legacy-2', 'NO', 'NO', 'NO', 'NO', 'NOT_STARTED', 'NO')""", draftReviewId, draftReviewId)
+        val before = jdbc.queryForList("SELECT id, owner_account_id, title, input_revision, created_at, updated_at FROM combination_review ORDER BY id")
+
+        assertEquals(1, migration(mysql, "37").migrate().migrationsExecuted)
+        assertEquals(before, jdbc.queryForList("SELECT id, owner_account_id, title, input_revision, created_at, updated_at FROM combination_review ORDER BY id"))
+        assertEquals(1, jdbc.queryForObject("SELECT COUNT(*) FROM combination_review WHERE demo_seed_key IS NULL", Int::class.java))
+        assertEquals("combination-review-completed-v1", jdbc.queryForObject("SELECT demo_seed_key FROM combination_review WHERE id = ?", String::class.java, completedReviewId))
+        assertEquals("combination-review-draft-v1", jdbc.queryForObject("SELECT demo_seed_key FROM combination_review WHERE id = ?", String::class.java, draftReviewId))
+
+        jdbc.update("UPDATE combination_review SET demo_seed_key = 'custom-demo-v1' WHERE id = ?", userReviewId)
+        jdbc.update("""INSERT INTO combination_review
+            (owner_account_id, demo_seed_key, title, created_at, updated_at)
+            VALUES (?, 'custom-demo-v1', '다른 사용자 목업', NOW(), NOW())""", secondOwner)
+        assertThrows(org.springframework.dao.DuplicateKeyException::class.java) {
+            jdbc.update("""INSERT INTO combination_review
+                (owner_account_id, demo_seed_key, title, created_at, updated_at)
+                VALUES (?, 'custom-demo-v1', '중복 목업', NOW(), NOW())""", firstOwner)
+        }
+        jdbc.update(insert, firstOwner, "사용자 검토 2")
+        jdbc.update(insert, firstOwner, "사용자 검토 3")
+
+        assertEquals(6, jdbc.queryForObject("SELECT COUNT(*) FROM combination_review", Int::class.java))
+        assertEquals(2, jdbc.queryForObject("SELECT COUNT(*) FROM combination_review WHERE demo_seed_key IS NULL", Int::class.java))
+    }
+
+    @Test
     fun lexicalUpgradeOnlyInvalidatesDerivedReadinessAndPreservesPublishedHistory() = withDatabase { mysql, jdbc ->
         migration(mysql, "23").migrate()
         jdbc.update("""INSERT INTO support_program_sync_status
