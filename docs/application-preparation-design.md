@@ -363,3 +363,7 @@ GitHub 이슈에서 skn-번호 확정
 - 답변 해석·확정 입력·초안 생성·직접 수정·사용자 확인이 서로 다른 행위로 정의된다.
 - 소유권·revision·중복 요청·늦은 응답·미정 정보·AI 장애 처리 제약이 명시된다.
 - 후속 사용자 기능마다 새 이슈·번호·브랜치·PR을 사용하도록 경계가 정해진다.
+
+## 신청 문서 MCP 파이프라인
+
+생성 경로는 Core의 공식 첨부·소유권·revision 관리와 AI Service의 형식별 MCP 실행을 연결한다. HWP는 내부 Windows 브리지, HWPX는 Hangeul 파일 모드, PDF는 MCP 정리 후 PDFBox AcroForm 처리이다. 기존 직접 HWP/HWPX 편집 코드는 생성 경로에서 호출하지 않는다. 새 fingerprint로 과거 생성 결과와 구분하고 다운로드 이력을 보존한다. 구현 범위와 미지원 구조·검증 상태는 [MCP 구조](application-document-mcp-architecture.md), [설치](application-document-mcp-setup.md), [검증 기록](application-document-mcp-validation.md)를 확인한다.

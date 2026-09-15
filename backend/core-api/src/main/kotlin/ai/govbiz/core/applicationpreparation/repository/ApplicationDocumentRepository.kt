@@ -15,13 +15,14 @@ import tools.jackson.databind.ObjectMapper
 class ApplicationDocumentRepository(private val mapper: ApplicationDocumentMapper, private val inputs: ApplicationPreparationInputMapper, private val json: ObjectMapper) {
     fun findRevision(ownerId: Long, preparationId: Long, revision: Long) = mapper.findRevision(ownerId, preparationId, revision, 5)?.toDomain()
     fun findOwned(ownerId: Long, preparationId: Long, fileId: Long) = mapper.findOwned(ownerId, preparationId, fileId)?.toDomain()
+    fun findFingerprint(ownerId: Long, preparationId: Long, revision: Long, fingerprint: String) = mapper.findFingerprint(ownerId, preparationId, revision, fingerprint)?.toDomain()
 
     @Transactional
-    fun save(ownerId: Long, preparationId: Long, revision: Long, fileName: String, mediaType: String, bytes: ByteArray, sourceSha256: String, placements: List<ApplicationDocumentPlacement>, clearExampleTargetIds: List<String> = emptyList()): ApplicationDocumentFile {
+    fun save(ownerId: Long, preparationId: Long, revision: Long, fileName: String, mediaType: String, bytes: ByteArray, sourceSha256: String, placements: List<ApplicationDocumentPlacement>, clearExampleTargetIds: List<String> = emptyList(), fingerprint: String? = null, evidence: Map<String, Any?> = emptyMap()): ApplicationDocumentFile {
         val current = inputs.lockOwnedRevision(ownerId, preparationId) ?: throw ApplicationPreparationNotFoundException()
         if (current != revision) throw ApplicationPreparationRevisionConflictException()
-        findRevision(ownerId, preparationId, revision)?.let { return it }
-        val row = ApplicationDocumentDbRow(preparationId = preparationId, inputRevision = revision, fileName = fileName, mediaType = mediaType, fileBytes = bytes, sourceSha256 = sourceSha256, placementsJson = json.writeValueAsString(mapOf("placements" to placements, "clearExampleTargetIds" to clearExampleTargetIds)))
+        (if (fingerprint == null) findRevision(ownerId, preparationId, revision) else findFingerprint(ownerId, preparationId, revision, fingerprint))?.let { return it }
+        val row = ApplicationDocumentDbRow(preparationId = preparationId, inputRevision = revision, fileName = fileName, mediaType = mediaType, fileBytes = bytes, sourceSha256 = sourceSha256, placementsJson = json.writeValueAsString(mapOf("placements" to placements, "clearExampleTargetIds" to clearExampleTargetIds, "mcp" to evidence)), generatorVersion = if (fingerprint == null) 5 else 6, generationFingerprint = fingerprint ?: "")
         check(mapper.insert(row) == 1)
         return row.toDomain()
     }

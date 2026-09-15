@@ -1,5 +1,6 @@
 package ai.govbiz.core.applicationpreparation.controller
 
+import ai.govbiz.core._common.test.stubDocumentMapping
 import ai.govbiz.core._common.test.MySqlTestContainerConfig
 import ai.govbiz.core.account.domain.NewAccount
 import ai.govbiz.core.account.helper.SessionCookieHelper
@@ -56,8 +57,11 @@ import org.mockito.Mockito.times
 import org.mockito.Mockito.verify
 import ai.govbiz.core.applicationpreparation.client.ai.dto.AiApplicationDraftRequest
 import ai.govbiz.core.applicationpreparation.client.ai.dto.AiApplicationDraftPayload
-import ai.govbiz.core.applicationpreparation.client.ai.dto.AiApplicationDocumentRequest
-import ai.govbiz.core.applicationpreparation.client.ai.dto.AiApplicationDocumentPayload
+import ai.govbiz.core.applicationpreparation.client.ai.ApplicationDocumentMcpClient
+import ai.govbiz.core.applicationpreparation.client.ai.dto.AiDocumentGenerationRequest
+import ai.govbiz.core.applicationpreparation.client.ai.dto.AiDocumentGenerationPayload
+import ai.govbiz.core.applicationpreparation.client.ai.dto.AiDocumentConfigurationPayload
+import ai.govbiz.core.applicationpreparation.service.exception.ApplicationDocumentException
 import ai.govbiz.core.applicationpreparation.domain.ApplicationFormManifest
 import ai.govbiz.core.applicationpreparation.domain.ApplicationFormDiscoveryConfiguration
 import ai.govbiz.core.applicationpreparation.domain.ApplicationDocumentPlacement
@@ -72,7 +76,7 @@ import ai.govbiz.core.applicationpreparation.service.ApplicationDocumentEditor
     "app.account.cookie-secure=false",
 ])
 @AutoConfigureMockMvc
-@Import(MySqlTestContainerConfig::class)
+@Import(MySqlTestContainerConfig::class, ai.govbiz.core._common.test.RedisTestContainerConfig::class)
 class ApplicationPreparationApiIntegrationTest {
     @Autowired private lateinit var snapshotRepository: ai.govbiz.core.applicationpreparation.repository.ApplicationFormSnapshotRepository
     @Autowired private lateinit var documentEditor: ApplicationDocumentEditor
@@ -82,6 +86,7 @@ class ApplicationPreparationApiIntegrationTest {
     @Autowired private lateinit var jdbc: JdbcTemplate
     @Autowired private lateinit var json: ObjectMapper
     @MockitoBean private lateinit var ai: AiApplicationPreparationClient
+    @MockitoBean private lateinit var documentMcp: ApplicationDocumentMcpClient
     @MockitoBean private lateinit var details: SupportProgramDetailService
     @MockitoBean private lateinit var bizInfoAttachments: BizInfoAttachmentClient
     @MockitoBean private lateinit var msitAttachments: MsitAttachmentClient
@@ -102,6 +107,7 @@ class ApplicationPreparationApiIntegrationTest {
 
     @BeforeEach
     fun prepareSessions() {
+        stubDocumentMapping(documentMcp)
         jdbc.update("DELETE FROM application_preparation")
         jdbc.update("DELETE FROM application_form_availability")
         jdbc.update("DELETE FROM application_form_snapshot")
@@ -190,11 +196,15 @@ class ApplicationPreparationApiIntegrationTest {
             sourceUrl = CNTRADE_SOURCE_URL,
             targetDescription = CNTRADE_BODY,
         )
+        val pdfBytes = org.apache.pdfbox.pdmodel.PDDocument().use { pdf ->
+            pdf.addPage(org.apache.pdfbox.pdmodel.PDPage())
+            java.io.ByteArrayOutputStream().use { output -> pdf.save(output); output.toByteArray() }
+        }
         `when`(details.get("CNTRADE_NOTICE", CNTRADE_PROGRAM_ID)).thenReturn(cnTradeProgram)
         `when`(cnTradeNoticeAttachments.collect("CNTRADE_NOTICE", CNTRADE_PROGRAM_ID, cnTradeProgram.title, CNTRADE_BODY)).thenReturn(
             SupportProgramAttachments(
                 cnTradeProgram.title,
-                listOf(SupportProgramAttachment("https://cntrade.chungnam.go.kr/fileDownload.do?uniqueKey=test", "신청서.pdf", "PDF", bytes)),
+                listOf(SupportProgramAttachment("https://cntrade.chungnam.go.kr/fileDownload.do?uniqueKey=test", "신청서.pdf", "PDF", pdfBytes)),
                 listOf("충남 원문 대조 필요"),
             ),
         )
@@ -204,7 +214,7 @@ class ApplicationPreparationApiIntegrationTest {
         `when`(documentParser.parse(bytes, "HWP")).thenReturn(
             listOf(SupportProgramDocumentBlock("HWP paragraph 1 part 1", DISCOVERY_BLOCK_TEXT)),
         )
-        `when`(documentParser.parse(bytes, "PDF")).thenReturn(
+        `when`(documentParser.parse(pdfBytes, "PDF")).thenReturn(
             listOf(SupportProgramDocumentBlock("PDF page 1 part 1", DISCOVERY_BLOCK_TEXT)),
         )
         `when`(ai.discover(any(AiApplicationFormDiscoveryRequest::class.java) ?: fallbackDiscoveryRequest())).thenReturn(
@@ -559,15 +569,35 @@ class ApplicationPreparationApiIntegrationTest {
             SupportProgramAttachment("https://www.bizinfo.go.kr/file", "신청양식.hwpx", "HWPX", original),
         ), emptyList()))
         `when`(documentParser.parse(original, "HWPX")).thenReturn(listOf(SupportProgramDocumentBlock(DISCOVERY_LOCATOR, DISCOVERY_BLOCK_TEXT)))
-        val fallback = AiApplicationDocumentRequest(facts = emptyList(), targets = emptyList(), pageImages = emptyList())
+        val fallback = AiDocumentGenerationRequest(sourceBase64 = "", sourceSha256 = "", format = "hwpx", answerRevision = 1, facts = emptyList(), scope = "test")
         val inspected = documentEditor.inspect(original, "HWPX").targets
         val cleanup = if (blueExamples) listOf(inspected.single { it.text == "구현 방법을 작성" }.id) else emptyList()
-        val preserved = if (blueExamples) listOf(inspected.single { it.text == "사업계획서" }.id) else inspected.filter { it.exampleText.isNotBlank() }.map { it.id }
-        val selection = AiApplicationDocumentPayload("application-document-v1", listOf(ApplicationDocumentPlacement("business-plan:business-overview", target.id)), emptyList(), cleanup, preserved)
-        `when`(ai.placeDocument(any(AiApplicationDocumentRequest::class.java) ?: fallback)).thenReturn(selection)
+        val placements = listOf(ApplicationDocumentPlacement("business-plan:business-overview", target.id))
+        stubDocumentMapping(documentMcp, target.id)
+
+        var rejectNext = blueExamples
+        // HTTP/MCP is a stub here; actual editor sessions are covered by document-tools/smoke.py.
+        `when`(documentMcp.generate(any(AiDocumentGenerationRequest::class.java) ?: fallback)).thenAnswer { invocation ->
+            val request = invocation.getArgument<AiDocumentGenerationRequest>(0)
+            if (rejectNext) {
+                rejectNext = false
+                throw ApplicationDocumentException("APPLICATION_DOCUMENT_VALIDATION_FAILED", "검증 실패 fixture")
+            }
+            org.junit.jupiter.api.Assertions.assertArrayEquals(original, java.util.Base64.getDecoder().decode(request.sourceBase64))
+            val bytes = documentEditor.fill(original, "HWPX", request.facts, placements, cleanup)
+            val hash = java.security.MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
+            AiDocumentGenerationPayload("application-document-mcp-v1", "b".repeat(64), request.sourceSha256, request.answerRevision,
+                java.util.Base64.getEncoder().encodeToString(bytes), hash, "c".repeat(64), "native-map-v2", "test-stub",
+                mapOf("verified" to 1, "unresolved" to 0), placements, emptyMap(), mapOf("answerRevision" to request.answerRevision))
+        }
         val discovered = mvc.perform(post("$BASE/forms/discover").cookie(owner).header(HttpHeaders.ORIGIN, ORIGIN).contentType(MediaType.APPLICATION_JSON)
             .content("""{"sourceCode":"BIZINFO","sourceProgramId":"$DISCOVERY_PROGRAM_ID"}""")).andExpect(status().isOk()).andReturn().response
         val version = json.readTree(discovered.contentAsString).path("items").path(0).path("formVersionId").asString()
+        val mapBeforeQuestions = requireNotNull(snapshotRepository.findByVersion(version)?.documentMapSnapshot)
+        assertEquals(listOf("business-plan:business-overview"), mapBeforeQuestions.bindings.map { it.factId })
+        assertEquals(target.id, mapBeforeQuestions.bindings.single().targetId)
+        org.junit.jupiter.api.Assertions.assertFalse(json.readTree(discovered.contentAsString).path("items").path(0).has("documentMapSnapshot"))
+
         activateStored(version)
         val created = mvc.perform(post(BASE).cookie(owner).header(HttpHeaders.ORIGIN, ORIGIN).contentType(MediaType.APPLICATION_JSON)
             .content("""{"sourceCode":"BIZINFO","sourceProgramId":"$DISCOVERY_PROGRAM_ID","formVersionId":"$version","serviceField":"GENERAL"}""")).andExpect(status().isCreated()).andReturn().response
@@ -585,8 +615,6 @@ class ApplicationPreparationApiIntegrationTest {
         }
         save(1, "새봄 & 연구소")
         if (blueExamples) {
-            `when`(ai.placeDocument(any(AiApplicationDocumentRequest::class.java) ?: fallback))
-                .thenReturn(selection.copy(clearExampleTargetIds = emptyList()), selection)
             mvc.perform(post("$BASE/$id/documents").cookie(owner).header(HttpHeaders.ORIGIN, ORIGIN).contentType(MediaType.APPLICATION_JSON)
                 .content("""{"expectedRevision":2}""")).andExpect(status().is4xxClientError())
             mvc.perform(get("$BASE/$id/documents").cookie(owner)).andExpect(status().isOk()).andExpect(jsonPath("$.length()").value(0))
@@ -598,7 +626,7 @@ class ApplicationPreparationApiIntegrationTest {
         mvc.perform(get("$BASE/$id/documents").cookie(owner)).andExpect(status().isOk())
             .andExpect(jsonPath("$[0].id").value(fileId))
         assertEquals(fileId, generate(2))
-        verify(ai, times(if (blueExamples) 2 else 1)).placeDocument(any(AiApplicationDocumentRequest::class.java) ?: fallback)
+        verify(documentMcp, times(if (blueExamples) 2 else 1)).generate(any(AiDocumentGenerationRequest::class.java) ?: fallback)
         val downloaded = mvc.perform(get("$BASE/$id/documents/$fileId/download").cookie(owner)).andExpect(status().isOk())
             .andExpect(header().string(HttpHeaders.CACHE_CONTROL, "no-store"))
             .andExpect(content().contentType("application/hwp+zip")).andReturn().response.contentAsByteArray
@@ -606,7 +634,7 @@ class ApplicationPreparationApiIntegrationTest {
         if (blueExamples) {
             val reopened = documentEditor.inspect(downloaded, "HWPX").targets
             assertEquals("", reopened.single { it.id == cleanup.single() }.text)
-            assertEquals("사업계획서", reopened.single { it.id == preserved.single() }.exampleText)
+            assertEquals("사업계획서", reopened.single { it.text == "사업계획서" }.exampleText)
         }
         mvc.perform(get("$BASE/$id/documents/$fileId/download").cookie(other)).andExpect(status().isNotFound())
         mvc.perform(get("$BASE/$id/documents/$fileId/download")).andExpect(status().isUnauthorized())

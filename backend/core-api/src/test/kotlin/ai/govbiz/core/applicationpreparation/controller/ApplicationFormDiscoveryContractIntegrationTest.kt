@@ -55,6 +55,7 @@ import tools.jackson.databind.json.JsonMapper
     "app.bizinfo.sync.enabled=false",
     "app.support-program-index.enabled=false",
     "app.account.cookie-secure=false",
+    "DOCUMENT_INTERNAL_TOKEN=document-contract-test-token-0123456789",
 ])
 @AutoConfigureMockMvc
 @Import(MySqlTestContainerConfig::class)
@@ -73,6 +74,7 @@ class ApplicationFormDiscoveryContractIntegrationTest {
         jdbc.update("DELETE FROM application_preparation")
         jdbc.update("DELETE FROM application_form_snapshot")
         aiDiscoveryCalls.set(0)
+        aiMappingCalls.set(0)
         aiContractFailure.set(null)
         val account = accounts.createAccount(NewAccount("${UUID.randomUUID()}@example.test", "test-hash", LocalDateTime.now()))
         val issued = sessions.issue(account.id, false)
@@ -125,8 +127,24 @@ class ApplicationFormDiscoveryContractIntegrationTest {
             .andExpect(jsonPath("$.items.length()").value(1))
 
         assertEquals(1, aiDiscoveryCalls.get())
+        assertEquals(1, aiMappingCalls.get())
         assertEquals(1, jdbc.queryForObject("SELECT COUNT(*) FROM application_form_snapshot", Int::class.java))
         verify(attachments, times(2)).collect("BIZINFO", DISCOVERY_PROGRAM_ID)
+
+        // A stored legacy snapshot receives its native map through the real JSON_SET mapper.
+        jdbc.update("UPDATE application_form_snapshot SET manifest_json = JSON_REMOVE(manifest_json, '$.documentMapSnapshot')")
+        mvc.perform(post("$BASE/forms/discover").cookie(owner).header(HttpHeaders.ORIGIN, ORIGIN)
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("""{"sourceCode":"BIZINFO","sourceProgramId":"$DISCOVERY_PROGRAM_ID"}"""))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.cached").value(true))
+        assertEquals("business-plan:business-overview", jdbc.queryForObject(
+            "SELECT JSON_UNQUOTE(JSON_EXTRACT(manifest_json, '$.documentMapSnapshot.bindings[0].factId')) FROM application_form_snapshot", String::class.java))
+        assertEquals("기술", jdbc.queryForObject(
+            "SELECT JSON_UNQUOTE(JSON_EXTRACT(manifest_json, '$.sections[0].fields[0].options[0]')) FROM application_form_snapshot", String::class.java))
+        assertEquals(1, aiDiscoveryCalls.get())
+        assertEquals(2, aiMappingCalls.get())
+        assertNull(aiContractFailure.get())
     }
 
     @Test
@@ -205,8 +223,29 @@ class ApplicationFormDiscoveryContractIntegrationTest {
         const val PROMPT_VERSION = "sha256:15eae460de872e14ef6e6a99db4bd5952acc293466adb9492dc34fa51a971c8d"
         val json = JsonMapper.builder().build()
         val aiDiscoveryCalls = AtomicInteger()
+        val aiMappingCalls = AtomicInteger()
         val aiContractFailure = AtomicReference<String?>()
         val aiServer: HttpServer = HttpServer.create(InetSocketAddress(InetAddress.getLoopbackAddress(), 0), 0).apply {
+            createContext("/internal/v1/application-preparations/document/configuration") { exchange ->
+                respond(exchange, """{"contractVersion":"application-document-mcp-v1","pipelineVersion":"${"b".repeat(64)}"}""")
+            }
+            createContext("/internal/v1/application-preparations/document/map") { exchange ->
+                aiMappingCalls.incrementAndGet()
+                val request = json.readTree(exchange.requestBody.readNBytes(200_001))
+                val source = java.util.Base64.getDecoder().decode(request.path("sourceBase64").asString())
+                val hash = java.security.MessageDigest.getInstance("SHA-256").digest(source).joinToString("") { "%02x".format(it) }
+                if (exchange.requestHeaders.getFirst("Authorization") != "Bearer document-contract-test-token-0123456789" ||
+                    request.path("sourceSha256").asString() != hash || request.has("facts") ||
+                    request.path("fields").path(0).path("id").asString() != "business-plan:business-overview") {
+                    aiContractFailure.set("document map request did not preserve authentication, source hash or question-only contract")
+                    respond(exchange, "{}", 500)
+                } else {
+                    respond(exchange, """{"contractVersion":"application-document-mcp-v1","pipelineVersion":"${"b".repeat(64)}",
+                        "sourceSha256":"$hash","mapVersion":"native-map-v2","engineVersion":"http-contract-stub",
+                        "bindings":[{"factId":"business-plan:business-overview","targetId":"p1"}],"scopeTargetIds":["p1"],
+                        "documentMap":{"sourceSha256":"$hash","targets":[{"targetId":"p1","editable":true,"currentText":""}]}}""")
+                }
+            }
             createContext("/internal/v1/application-preparations/discovery/configuration") { exchange ->
                 respond(exchange, """{"modelTimeoutSeconds":210,"runTimeoutSeconds":240,"contractVersion":"application-form-discovery-v1","model":"test-model","promptVersion":"$PROMPT_VERSION"}""")
             }

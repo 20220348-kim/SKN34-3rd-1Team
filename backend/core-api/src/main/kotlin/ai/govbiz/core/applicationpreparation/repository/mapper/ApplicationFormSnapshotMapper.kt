@@ -6,6 +6,7 @@ import org.apache.ibatis.annotations.Param
 @Mapper
 interface ApplicationFormSnapshotMapper {
     fun upsert(row: ApplicationFormSnapshotDbRow): Int
+    fun attachDocumentMap(@Param("formVersionId") formVersionId: String, @Param("sourceSha256") sourceSha256: String, @Param("pipelineVersion") pipelineVersion: String, @Param("documentMapJson") documentMapJson: String): Int
 
     fun findByVersion(@Param("formVersionId") formVersionId: String): ApplicationFormSnapshotDbRow?
 

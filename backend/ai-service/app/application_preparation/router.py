@@ -17,6 +17,52 @@ def get_service(request: Request) -> ApplicationPreparationService:
     return request.app.state.container.application_preparation_service
 
 
+
+@router.get("/document/configuration")
+async def document_configuration():
+    from app.application_preparation.document_contract import CONTRACT, PIPELINE_VERSION
+    return {"contractVersion": CONTRACT, "pipelineVersion": PIPELINE_VERSION}
+
+
+@router.post("/document/generate")
+@router.post("/document/map")
+async def generate_document_file(request: Request, service: Annotated[ApplicationPreparationService, Depends(get_service)]):
+    import hmac
+    import json
+    import os
+    from pydantic import ValidationError
+    from app.application_preparation.document_contract import DocumentError, GenerateDocumentRequest, MapDocumentRequest
+    from app.application_preparation.document_pipeline import generate_document, map_document
+
+    token = os.getenv("DOCUMENT_INTERNAL_TOKEN", "")
+    if len(token) < 32:
+        raise HTTPException(503, detail={"code": "APPLICATION_DOCUMENT_MCP_NOT_READY"})
+    if not hmac.compare_digest(request.headers.get("authorization", ""), "Bearer " + token):
+        raise HTTPException(401, detail={"code": "UNAUTHORIZED"})
+    body = bytearray()
+    async for chunk in request.stream():
+        body.extend(chunk)
+        if len(body) > 80 * 1024 * 1024:
+            raise HTTPException(413, detail={"code": "APPLICATION_DOCUMENT_LIMIT_EXCEEDED"})
+    try:
+        mapping = request.url.path.endswith("/map")
+        payload = (MapDocumentRequest if mapping else GenerateDocumentRequest).model_validate(json.loads(body))
+        import asyncio
+        async with asyncio.timeout(240):
+            return await map_document(payload, service.agent) if mapping else await generate_document(payload, service.agent)
+    except (ValidationError, ValueError):
+        raise HTTPException(422, detail={"code": "APPLICATION_DOCUMENT_VALIDATION_FAILED"}) from None
+    except DocumentError as error:
+        raise HTTPException(503, detail={"code": error.code}) from None
+    except TimeoutError:
+        raise HTTPException(504, detail={"code": "APPLICATION_DOCUMENT_OUTCOME_UNKNOWN"}) from None
+    except Exception as error:
+        logger.warning("application_document_failed type=%s", type(error).__name__)
+        raise HTTPException(503, detail={"code": "APPLICATION_DOCUMENT_VALIDATION_FAILED"}) from None
+
+
+
+
 @router.post("/document")
 async def place_document(payload: DocumentRequest, service: Annotated[ApplicationPreparationService, Depends(get_service)]):
     try:

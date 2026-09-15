@@ -39,6 +39,7 @@ class ApplicationFormDiscoveryService(
     private val parser: SupportProgramDocumentParser,
     private val ai: AiApplicationPreparationFacade,
     private val snapshots: ApplicationFormSnapshotRepository,
+    private val documentMapping: ApplicationDocumentMappingService,
     private val admission: SupportProgramRequestAdmissionService,
 ) {
     fun discover(account: Account, sourceCode: String, sourceProgramId: String): ApplicationFormDiscoveryResult {
@@ -131,9 +132,10 @@ class ApplicationFormDiscoveryService(
                 configuration.model, configuration.promptVersion,
             )
                 .takeIf { it.isNotEmpty() }?.let { cached ->
-                    persist?.invoke(cached, metadata)
+                    val bound = if (recordedPayload == null) bindDocumentMaps(cached, collected.files) else cached
+                    persist?.invoke(bound, metadata)
                     return ApplicationFormDiscoveryResult(
-                        cached,
+                        bound,
                         warnings + "동일한 공식 첨부에서 이전에 추출한 양식을 재사용했습니다.",
                         true,
                     )
@@ -217,9 +219,10 @@ class ApplicationFormDiscoveryService(
             } catch (error: IllegalArgumentException) {
                 throw AiServiceCallException.invalidResponse("Application form discovery output could not form a safe manifest", error)
             }
-            if (persist != null) persist(forms, metadata)
-            else snapshots.save(forms, sourceFingerprint, SupportProgramDocumentParser.VERSION, configuration)
-            val storedForms = forms.map { form -> requireNotNull(snapshots.findByVersion(form.formVersionId)) }
+            val bound = if (recordedPayload == null) bindDocumentMaps(forms, collected.files) else forms
+            if (persist != null) persist(bound, metadata)
+            else snapshots.save(bound, sourceFingerprint, SupportProgramDocumentParser.VERSION, configuration)
+            val storedForms = bound.map { form -> requireNotNull(snapshots.findByVersion(form.formVersionId)) }
             ApplicationFormDiscoveryResult(storedForms, warnings.distinct(), false)
         } catch (error: AiApplicationFormValidationException) {
             throw ApplicationFormDiscoveryException(Reason.AI_INVALID_RESPONSE, error)
@@ -241,6 +244,12 @@ class ApplicationFormDiscoveryService(
         } catch (error: IllegalArgumentException) {
             throw ApplicationFormDiscoveryException(Reason.SOURCE_INVALID, error)
         }
+    }
+
+    private fun bindDocumentMaps(forms: List<ApplicationFormManifest>, files: List<ai.govbiz.core.supportprogram.client.document.SupportProgramAttachment>) = forms.map { form ->
+        val original = files.firstOrNull { sha256(it.bytes) == form.attachmentSha256 }
+            ?: throw ApplicationFormDiscoveryException(Reason.SOURCE_CHANGED)
+        form.copy(documentMapSnapshot = documentMapping.ensure(form, original.bytes, original.format))
     }
 
     private fun formVersionId(

@@ -8,4 +8,5 @@ interface ApplicationDocumentMapper {
     fun findRevision(@Param("ownerId") ownerId: Long, @Param("preparationId") preparationId: Long, @Param("revision") revision: Long, @Param("generatorVersion") generatorVersion: Int): ApplicationDocumentDbRow?
     fun findOwned(@Param("ownerId") ownerId: Long, @Param("preparationId") preparationId: Long, @Param("fileId") fileId: Long): ApplicationDocumentDbRow?
     fun insert(row: ApplicationDocumentDbRow): Int
+    fun findFingerprint(@Param("ownerId") ownerId: Long, @Param("preparationId") preparationId: Long, @Param("revision") revision: Long, @Param("fingerprint") fingerprint: String): ApplicationDocumentDbRow?
 }

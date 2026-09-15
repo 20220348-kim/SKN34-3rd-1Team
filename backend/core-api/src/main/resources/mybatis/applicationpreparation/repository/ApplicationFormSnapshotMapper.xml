@@ -47,4 +47,10 @@
           AND extraction_prompt_version = #{extractionPromptVersion}
         ORDER BY form_version_id
     </select>
+    <update id="attachDocumentMap">
+        UPDATE application_form_snapshot
+        SET manifest_json = JSON_SET(manifest_json, '$.documentMapSnapshot', CAST(#{documentMapJson} AS JSON))
+        WHERE form_version_id = #{formVersionId} AND attachment_sha256 = #{sourceSha256}
+          AND COALESCE(JSON_UNQUOTE(JSON_EXTRACT(manifest_json, '$.documentMapSnapshot.pipelineVersion')), '') != #{pipelineVersion}
+    </update>
 </mapper>
