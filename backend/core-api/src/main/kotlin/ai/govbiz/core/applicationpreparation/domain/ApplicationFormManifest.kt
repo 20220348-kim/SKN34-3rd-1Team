@@ -18,8 +18,10 @@ data class ApplicationFormManifest(
     val institutionReviewed: Boolean,
     val supportedServiceFields: List<ApplicationServiceField>,
     val sections: List<ApplicationFormSectionDefinition>,
+    val documentMapSnapshot: ApplicationDocumentMapSnapshot? = null,
 ) {
     init {
+        require(documentMapSnapshot == null || documentMapSnapshot.sourceSha256 == attachmentSha256) { "document map source mismatch" }
         require(schemaVersion == 1) { "unsupported application form manifest schema" }
         require(FORM_VERSION_PATTERN.matches(formVersionId)) { "invalid formVersionId" }
         require(SOURCE_CODE_PATTERN.matches(sourceCode)) { "invalid sourceCode" }

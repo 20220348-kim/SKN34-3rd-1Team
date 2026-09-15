@@ -855,3 +855,7 @@ HWP 체크박스의 FORM_OBJECT Caption은 주변 문항과 함께 별도 근거
 현재 사용자 작성 화면은 계정별 Discovery Job을 실행하지 않고 공고별 availability API에서 활성 snapshot을 읽습니다. 기존 계정별 discovery job API는 별도 책임으로 남아 있습니다. 새 작성은 활성 formVersionId만 허용하고, 기존 작성의 과거 버전과 최종 생성의 공식 원본 해시 대조는 유지합니다.
 
 Discovery 전용 timeout은 model 210초 < AI run 240초 < Core read 270초 < Worker lease 1,800초입니다. 다른 신청 준비 기능의 전역 timeout은 변경하지 않습니다. [상태·재시도·백필 실행 방법](../../docs/application-form-availability.md)을 참고하세요.
+
+## 신청 문서 MCP 파이프라인
+
+생성 경로는 Core의 공식 첨부·소유권·revision 관리와 AI Service의 형식별 MCP 실행을 연결한다. HWP는 내부 Windows 브리지, HWPX는 Hangeul 파일 모드, PDF는 MCP 정리 후 PDFBox AcroForm 처리이다. 기존 직접 HWP/HWPX 편집 코드는 생성 경로에서 호출하지 않는다. 새 fingerprint로 과거 생성 결과와 구분하고 다운로드 이력을 보존한다. 구현 범위와 미지원 구조·검증 상태는 [MCP 구조](../../docs/application-document-mcp-architecture.md), [설치](../../docs/application-document-mcp-setup.md), [검증 기록](../../docs/application-document-mcp-validation.md)를 확인한다.

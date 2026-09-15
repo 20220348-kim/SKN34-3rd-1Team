@@ -207,6 +207,23 @@ class ApplicationPreparationRepositoryIntegrationTest {
         ApplicationDraftOutput(content, "test-model", "sha256:" + "a".repeat(64), listOf("company-name"))
 
     @Test
+    fun fingerprintsPreserveHistoryDeduplicateAndRecheckOwnershipAndRevision() {
+        val preparation = repository.create(ownerId, draft())
+        val first = documents.save(ownerId, preparation.id, 1, "가상기업.pdf", "application/pdf", byteArrayOf(1), "a".repeat(64), emptyList(), fingerprint = "1".repeat(64), evidence = mapOf("planHash" to "b".repeat(64), "targets" to listOf("회사 & 연구소")))
+        val repeated = documents.save(ownerId, preparation.id, 1, "중복.pdf", "application/pdf", byteArrayOf(2), "a".repeat(64), emptyList(), fingerprint = "1".repeat(64))
+        assertEquals(first.id, repeated.id)
+        val updatedEngine = documents.save(ownerId, preparation.id, 1, "새엔진.pdf", "application/pdf", byteArrayOf(3), "a".repeat(64), emptyList(), fingerprint = "2".repeat(64))
+        assertTrue(first.id != updatedEngine.id)
+        assertEquals(first.id, documents.findOwned(ownerId, preparation.id, first.id)!!.id)
+        assertNull(documents.findFingerprint(otherId, preparation.id, 1, "1".repeat(64)))
+        assertThrows(ApplicationPreparationRevisionConflictException::class.java) {
+            documents.save(ownerId, preparation.id, 2, "이전.pdf", "application/pdf", byteArrayOf(4), "a".repeat(64), emptyList(), fingerprint = "3".repeat(64))
+        }
+        assertEquals(2, jdbc.queryForObject("SELECT COUNT(*) FROM application_document_file WHERE preparation_id = ?", Int::class.java, preparation.id))
+        assertEquals("회사 & 연구소", jdbc.queryForObject("SELECT JSON_UNQUOTE(JSON_EXTRACT(placements_json, '$.mcp.targets[0]')) FROM application_document_file WHERE id = ?", String::class.java, first.id))
+    }
+
+    @Test
     fun regeneratesLegacyFilesWithoutLosingTheirOwnedDownloads() {
         val preparation = repository.create(ownerId, draft())
         val legacy = documents.save(ownerId, preparation.id, 1, "이전.hwp", "application/x-hwp", byteArrayOf(1), "a".repeat(64), emptyList())

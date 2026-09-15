@@ -1,10 +1,6 @@
 package ai.govbiz.core.applicationpreparation.service
 
 import ai.govbiz.core.account.domain.Account
-import ai.govbiz.core.applicationpreparation.client.ai.AiApplicationPreparationClient
-import ai.govbiz.core.applicationpreparation.client.ai.dto.AiApplicationDocumentRequest
-import ai.govbiz.core.applicationpreparation.client.ai.dto.AiApplicationDocumentPayload
-import ai.govbiz.core.applicationpreparation.domain.ApplicationDocumentPlacement
 import ai.govbiz.core.applicationpreparation.domain.ApplicationDocumentFact
 import ai.govbiz.core.applicationpreparation.domain.ApplicationDocumentFile
 import ai.govbiz.core.applicationpreparation.domain.exception.ApplicationPreparationNotFoundException
@@ -24,9 +20,11 @@ import java.security.MessageDigest
 @Service
 class ApplicationDocumentService(
     private val preparations: ApplicationPreparationService,
+    private val redis: org.springframework.data.redis.core.StringRedisTemplate,
     private val files: ApplicationDocumentRepository,
     private val editor: ApplicationDocumentEditor,
-    private val ai: AiApplicationPreparationClient,
+    private val documentMapping: ApplicationDocumentMappingService,
+    private val mcp: ai.govbiz.core.applicationpreparation.client.ai.ApplicationDocumentMcpClient,
     private val bizInfo: BizInfoAttachmentClient,
     private val msit: MsitAttachmentClient,
     private val kStartup: KStartupAttachmentClient,
@@ -35,10 +33,13 @@ class ApplicationDocumentService(
     private val admission: SupportProgramRequestAdmissionService,
     private val availability: ai.govbiz.core.applicationpreparation.repository.ApplicationFormAvailabilityRepository,
 ) {
+    private fun sha256(bytes: ByteArray) = MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
+    private fun fingerprint(source: String, revision: Long, pipeline: String) = sha256("$source:$revision:$pipeline".toByteArray(Charsets.UTF_8))
     private val running = java.util.concurrent.ConcurrentHashMap.newKeySet<Long>()
     fun current(account: Account, id: Long): List<ApplicationDocumentFile> {
         val detail = preparations.findOwned(account, id)
-        return listOfNotNull(files.findRevision(account.id, id, detail.preparation.inputRevision))
+        val fingerprint = fingerprint(detail.form.attachmentSha256, detail.preparation.inputRevision, mcp.configuration().pipelineVersion)
+        return listOfNotNull(files.findFingerprint(account.id, id, detail.preparation.inputRevision, fingerprint))
     }
 
     fun download(account: Account, id: Long, fileId: Long): ApplicationDocumentFile =
@@ -47,9 +48,17 @@ class ApplicationDocumentService(
     fun generate(account: Account, id: Long, expectedRevision: Long): List<ApplicationDocumentFile> = admission.execute("application-document:${account.id}:$id") {
         val detail = preparations.findOwned(account, id)
         if (detail.preparation.inputRevision != expectedRevision) throw ApplicationPreparationRevisionConflictException()
-        files.findRevision(account.id, id, expectedRevision)?.let { return@execute listOf(it) }
+        val pipelineVersion = mcp.configuration().pipelineVersion
+        val fingerprint = fingerprint(detail.form.attachmentSha256, expectedRevision, pipelineVersion)
+        files.findFingerprint(account.id, id, expectedRevision, fingerprint)?.let { return@execute listOf(it) }
         if (!running.add(id)) throw ApplicationPreparationRunConflictException()
+        val lockKey = "application-document-run:$id"
+        val lockToken = java.util.UUID.randomUUID().toString()
+        var acquired = false
+        var outcomeUnknown = false
         try {
+        acquired = redis.opsForValue().setIfAbsent(lockKey, lockToken, java.time.Duration.ofMinutes(15)) == true
+        if (!acquired) throw ApplicationPreparationRunConflictException()
         val manifest = detail.form
         val facts = manifest.sections.flatMap { section -> section.fields.mapNotNull { field ->
             val fact = detail.facts.find { it.sectionKey == section.key && it.fieldKey == field.key }
@@ -82,34 +91,45 @@ class ApplicationDocumentService(
                 availability.stale(manifest.sourceCode, manifest.sourceProgramId, "ATTACHMENT_HASH_CHANGED_OR_MISSING")
                 throw ApplicationDocumentException("APPLICATION_DOCUMENT_SOURCE_CHANGED", "공식 첨부가 변경되었거나 없어졌습니다. 재분석 완료 후 새 작성을 시작해 주세요.")
             }
-        val inspection = editor.inspect(original.bytes, original.format)
-        // Exact, unique option captions are native form values, not free-text insertion locations.
-        fun normalized(value: String) = value.replace(Regex("\\s+"), "")
-        val choices = facts.mapNotNull { fact ->
-            inspection.targets.filter { it.kind == "CHECKBOX" && normalized(it.text) == normalized(fact.value) }.singleOrNull()
-                ?.let { ApplicationDocumentPlacement(fact.id, it.id) }
+        val binding = documentMapping.ensure(manifest, original.bytes, original.format)
+        val inspection = if (original.format.equals("pdf", true)) editor.inspect(original.bytes, "pdf") else null
+        val result = mcp.generate(ai.govbiz.core.applicationpreparation.client.ai.dto.AiDocumentGenerationRequest(
+            sourceBase64 = java.util.Base64.getEncoder().encodeToString(original.bytes),
+            sourceSha256 = manifest.attachmentSha256, format = original.format.lowercase(),
+            answerRevision = expectedRevision, facts = facts,
+            scope = (manifest.formTitle + "\n" + manifest.sections.joinToString("\n") { "${it.key}: ${it.title} | ${it.locator} | ${it.description}" }).take(30000),
+            pdfTargets = inspection?.targets.orEmpty(), pageImages = inspection?.pageImages.orEmpty(),
+            bindings = binding.bindings, scopeTargetIds = binding.scopeTargetIds, pdfFields = inspection?.pdfFields.orEmpty(),
+        ))
+        val output = try { java.util.Base64.getDecoder().decode(result.outputBase64) } catch (_: IllegalArgumentException) {
+            throw ApplicationDocumentException("APPLICATION_DOCUMENT_VALIDATION_FAILED", "문서 결과의 형식을 확인하지 못했습니다.")
         }
-        val remaining = facts.filter { fact -> choices.none { it.factId == fact.id } }
-        val examples = inspection.targets.filter { it.exampleText.isNotBlank() }.map { it.id }.toSet()
-        val result = if (remaining.isEmpty() && examples.isEmpty()) AiApplicationDocumentPayload("application-document-v1", choices, emptyList())
-        else ai.placeDocument(AiApplicationDocumentRequest(facts = remaining, targets = inspection.targets, pageImages = inspection.pageImages)).let { it.copy(placements = it.placements + choices) }
-        val targetIds = inspection.targets.map { it.id }.toSet()
-        if (result.contractVersion != "application-document-v1" || result.unmappedFactIds.isNotEmpty() || result.placements.size != facts.size || result.placements.map { it.factId }.toSet() != facts.map { it.id }.toSet() || result.placements.any { it.targetId !in targetIds }) {
-            throw ApplicationDocumentException("APPLICATION_DOCUMENT_MAPPING_FAILED", "일부 답변의 기입 위치를 확인하지 못해 파일을 생성하지 않았습니다. 공식 양식과 답변을 확인해 주세요.")
+        if (result.contractVersion != "application-document-mcp-v1" || result.pipelineVersion != pipelineVersion ||
+            result.sourceSha256 != manifest.attachmentSha256 || result.answerRevision != expectedRevision ||
+            output.size !in 1..32 * 1024 * 1024 || sha256(output) != result.outputSha256 ||
+            !Regex("[a-f0-9]{64}").matches(result.planHash)) {
+            throw ApplicationDocumentException("APPLICATION_DOCUMENT_VALIDATION_FAILED", "원본·입력 버전과 문서 결과가 일치하지 않습니다.")
         }
-        if (result.clearExampleTargetIds.distinct().size != result.clearExampleTargetIds.size || result.clearExampleTargetIds.any { it !in examples } || result.placements.any { it.targetId in examples && it.targetId !in result.clearExampleTargetIds }) {
-            throw ApplicationDocumentException("APPLICATION_DOCUMENT_MAPPING_FAILED", "예시 문구와 답변의 기입 위치를 구분하지 못했습니다.")
-        }
-        if (result.preserveExampleTargetIds.distinct().size != result.preserveExampleTargetIds.size ||
-            result.clearExampleTargetIds.any { it in result.preserveExampleTargetIds } ||
-            (result.clearExampleTargetIds + result.preserveExampleTargetIds).toSet() != examples) {
-            throw ApplicationDocumentException("APPLICATION_DOCUMENT_MAPPING_FAILED", "답변이 없는 칸을 포함한 예시·안내 문구 분류가 완료되지 않았습니다.")
-        }
-        val bytes = editor.fill(original.bytes, original.format, facts, result.placements, result.clearExampleTargetIds)
+        val bytes = if (original.format.equals("pdf", true)) {
+            if (result.verification["stage"] != "PDFBOX_REQUIRED") throw ApplicationDocumentException("APPLICATION_DOCUMENT_VALIDATION_FAILED", "PDF 처리 순서가 일치하지 않습니다.")
+            editor.fill(output, "pdf", facts, result.placements)
+        } else output
         val format = original.format.lowercase()
         val fileName = manifest.attachmentFileName.replace(Regex("(?i)\\.(hwp|hwpx|pdf).*$"), "").replace(Regex("[\\\\/:*?\"<>|]"), "_").take(430) + "_초안_v$expectedRevision.$format"
         val mediaType = when (format) { "pdf" -> "application/pdf"; "hwpx" -> "application/hwp+zip"; else -> "application/x-hwp" }
-        listOf(files.save(account.id, id, expectedRevision, fileName, mediaType, bytes, manifest.attachmentSha256, result.placements, result.clearExampleTargetIds))
-        } finally { running.remove(id) }
+        listOf(files.save(account.id, id, expectedRevision, fileName, mediaType, bytes, manifest.attachmentSha256, result.placements, fingerprint = fingerprint, evidence = mapOf("documentMap" to result.documentMap, "writePlan" to result.writePlan, "verification" to result.verification, "pipelineVersion" to result.pipelineVersion)))
+        } catch (error: ApplicationDocumentException) {
+            if (error.code == "APPLICATION_DOCUMENT_OUTCOME_UNKNOWN") {
+                outcomeUnknown = true
+                redis.persist(lockKey)
+            }
+            throw error
+        } finally {
+            if (acquired && !outcomeUnknown) {
+                val script = org.springframework.data.redis.core.script.DefaultRedisScript<Long>("if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('del', KEYS[1]) else return 0 end", Long::class.java)
+                redis.execute(script, listOf(lockKey), lockToken)
+            }
+            running.remove(id)
+        }
     }
 }

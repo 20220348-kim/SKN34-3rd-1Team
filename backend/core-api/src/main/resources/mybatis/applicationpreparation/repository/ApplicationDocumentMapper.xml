@@ -11,20 +11,24 @@
         <result property="sourceSha256" column="source_sha256"/>
         <result property="placementsJson" column="placements_json"/>
         <result property="generatorVersion" column="generator_version"/>
+        <result property="generationFingerprint" column="generation_fingerprint"/>
     </resultMap>
     <sql id="owned">
-        SELECT f.id, f.preparation_id, f.input_revision, f.file_name, f.media_type, f.file_bytes, f.source_sha256, f.placements_json, f.generator_version
+        SELECT f.id, f.preparation_id, f.input_revision, f.file_name, f.media_type, f.file_bytes, f.source_sha256, f.placements_json, f.generator_version, f.generation_fingerprint
         FROM application_document_file f JOIN application_preparation p ON p.id = f.preparation_id
         WHERE p.owner_account_id = #{ownerId} AND p.id = #{preparationId}
     </sql>
     <select id="findRevision" resultMap="file">
-        <include refid="owned"/> AND f.input_revision = #{revision} AND f.generator_version = #{generatorVersion}
+        <include refid="owned"/> AND f.input_revision = #{revision} AND f.generator_version = #{generatorVersion} AND f.generation_fingerprint = ''
+    </select>
+    <select id="findFingerprint" resultMap="file">
+        <include refid="owned"/> AND f.input_revision = #{revision} AND f.generator_version = 6 AND f.generation_fingerprint = #{fingerprint}
     </select>
     <select id="findOwned" resultMap="file">
         <include refid="owned"/> AND f.id = #{fileId}
     </select>
     <insert id="insert" useGeneratedKeys="true" keyProperty="id">
-        INSERT INTO application_document_file (preparation_id, input_revision, file_name, media_type, file_bytes, source_sha256, placements_json, generator_version)
-        VALUES (#{preparationId}, #{inputRevision}, #{fileName}, #{mediaType}, #{fileBytes}, #{sourceSha256}, #{placementsJson}, #{generatorVersion})
+        INSERT INTO application_document_file (preparation_id, input_revision, file_name, media_type, file_bytes, source_sha256, placements_json, generator_version, generation_fingerprint)
+        VALUES (#{preparationId}, #{inputRevision}, #{fileName}, #{mediaType}, #{fileBytes}, #{sourceSha256}, #{placementsJson}, #{generatorVersion}, #{generationFingerprint})
     </insert>
 </mapper>

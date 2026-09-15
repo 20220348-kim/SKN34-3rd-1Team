@@ -44,10 +44,13 @@ class ApplicationFormDiscoveryJobService(
                         aiStarted = true
                     }
                 } catch (error: Exception) {
-                    val code = if (error is ApplicationFormDiscoveryException) "APPLICATION_FORM_${error.reason.name}"
+                    val documentError = error as? ai.govbiz.core.applicationpreparation.service.exception.ApplicationDocumentException
+                    val code = documentError?.code ?: if (error is ApplicationFormDiscoveryException) "APPLICATION_FORM_${error.reason.name}"
                         else if (aiStarted) "RUN_OUTCOME_UNKNOWN" else "DISCOVERY_FAILED"
-                    // 모델 호출 이후의 통신/저장 실패는 결과를 확신할 수 없다. 정해진 업무 실패(NO_FORM 등)는 종료한다.
-                    repository.fail(id, code, unknown = aiStarted && error !is ApplicationFormDiscoveryException)
+                    // A definite mapping failure must not become a missing business fact or an unknown model outcome.
+                    val unknown = if (documentError != null) documentError.code == "APPLICATION_DOCUMENT_OUTCOME_UNKNOWN"
+                        else aiStarted && error !is ApplicationFormDiscoveryException
+                    repository.fail(id, code, unknown = unknown)
                     return@executeBackground
                 }
                 // 완료 저장 실패는 Consumer가 DLQ로 격리한다. RUNNING 재전달은 AI를 다시 호출하지 않는다.

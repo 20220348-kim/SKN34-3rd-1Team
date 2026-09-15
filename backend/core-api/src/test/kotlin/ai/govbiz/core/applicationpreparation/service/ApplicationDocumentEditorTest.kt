@@ -22,6 +22,43 @@ class ApplicationDocumentEditorTest {
     private val facts = listOf(ApplicationDocumentFact("company:name", "업체명", "새봄 & 연구소"))
 
     @Test
+    fun reusesPdfFieldAndAllowsEditingSavingAndReopeningKorean() {
+        val original = PDDocument().use { doc ->
+            doc.addPage(PDPage())
+            ByteArrayOutputStream().also { doc.save(it) }.toByteArray()
+        }
+        val first = editor.fill(original, "PDF", facts, listOf(ApplicationDocumentPlacement("company:name", "page-0", ApplicationDocumentBox(.1f, .1f, .7f, .15f))))
+        val inspection = editor.inspect(first, "PDF")
+        val target = inspection.targets.single()
+        assertTrue(target.id.startsWith("pdf-field:"))
+        val changedFacts = listOf(ApplicationDocumentFact("company:name", "업체명", "수정한 가상기업"))
+        val second = editor.fill(first, "PDF", changedFacts, listOf(ApplicationDocumentPlacement("company:name", target.id)))
+        Loader.loadPDF(second).use { doc ->
+            assertEquals(1, doc.documentCatalog.acroForm.fields.size)
+            val field = doc.documentCatalog.acroForm.fields.single() as PDTextField
+            assertEquals("수정한 가상기업", field.value)
+            field.value = "다운로드 후 다시 수정"
+            val saved = ByteArrayOutputStream().also { doc.save(it) }.toByteArray()
+            Loader.loadPDF(saved).use { reopened ->
+                val editable = reopened.documentCatalog.acroForm.fields.single() as PDTextField
+                assertEquals("다운로드 후 다시 수정", editable.value)
+                assertNotNull(editable.widgets[0].appearance.normalAppearance)
+                assertNotNull(PDFRenderer(reopened).renderImage(0))
+            }
+        }
+    }
+
+    @Test
+    fun rejectsPdfOverflowWithoutPublishingAnIntermediateFile() {
+        val original = PDDocument().use { doc -> doc.addPage(PDPage()); ByteArrayOutputStream().also { doc.save(it) }.toByteArray() }
+        val error = assertThrows(ApplicationDocumentException::class.java) {
+            editor.fill(original, "PDF", facts, listOf(ApplicationDocumentPlacement("company:name", "page-0", ApplicationDocumentBox(.1f, .1f, .01f, .01f))))
+        }
+        assertEquals("APPLICATION_DOCUMENT_OVERFLOW", error.code)
+        Loader.loadPDF(original).use { assertNull(it.documentCatalog.acroForm) }
+    }
+
+    @Test
     fun fillsHwpAndReopensAsAnEditableHwpWithOriginalParagraphs() {
         val file = BlankFileMaker.make()
         val paragraph = file.bodyText.sectionList[0].addNewParagraph()

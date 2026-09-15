@@ -107,6 +107,26 @@ class ApplicationPreparationAgent:
             5000, "Application draft agent timed out",
         )
 
+    async def plan_document(self, request, document):
+        from app.application_preparation.document_contract import PlanSelection
+        from app.application_preparation.document_pipeline import PLAN_INSTRUCTIONS
+
+        content = [{"type": "text", "text": json.dumps({
+            "scope": request.scope, "facts": [f.model_dump() for f in request.facts],
+            "bindings": [b.model_dump() for b in request.bindings], "scopeTargetIds": request.scopeTargetIds,
+            "documentMap": document.model_dump(),
+        }, ensure_ascii=False)}]
+        content.extend({"type": "image_url", "image_url": {"url": f"data:image/png;base64,{page}", "detail": "high"}} for page in request.pageImages)
+        return await self._invoke(PlanSelection, PLAN_INSTRUCTIONS, content, 16000, "Document plan timed out")
+
+    async def map_document(self, request, document):
+        from app.application_preparation.document_contract import MappingSelection
+        from app.application_preparation.document_pipeline import MAPPING_INSTRUCTIONS
+        content = [{"type": "text", "text": json.dumps({"scope": request.scope,
+            "fields": [f.model_dump() for f in request.fields], "documentMap": document.model_dump()}, ensure_ascii=False)}]
+        content.extend({"type": "image_url", "image_url": {"url": f"data:image/png;base64,{page}", "detail": "high"}} for page in request.pageImages)
+        return await self._invoke(MappingSelection, MAPPING_INSTRUCTIONS, content, 16000, "Document mapping timed out")
+
     async def interpret(self, request: InterpretRequest) -> InterpretationSelection:
         return await self._invoke(
             InterpretationSelection, INSTRUCTIONS, json.dumps(request.model_dump(), ensure_ascii=False),

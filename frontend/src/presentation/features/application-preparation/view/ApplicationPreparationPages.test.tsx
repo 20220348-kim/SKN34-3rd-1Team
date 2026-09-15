@@ -187,7 +187,7 @@ it('does not expose a download for a failed generation and retries the same revi
   repository.get.mockResolvedValue(readyPreparation())
   repository.generateDocuments.mockRejectedValueOnce(new ApplicationPreparationError(422, 'APPLICATION_DOCUMENT_MAPPING_FAILED'))
   mount('/app/application-preparations/12/documents?generate=3')
-  expect((await screen.findByRole('alert')).textContent).toContain('기입 위치')
+  expect((await screen.findByRole('alert')).textContent).toContain('입력 위치')
   expect(screen.queryByRole('button', { name: /다운로드/ })).toBeNull()
   fireEvent.click(screen.getByRole('button', { name: '다시 시도' }))
   await screen.findByRole('button', { name: '신청문서 1 다운로드' })

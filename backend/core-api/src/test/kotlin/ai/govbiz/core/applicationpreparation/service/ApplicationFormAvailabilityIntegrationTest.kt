@@ -1,5 +1,6 @@
 package ai.govbiz.core.applicationpreparation.service
 
+import ai.govbiz.core._common.test.stubDocumentMapping
 import ai.govbiz.core._common.test.MySqlTestContainerConfig
 import ai.govbiz.core.applicationpreparation.domain.*
 import ai.govbiz.core.applicationpreparation.repository.ApplicationFormAvailabilityRepository
@@ -45,6 +46,10 @@ class ApplicationFormAvailabilityIntegrationTest {
     @Autowired lateinit var jdbc: JdbcTemplate
     @Autowired lateinit var transactions: PlatformTransactionManager
     @MockitoBean lateinit var ai: AiApplicationPreparationClient
+    @MockitoBean lateinit var documentMcp: ai.govbiz.core.applicationpreparation.client.ai.ApplicationDocumentMcpClient
+    @org.junit.jupiter.api.BeforeEach
+    fun documentMappingStub() { stubDocumentMapping(documentMcp) }
+
     @MockitoBean lateinit var details: SupportProgramDetailService
     @MockitoBean lateinit var attachments: BizInfoAttachmentClient
     @MockitoBean lateinit var parser: SupportProgramDocumentParser

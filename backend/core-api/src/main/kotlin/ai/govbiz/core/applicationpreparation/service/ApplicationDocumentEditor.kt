@@ -81,7 +81,37 @@ class ApplicationDocumentEditor {
                     ApplicationDocumentTarget("page-$index", stripper.getText(doc).take(6000), "PDF page ${index + 1}; coordinates relative to the supplied page image")
                 }
                 require(images.sumOf { it.length } <= 32 * 1024 * 1024)
-                ApplicationDocumentInspection(targets, images)
+                val form = doc.documentCatalog.acroForm
+                require(form?.hasXFA() != true)
+                val fields = form?.fieldTree?.toList().orEmpty()
+                require(fields.size <= 3000)
+                val fieldMetadata = mutableListOf<Map<String, Any?>>()
+                val fieldTargets = fields.filterIsInstance<org.apache.pdfbox.pdmodel.interactive.form.PDTerminalField>().map { field ->
+                    val choices = when (field) {
+                        is org.apache.pdfbox.pdmodel.interactive.form.PDChoice -> field.optionsExportValues
+                        is org.apache.pdfbox.pdmodel.interactive.form.PDButton -> (field.onValues + "Off").toList()
+                        else -> emptyList()
+                    }
+                    val id = "pdf-field:${field.fullyQualifiedName}"
+                    val widgets = field.widgets.map { widget ->
+                        val index = (0 until doc.numberOfPages).firstOrNull { n -> doc.getPage(n).annotations.any { it.cosObject === widget.cosObject } }
+                        val page = index?.let(doc::getPage)
+                        val rect = widget.rectangle
+                        mapOf<String, Any?>("page" to index, "x" to rect?.lowerLeftX, "y" to rect?.lowerLeftY,
+                            "width" to rect?.width, "height" to rect?.height, "rotation" to page?.rotation,
+                            "cropX" to page?.cropBox?.lowerLeftX, "cropY" to page?.cropBox?.lowerLeftY,
+                            "cropWidth" to page?.cropBox?.width, "cropHeight" to page?.cropBox?.height,
+                            "visible" to (!widget.isHidden && !widget.isInvisible))
+                    }
+                    val supported = field is PDTextField || field is org.apache.pdfbox.pdmodel.interactive.form.PDChoice || field is org.apache.pdfbox.pdmodel.interactive.form.PDCheckBox || field is org.apache.pdfbox.pdmodel.interactive.form.PDRadioButton
+                    fieldMetadata += mapOf("targetId" to id, "fieldType" to field.javaClass.simpleName,
+                        "editable" to (!field.isReadOnly && supported && widgets.any { it["page"] != null && it["visible"] == true && (it["width"] as? Float ?: 0f) > 0 && (it["height"] as? Float ?: 0f) > 0 }),
+                        "options" to choices, "widgets" to widgets)
+                    val currentValue = field.valueAsString
+                    require(currentValue.length <= 6000)
+                    ApplicationDocumentTarget(id, currentValue, "${field.alternateFieldName.orEmpty()} | type=${field.fieldType}".take(1000))
+                }
+                ApplicationDocumentInspection(if (fieldTargets.isEmpty()) targets else fieldTargets, images, fieldMetadata)
             }
             else -> fail("지원하지 않는 원본 파일 형식입니다.")
         }.also { require(it.targets.isNotEmpty() && it.targets.size <= 3000 && it.targets.sumOf { t -> t.text.length + t.context.length + t.exampleText.length } <= 400_000) }
@@ -89,7 +119,7 @@ class ApplicationDocumentEditor {
 
     fun fill(bytes: ByteArray, format: String, facts: List<ApplicationDocumentFact>, placements: List<ApplicationDocumentPlacement>, clearExampleTargetIds: List<String> = emptyList()): ByteArray = safely {
         require(bytes.size in 1..MAX_BYTES)
-        require(placements.map { it.factId }.toSet() == facts.map { it.id }.toSet() && placements.size == facts.size)
+        require(placements.map { it.factId }.toSet() == facts.map { it.id }.toSet() && placements.size >= facts.size && placements.size <= 600)
         val values = facts.associateBy { it.id }
         fun value(group: List<ApplicationDocumentPlacement>) = group.joinToString("\n") { placement ->
             val fact = values.getValue(placement.factId)
@@ -491,14 +521,41 @@ class ApplicationDocumentEditor {
         val font = ClassPathResource("fonts/NanumGothic-Regular.ttf").inputStream.use { PDType0Font.load(doc, it, false) }
         resources.put(COSName.getPDFName("GovBizKorean"), font)
         val byId = facts.associateBy { it.id }
-        placements.forEachIndexed { i, placement ->
+        placements.filter { it.box != null }.forEachIndexed { i, placement ->
             val a = requireNotNull(placement.box)
-            placements.drop(i + 1).filter { it.targetId == placement.targetId }.forEach { other ->
+            placements.filter { it.box != null }.drop(i + 1).filter { it.targetId == placement.targetId }.forEach { other ->
                 val b = requireNotNull(other.box)
                 require(maxOf(a.x, b.x) >= minOf(a.x + a.width, b.x + b.width) || maxOf(a.y, b.y) >= minOf(a.y + a.height, b.y + b.height))
             }
         }
+        val expected = mutableMapOf<String, String>()
+        val existingFields = form.fieldTree.toList()
         placements.forEachIndexed { i, placement ->
+            if (placement.targetId.startsWith("pdf-field:")) {
+                require(placement.box == null)
+                val name = placement.targetId.removePrefix("pdf-field:")
+                require(name !in expected)
+                val field = requireNotNull(form.getField(name))
+                require(!field.isReadOnly && field !is org.apache.pdfbox.pdmodel.interactive.form.PDSignatureField)
+                val value = byId.getValue(placement.factId).value
+                when (field) {
+                    is PDTextField -> {
+                        if (field.maxLen > 0 && value.length > field.maxLen) throw ApplicationDocumentException("APPLICATION_DOCUMENT_OVERFLOW", "입력란의 글자 수 제한을 초과했습니다. 답변을 확인해 주세요.")
+                        val appearance = field.defaultAppearance ?: form.defaultAppearance.orEmpty()
+                        val fontCommand = Regex("/[^\\s]+\\s+([0-9]+(?:\\.[0-9]+)?)\\s+Tf")
+                        val size = fontCommand.find(appearance)?.groupValues?.get(1)?.toFloatOrNull()?.takeIf { it > 0 } ?: 10f
+                        field.defaultAppearance = if (fontCommand.containsMatchIn(appearance)) fontCommand.replace(appearance, "/GovBizKorean $size Tf") else "/GovBizKorean $size Tf 0 g"
+                        field.widgets.forEach { widget -> ensurePdfFits(font, value, widget.rectangle.width - 4, widget.rectangle.height - 4, size) }
+                        field.value = value
+                    }
+                    is org.apache.pdfbox.pdmodel.interactive.form.PDChoice -> { require(value in field.optionsExportValues); field.setValue(value) }
+                    is org.apache.pdfbox.pdmodel.interactive.form.PDButton -> { require(value in field.onValues || value == "Off"); field.value = value }
+                    else -> fail("지원하지 않는 PDF 입력란입니다.")
+                }
+                expected[name] = value
+                return@forEachIndexed
+            }
+            require(existingFields.isEmpty())
             val index = placement.targetId.removePrefix("page-").toInt()
             require(placement.targetId == "page-$index" && index in 0 until doc.numberOfPages)
             val page = doc.getPage(index)
@@ -513,6 +570,12 @@ class ApplicationDocumentEditor {
                 180 -> PDRectangle(crop.lowerLeftX + (1 - box.x - box.width) * crop.width, crop.lowerLeftY + box.y * crop.height, box.width * crop.width, box.height * crop.height)
                 else -> PDRectangle(crop.lowerLeftX + (1 - box.y - box.height) * crop.width, crop.lowerLeftY + (1 - box.x - box.width) * crop.height, box.height * crop.width, box.width * crop.height)
             }
+            val area = org.apache.pdfbox.text.PDFTextStripperByArea()
+            val displayWidth = if (rotation in setOf(90, 270)) crop.height else crop.width
+            val displayHeight = if (rotation in setOf(90, 270)) crop.width else crop.height
+            area.addRegion("input", java.awt.geom.Rectangle2D.Float(box.x * displayWidth, box.y * displayHeight, box.width * displayWidth, box.height * displayHeight))
+            area.extractRegions(page)
+            if (area.getTextForRegion("input").isNotBlank()) throw ApplicationDocumentException("APPLICATION_DOCUMENT_MAPPING_FAILED", "PDF 입력 영역에 기존 문구가 남아 있어 작성을 중단했습니다.")
             val field = PDTextField(form)
             field.partialName = "govbiz_${i}_${java.util.UUID.randomUUID()}"
             field.alternateFieldName = byId.getValue(placement.factId).label
@@ -521,8 +584,7 @@ class ApplicationDocumentEditor {
             val width = (if (rotation == 90 || rotation == 270) rect.height else rect.width) - 4
             val height = (if (rotation == 90 || rotation == 270) rect.width else rect.height) - 4
             // Reject answers that would be clipped even at the minimum readable size.
-            val lines = value.lines().sumOf { line -> maxOf(1, kotlin.math.ceil(font.getStringWidth(line) / 1000 * 8 / width).toInt()) }
-            require(width > 8 && height >= lines * 10)
+            ensurePdfFits(font, value, width, height)
             field.defaultAppearance = "/GovBizKorean 8 Tf 0 g"
             field.widgets[0].apply {
                 rectangle = rect; this.page = page; isPrinted = true
@@ -531,9 +593,26 @@ class ApplicationDocumentEditor {
             form.fields.add(field)
             page.annotations.add(field.widgets[0])
             field.value = value
+            expected[field.fullyQualifiedName] = value
         }
         form.needAppearances = false
-        ByteArrayOutputStream().use { out -> doc.save(out); out.toByteArray() }
+        val output = ByteArrayOutputStream().use { out -> doc.save(out); out.toByteArray() }
+        Loader.loadPDF(output).use { reopened ->
+            val savedForm = requireNotNull(reopened.documentCatalog.acroForm)
+            expected.forEach { (name, value) ->
+                val field = requireNotNull(savedForm.getField(name))
+                require(field.valueAsString == value)
+                field.widgets.forEach { require(it.appearance?.normalAppearance != null) }
+            }
+            val renderer = PDFRenderer(reopened)
+            for (index in 0 until reopened.numberOfPages) renderer.renderImage(index, .5f)
+        }
+        output
+    }
+
+    private fun ensurePdfFits(font: PDType0Font, value: String, width: Float, height: Float, size: Float = 8f) {
+        val lines = value.lines().sumOf { line -> maxOf(1, kotlin.math.ceil(font.getStringWidth(line) / 1000 * size / width).toInt()) }
+        if (width <= size || height < lines * size * 1.25f) throw ApplicationDocumentException("APPLICATION_DOCUMENT_OVERFLOW", "입력란에 답변 전체가 들어가지 않습니다. 문안을 확인해 주세요.")
     }
 
     private fun fail(message: String): Nothing = throw ApplicationDocumentException("APPLICATION_DOCUMENT_UNSUPPORTED", message)

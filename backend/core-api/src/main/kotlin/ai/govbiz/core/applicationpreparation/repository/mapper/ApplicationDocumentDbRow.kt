@@ -10,4 +10,5 @@ data class ApplicationDocumentDbRow(
     var sourceSha256: String = "",
     var placementsJson: String = "[]",
     var generatorVersion: Int = 5,
+    var generationFingerprint: String = "",
 )

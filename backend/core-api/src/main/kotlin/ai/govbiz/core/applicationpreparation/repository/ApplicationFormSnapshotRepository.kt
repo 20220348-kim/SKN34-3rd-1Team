@@ -43,6 +43,12 @@ class ApplicationFormSnapshotRepository(
         }
     }
 
+    @Transactional
+    fun attachDocumentMap(formVersionId: String, snapshot: ai.govbiz.core.applicationpreparation.domain.ApplicationDocumentMapSnapshot): ai.govbiz.core.applicationpreparation.domain.ApplicationDocumentMapSnapshot {
+        mapper.attachDocumentMap(formVersionId, snapshot.sourceSha256, snapshot.pipelineVersion, json.writeValueAsString(snapshot))
+        return requireNotNull(findByVersion(formVersionId)?.documentMapSnapshot)
+    }
+
     fun findByVersion(formVersionId: String): ApplicationFormManifest? =
         mapper.findByVersion(formVersionId)?.toManifest()
 
