@@ -3,9 +3,9 @@
 # Keep this entrypoint LF-terminated; the root .gitattributes enforces it.
 #
 # 1. DEMO_SEED_ENABLED가 true가 아니면 아무것도 하지 않고 끝납니다.
-# 2. 데모 계정이 이미 있으면 기존 자료를 보존하고 고정 키로 신청 준비 목업 2건을 보장합니다.
+# 2. 데모 계정이 이미 있으면 공용 자료를 보존하고 두 개인 작업 seed만 증분 실행합니다.
 # 3. core-api가 healthy(=Flyway 마이그레이션 완료)여야 시작되며, 모집글이 붙을 기업마당 공고가 동기화될 때까지 기다립니다.
-# 4. /seed/demo-data.sql을 흘려보냅니다. 데모 계정만 지우고 다시 넣습니다.
+# 4. 신규 DB와 강제 실행은 공용 seed 뒤에 신청 준비와 중복 검토 seed를 순서대로 실행합니다.
 set -eu
 
 if [ "${DEMO_SEED_ENABLED:-false}" != "true" ]; then
@@ -15,6 +15,7 @@ fi
 
 SEED_FILE="${DEMO_SEED_FILE:-/seed/demo-data.sql}"
 APPLICATION_SEED_FILE="$(dirname "${SEED_FILE}")/application-preparations.sql"
+COMBINATION_SEED_FILE="$(dirname "${SEED_FILE}")/combination-reviews.sql"
 WAIT_SECONDS="${DEMO_SEED_WAIT_SECONDS:-600}"
 REQUIRED_PROGRAMS="${DEMO_SEED_REQUIRED_PROGRAMS:-5}"
 HOST="${MYSQL_HOST:-mysql}"
@@ -29,19 +30,43 @@ if [ ! -f "${APPLICATION_SEED_FILE}" ]; then
   echo "demo-seed: seed file ${APPLICATION_SEED_FILE} is missing." >&2
   exit 1
 fi
+if [ ! -f "${COMBINATION_SEED_FILE}" ]; then
+  echo "demo-seed: seed file ${COMBINATION_SEED_FILE} is missing." >&2
+  exit 1
+fi
+
+# 이메일 값은 SQL 문자열로 직접 조립하지 않고 hex로 인코딩한 뒤 세션 변수로 복원합니다.
+TARGET_EMAILS_HEX="$(printf '%s' "${DEMO_SEED_TARGET_EMAILS:-}" | od -An -v -tx1 | tr -d ' \n')"
+MARKER_EMAIL_HEX="$(printf '%s' "${MARKER_EMAIL}" | od -An -v -tx1 | tr -d ' \n')"
 
 query() {
   mysql --host="${HOST}" --user="${MYSQL_USER}" --password="${MYSQL_PASSWORD}" --default-character-set=utf8mb4 \
     --silent --skip-column-names "${MYSQL_DATABASE}" -e "$1"
 }
 
+reset_personal_demo_data=0
+if [ "${DEMO_SEED_FORCE:-false}" = "true" ]; then
+  reset_personal_demo_data=1
+fi
+
+load_personal_seed() {
+  personal_seed_file="$1"
+  echo "demo-seed: loading ${personal_seed_file}"
+  {
+    printf "SET @demo_seed_target_emails = CONVERT(X'%s' USING utf8mb4);\n" "${TARGET_EMAILS_HEX}"
+    printf 'SET @reset_personal_demo_data = %s;\n' "${reset_personal_demo_data}"
+    cat "${personal_seed_file}"
+  } | mysql --host="${HOST}" --user="${MYSQL_USER}" --password="${MYSQL_PASSWORD}" --default-character-set=utf8mb4 \
+    "${MYSQL_DATABASE}"
+}
+
 if [ "${DEMO_SEED_FORCE:-false}" != "true" ]; then
-  existing="$(query "SELECT COUNT(*) FROM account WHERE email = '${MARKER_EMAIL}'")"
+  existing="$(query "SELECT COUNT(*) FROM account WHERE email = CONVERT(X'${MARKER_EMAIL_HEX}' USING utf8mb4)")"
   if [ "${existing:-0}" -ge 1 ]; then
-    echo "demo-seed: preserving existing data; adding missing application preparations."
-    mysql --host="${HOST}" --user="${MYSQL_USER}" --password="${MYSQL_PASSWORD}" --default-character-set=utf8mb4 \
-      "${MYSQL_DATABASE}" < "${APPLICATION_SEED_FILE}"
-    echo "demo-seed: application preparations ready."
+    echo "demo-seed: preserving existing public demo data; adding missing personal demo rows."
+    load_personal_seed "${APPLICATION_SEED_FILE}"
+    load_personal_seed "${COMBINATION_SEED_FILE}"
+    echo "demo-seed: personal demo rows ready."
     exit 0
   fi
 fi
@@ -64,13 +89,8 @@ while :; do
 done
 
 echo "demo-seed: loading ${SEED_FILE}"
-reset_applications=0
-if [ "${DEMO_SEED_FORCE:-false}" = "true" ]; then
-  reset_applications=1
-fi
 mysql --host="${HOST}" --user="${MYSQL_USER}" --password="${MYSQL_PASSWORD}" --default-character-set=utf8mb4 \
-  --init-command="SET @reset_application_preparations = ${reset_applications}" \
   "${MYSQL_DATABASE}" < "${SEED_FILE}"
-mysql --host="${HOST}" --user="${MYSQL_USER}" --password="${MYSQL_PASSWORD}" --default-character-set=utf8mb4 \
-  "${MYSQL_DATABASE}" < "${APPLICATION_SEED_FILE}"
-echo "demo-seed: done. Log in with member@govbiz.local (dev login) or any @demo.govbiz.local account (password govbiz-demo1)."
+load_personal_seed "${APPLICATION_SEED_FILE}"
+load_personal_seed "${COMBINATION_SEED_FILE}"
+echo "demo-seed: done. Each selected account now owns its own application preparation and combination review demos."

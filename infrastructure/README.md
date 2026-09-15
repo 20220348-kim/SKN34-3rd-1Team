@@ -128,9 +128,10 @@ OPENAI_API_KEY=발급받은_OpenAI_API_키
 | `ACCOUNT_SESSION_IDLE_TTL` | `P7D` | 마지막 사용 뒤 세션을 끝내는 유휴 기간 |
 | `ACCOUNT_JWT_SECRET` | 로컬 개발용 문자열 | 세션 JWT 서명 비밀키(32자 이상). Core API 코드에는 기본값이 없으며 운영 환경에서는 반드시 교체 |
 | `ACCOUNT_COOKIE_SECURE` | `false` | 세션 쿠키 `Secure` 속성. Compose는 http라 끄고, HTTPS 운영에서는 `true` |
-| `DEMO_SEED_ENABLED` | `true` | 첫 기동 때 `demo-seed` 서비스가 [데모 데이터](#데모-데이터)를 넣을지 여부. 데모 계정이 이미 있으면 건너뛰며 직접 가입한 계정은 건드리지 않음 |
-| `DEMO_SEED_FORCE` | `false` | `true`면 데모 계정이 있어도 데모 자료를 지우고 다시 넣음. 보통 `DEMO_SEED_FORCE=true docker compose run --rm demo-seed`로 한 번만 씀 |
-| `DEMO_SEED_WAIT_SECONDS` | `600` | 데모 모집글을 붙일 기업마당 공고(접수 마감 3주 이상 남은 것 6건)가 동기화될 때까지 기다리는 최대 시간 |
+| `DEMO_SEED_ENABLED` | `true` | `demo-seed` 서비스 실행 여부. `false`면 공용·개인 데모를 모두 건너뜀 |
+| `DEMO_SEED_FORCE` | `false` | `true`면 기존 공용 데모 reset 정책을 실행하고, 선택된 계정의 고정 키 개인 목업도 다시 만듦. 보통 `DEMO_SEED_FORCE=true docker compose run --rm demo-seed`로 한 번만 씀 |
+| `DEMO_SEED_TARGET_EMAILS` | 빈 값 | 신청 준비·중복 검토 목업 대상 이메일. 비어 있으면 `admin@govbiz.local`, `member@govbiz.local`을 자동 선택하며, 쉼표로 지정하면 해당 활성 계정만 보충 |
+| `DEMO_SEED_WAIT_SECONDS` | `600` | 데모 모집글을 붙일 기업마당 공고(접수 마감 3주 이상 남은 것 5건)가 동기화될 때까지 기다리는 최대 시간 |
 | `ACCOUNT_DEV_LOGIN_ENABLED` | `true` | Compose 개발 환경에서는 `POST /api/v1/auth/dev-login`으로 관리자(`admin@govbiz.local`) 또는 회원(`member@govbiz.local`) 시드 세션을 바로 발급. 운영에서는 `false` |
 | `ACCOUNT_DEV_LOGIN_EMAIL` | `admin@govbiz.local` | 개발용 관리자 시드 계정 이메일 |
 | `ACCOUNT_DEV_LOGIN_MEMBER_EMAIL` | `member@govbiz.local` | 개발용 회원 시드 계정 이메일 |
@@ -357,28 +358,37 @@ docker compose --env-file .env --file infrastructure/compose.yaml down --volumes
 ### 데모 데이터
 
 `docker compose up -d`를 하면 `demo-seed` 서비스가 `core-api`가 healthy(Flyway 마이그레이션 완료)된 뒤 실행됩니다.
-데모 계정이 없을 때는 [`demo-data.sql`](seed/demo-data.sql)과 [`application-preparations.sql`](seed/application-preparations.sql)을 순서대로 적재합니다.
-파트너 제안을 서로 주고받는 시연에 맞춘 구성으로, 계정 6개(개발용 시드 admin·member + 데모 회원 4개),
-기업 6개(협업·파트너 설정 6개), 파트너 모집글 5개(회원마다 1개, 모두 모집 중), 제안 4개(데모 회원 4곳이 서로에게 1건씩, 모두 대기), 관심 공고 20개(계정마다 3~4개),
-중복 지원 검토 2건(저장된 데모 자동 분석 1건), 신청 준비 2건(확인 입력·작성본 포함), 관리자 조치 기록 2건입니다.
+이미지를 빌드하거나 서비스를 시작하는 과정과 demo seed는 별도 단계이며, `DEMO_SEED_ENABLED=false`면 seed는 아무 작업도 하지 않습니다.
+
+seed 파일의 책임은 다음처럼 나뉩니다.
+
+- [`demo-data.sql`](seed/demo-data.sql): 팀이 확정한 계정 6개, 기업 6개, 모집글 5개, 제안 4개, 관심 공고 20개와 관리자 조치 기록 2개의 공용 데모
+- [`application-preparations.sql`](seed/application-preparations.sql): 선택된 계정별 신청 준비 2건(확인 입력·작성본 포함)
+- [`combination-reviews.sql`](seed/combination-reviews.sql): 선택된 계정별 중복 지원 검토 2건(저장된 6단계 자동 분석·원문 1건 포함)
+
+신청 준비와 중복 검토는 하나의 계정 행을 공유하지 않습니다. 각 대상 계정에 동일한 내용의 독립 parent/child 행을 만들고 기존 API의
+`로그인 계정 → account_id → owner_account_id` 조건을 그대로 사용합니다.
 모집글은 접수 마감이 3주 이상 남은 기업마당 공고 5건에 붙이므로 공고 동기화가 끝날 때까지(최대 `DEMO_SEED_WAIT_SECONDS`) 기다렸다가 넣고,
 공고가 부족하면 이유를 남기고 실패합니다(`BIZINFO_API_KEY` 확인). `DEMO_SEED_ENABLED=false`면 아무것도 하지 않습니다.
 
-`jihoon.park@demo.govbiz.local` 계정이 이미 있으면 전체 초기화를 건너뛰고 신청도우미 SQL만 실행합니다.
-V35의 `demo_seed_key`로 `member@govbiz.local`의 목업 2건을 식별하므로, 같은 공고·분야의 사용자 작업이 있어도 목업은 별도로 추가됩니다.
-일반 작업은 키가 NULL이라 개수 제한 없이 별도 행으로 쌓입니다. 재실행 시 기존 목업과 사용자 작성본을 덮어쓰지 않으며,
-목업을 삭제했다면 다음 시드 실행 시 다시 추가합니다. 이전 버전의 식별값 없는 행은 사용자 기록과 구분할 수 없어 그대로 보존합니다.
-이 SQL을 포함한 코드를 각자 pull하고 로컬 Compose를 실행하면 각자의 DB에 동일한 목업이 들어갑니다.
-신청도우미 목업은 member 계정에서 보이며 `DEMO_SEED_ENABLED=false` 또는 독립 production Compose에는 자동 적재하지 않습니다.
+`DEMO_SEED_TARGET_EMAILS`가 비어 있으면 팀 시연 계정 `admin@govbiz.local`과 `member@govbiz.local`을 자동 선택합니다.
+`DEMO_SEED_TARGET_EMAILS=presentation@govbiz.local`처럼 지정하면 해당 활성 계정만, 쉼표로 여러 이메일을 지정하면 그 계정들만 신규·누락 목업 대상으로 삼습니다.
+지정 계정이 없거나 삭제·정지 상태이면 일부 성공으로 숨기지 않고 transaction을 rollback해 실패합니다. 대상에서 빠진 계정의 기존 목업은 일반 실행에서 유지합니다.
 
-이미 실행 중인 환경에서 이번 변경을 적용할 때는 Core API를 재빌드해 V35를 적용한 뒤 시드만 실행합니다. 강제 초기화는 필요 없습니다.
+`jihoon.park@demo.govbiz.local` marker 계정이 이미 있으면 파트너 등 공용 `demo-data.sql`은 건너뛰되 두 개인 seed는 항상 순서대로 실행합니다.
+따라서 기존 DB volume을 지우거나 전체 demo reset을 하지 않아도 신청 준비와 중복 검토의 누락분을 함께 보충합니다.
+V35와 V37의 `(owner_account_id, demo_seed_key)` 유일 제약은 사용자별 목업 중복만 막습니다. 일반 API가 만드는 NULL 키 행은 여러 건 만들 수 있고,
+개인 seed와 선택 대상 변경은 이를 삭제하거나 덮어쓰지 않습니다. 목업 parent나 하위 데이터가 삭제되면 다음 실행이 누락분만 복구합니다.
+독립 production Compose에는 `demo-seed` 서비스가 없으므로 자동 적재되지 않습니다.
+
+이미 실행 중인 환경에서 이번 변경을 적용할 때는 Core API를 재빌드해 V37을 적용한 뒤 시드만 실행합니다. 강제 초기화는 필요 없습니다.
 
 ```bash
 docker compose --env-file .env -f infrastructure/compose.yaml up -d --build --wait core-api
 docker compose --env-file .env -f infrastructure/compose.yaml run --rm demo-seed
 ```
 
-신청도우미 목업은 `application-preparations.sql` 한 곳에서 관리하며 신규 DB 적재와 기존 DB 보충이 같은 파일을 사용합니다.
+개인 목업은 각 기능의 seed 파일 한 곳에서 관리하며 신규 DB 적재와 기존 DB 보충이 같은 파일을 사용합니다.
 검증은 실제 개발 DB 대신 임시 MySQL 8.4 컨테이너에서 실행할 수 있습니다(실행 후 테스트 컨테이너 삭제).
 
 ```bash
@@ -386,14 +396,14 @@ RUN_SEED_MYSQL_TESTS=1 python3 -m unittest discover -s infrastructure/scripts -p
 ```
 
 초기 상태로 되돌리거나 마감일을 오늘 기준으로 다시 맞추려면 `DEMO_SEED_FORCE=true docker compose run --rm demo-seed`를 실행합니다.
-이때 `@demo.govbiz.local` 계정과 시드 계정의 기업·모집글·제안·관심 공고·중복 검토·신청 준비를 지우고 다시 넣으며,
-**그 밖의 계정(직접 가입한 실제 이메일 등)은 읽지도 지우지도 않습니다.** 스택을 띄운 채 호스트에서 직접 넣으려면
-`./infrastructure/scripts/seed-demo-data.sh`를 씁니다(이 스크립트는 건너뛰기 없이 항상 다시 넣습니다).
+이때 기존 정책대로 합성 `@demo.govbiz.local` 계정과 시드 계정의 공용 자료를 reset하고, 선택된 계정의 고정 키 개인 목업만 다시 만듭니다.
+개인 seed의 `demo_seed_key IS NULL` 행과 선택 대상 밖 고정 키 행은 cleanup하지 않습니다. 스택을 띄운 채 호스트에서 직접 넣으려면
+`./infrastructure/scripts/seed-demo-data.sh`를 씁니다(이 스크립트는 같은 Compose `demo-seed` 진입점을 `DEMO_SEED_FORCE=true`로 실행합니다).
 
 | 계정 | 비밀번호 | 용도 |
 |---|---|---|
-| `member@govbiz.local` | `govbiz-admin1`(개발용 로그인도 가능) | 넥스트웨이브. 모집글 R1(공고 1), 관심 공고 1·2·3·4, 중복 검토 2건, 신청 준비 2건 |
-| `admin@govbiz.local` | `govbiz-admin1` | 거북섬테크. 관리자 계정 관리 화면(요약·목록·조치 기록), 모집글 없음, 관심 공고 1·2·5 |
+| `member@govbiz.local` | `govbiz-admin1`(개발용 로그인도 가능) | 넥스트웨이브. 모집글 R1(공고 1), 관심 공고 1·2·3·4, 본인 소유 중복 검토 2건·신청 준비 2건 |
+| `admin@govbiz.local` | `govbiz-admin1` | 거북섬테크. 관리자 화면, 모집글 없음, 관심 공고 1·2·5, 본인 소유 중복 검토 2건·신청 준비 2건 |
 | `jihoon.park@demo.govbiz.local` | `govbiz-demo1` | 데이터브릿지. 모집글 R2(공고 2), 보낸 제안 R4·받은 제안 1건(한빛정밀), 관심 공고 2·1·3 |
 | `hana.choi@demo.govbiz.local` | `govbiz-demo1` | 한빛정밀. 모집글 R3(공고 3), 보낸 제안 R2·받은 제안 1건(오션로지스), 관심 공고 3·1·5 |
 | `dohyun.jung@demo.govbiz.local` | `govbiz-demo1` | 마루헬스케어. 모집글 R4(공고 4), 보낸 제안 R5·받은 제안 1건(데이터브릿지), 관심 공고 4·2·5·1 |

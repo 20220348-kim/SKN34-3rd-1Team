@@ -52,9 +52,11 @@ V31의 문항별 텍스트 작성본 API·기록은 남아 있으나 현재 UI�
 
 `/app/saved-programs`의 진행 관리에서는 신청 준비 건의 단계를 조회·변경합니다. 단계 변경은 문서 입력 revision과 분리된 진행 revision으로 보호합니다.
 
-로컬 Compose의 `demo-seed → application-preparations.sql → MySQL` 경로는 member 계정의 신청도우미 목업 2건을 고정 키로 유지합니다.
-V35의 `(owner_account_id, demo_seed_key)` 유일 제약은 목업 중복만 막으며, 일반 신청 작업의 NULL 키는 여러 행을 허용합니다.
-기존 DB에서도 목업을 별도 추가하고 사용자 기록은 보존합니다. 신규/기존 환경 모두 같은 SQL을 사용하며 세부 실행법은 [데모 데이터](../infrastructure/README.md#데모-데이터)에 있습니다.
+로컬 Compose의 개인 목업 경로는 `demo-seed → application-preparations.sql / combination-reviews.sql → MySQL`입니다.
+기본 시연 계정 admin·member마다 신청도우미 2건과 중복 검토 2건의 독립 parent/child 행을 만들고, 로그인 계정의 `owner_account_id` 조회 경계를 그대로 유지합니다.
+V35·V37의 `(owner_account_id, demo_seed_key)` 유일 제약은 목업 중복만 막으며, 일반 사용자 작업의 NULL 키는 여러 행을 허용합니다.
+기존 DB에서도 두 SQL을 증분 실행해 누락분을 복구하고 사용자 기록과 대상 밖 기존 목업은 보존합니다. 신규/기존 환경 모두 같은 SQL을 사용하며
+대상 이메일 기본 탐색·override와 세부 실행법은 [데모 데이터](../infrastructure/README.md#데모-데이터)에 있습니다.
 
 Frontend는 현재 공고의 활성 분석 작업을 3초마다 확인하며, 조회 재시도는 새 분석을 만들지 않습니다.
 AI Service의 명시적 근거 검증 실패(`422 / APPLICATION_FORM_AI_INVALID_RESPONSE`)는 Client의 전용 예외 → DiscoveryService의 업무 오류 → JobService의 FAILED 저장으로 연결됩니다. 공고 재선택 후 새 요청은 허용하되 자동 재호출하지 않으며, 통신 유실·시간 초과는 UNKNOWN으로 차단합니다.
