@@ -66,6 +66,31 @@ async function submit(text: string) {
 }
 
 describe('사이드바 대화 기록 HTTP 통합', () => {
+  it('대화한 적이 없는 로그인 계정은 조회 후 빈 기록 안내만 표시한다', async () => {
+    renderChat()
+    const history = screen.getByRole('region', { name: '대화 기록' })
+    expect(await within(history).findByText('대화를 시작하면 여기에 저장됩니다.')).toBeTruthy()
+    expect(historyRequests).toHaveLength(1)
+    expect(within(history).queryByRole('alert')).toBeNull()
+    expect(within(history).queryByRole('button', { name: '기록 다시 불러오기' })).toBeNull()
+    expect(within(history).queryByRole('button', { name: /^대화 열기:/ })).toBeNull()
+  })
+
+  it('실제 기록 조회 실패는 빈 기록과 구분하고 재조회 성공 후 빈 안내로 바뀐다', async () => {
+    const fetch = globalThis.fetch
+    vi.stubGlobal('fetch', vi.fn(async (input: string, init: RequestInit) =>
+      input.includes('/api/v1/me/chat-conversations') ? json({}, 503) : fetch(input, init)))
+    renderChat()
+    const history = screen.getByRole('region', { name: '대화 기록' })
+    expect(await within(history).findByRole('alert')).toHaveProperty('textContent', '대화 기록을 불러오지 못했습니다. 다시 시도해 주세요.')
+    expect(within(history).queryByText('대화를 시작하면 여기에 저장됩니다.')).toBeNull()
+    vi.stubGlobal('fetch', fetch)
+    fireEvent.click(within(history).getByRole('button', { name: '기록 다시 불러오기' }))
+    expect(await within(history).findByText('대화를 시작하면 여기에 저장됩니다.')).toBeTruthy()
+    expect(within(history).queryByRole('alert')).toBeNull()
+    expect(within(history).queryByRole('button', { name: '기록 다시 불러오기' })).toBeNull()
+  })
+
   it('삭제 취소 시 보존하고 확인하면 현재 대화를 비우며 새 세션에서도 삭제 상태를 유지한다', async () => {
     const view = renderChat()
     await submit('삭제할 서울 지원사업')

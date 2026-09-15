@@ -36,7 +36,7 @@ export default function middleware(request: Request) {
     return new Response('접속 주소를 확인할 수 없습니다.', { status: 400, headers: noCache })
   }
   const headers = new Headers()
-  for (const name of ['accept', 'accept-language', 'content-type', 'cookie', 'origin', 'authorization']) {
+  for (const name of ['accept', 'accept-language', 'content-type', 'cookie', 'origin', 'authorization', 'x-chat-account']) {
     const value = request.headers.get(name)
     if (value !== null) headers.set(name, value)
   }

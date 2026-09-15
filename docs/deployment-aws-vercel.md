@@ -20,6 +20,7 @@
 `브라우저 → Vercel middleware/external rewrite → CloudFront → VPC origin → Nginx → Core`
 
 Vercel middleware는 AI를 실행하지 않고 `/api`의 목적지와 전달 헤더만 정한다.
+대화 기록 API의 계정 확인에 필요한 `X-Chat-Account`도 쿠키와 함께 전달한다. 이 헤더가 누락되면 빈 대화 목록도 조회 오류로 표시되며, Core는 전달된 이메일과 세션 계정의 일치 여부를 검증한다.
 공식 `@vercel/functions`를 사용하며 Node.js 라우팅 실행·요청량은 Vercel 요금/제한의 적용 대상이다.
 
 1. 고정 운영 Vercel origin과 Production 환경만 허용한다. Preview/다른 배포 별칭은 403, 설정 누락은 503이다.
