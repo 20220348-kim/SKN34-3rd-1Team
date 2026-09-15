@@ -16,7 +16,7 @@ fi
 SEED_FILE="${DEMO_SEED_FILE:-/seed/demo-data.sql}"
 APPLICATION_SEED_FILE="$(dirname "${SEED_FILE}")/application-preparations.sql"
 WAIT_SECONDS="${DEMO_SEED_WAIT_SECONDS:-600}"
-REQUIRED_PROGRAMS="${DEMO_SEED_REQUIRED_PROGRAMS:-6}"
+REQUIRED_PROGRAMS="${DEMO_SEED_REQUIRED_PROGRAMS:-5}"
 HOST="${MYSQL_HOST:-mysql}"
 # 데모 데이터가 들어갔는지 판단하는 대표 계정입니다. demo-data.sql의 첫 데모 계정과 같아야 합니다.
 MARKER_EMAIL="${DEMO_SEED_MARKER_EMAIL:-jihoon.park@demo.govbiz.local}"
