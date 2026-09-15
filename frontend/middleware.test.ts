@@ -43,6 +43,15 @@ describe('Vercel 운영 API 라우팅', () => {
     expect(incoming.bodyUsed).toBe(false)
   })
 
+  it.each(['GET', 'PUT', 'DELETE'])('대화 기록 %s 요청의 계정 확인 헤더를 그대로 전달한다', (method) => {
+    const email = encodeURIComponent('member+chat@example.com')
+    const incoming = new Request('https://govbiz-test.vercel.app/api/v1/me/chat-conversations', {
+      method, headers: { 'x-vercel-forwarded-for': '203.0.113.12', 'X-Chat-Account': email, cookie: 'session=member' },
+    })
+    const response = middleware(incoming)
+    expect(response.headers.get('x-middleware-request-x-chat-account')).toBe(email)
+    expect(response.headers.get('x-middleware-request-cookie')).toBe('session=member')
+  })
   it.each(['', '1.2.3.4, 5.6.7.8', 'localhost', '999.1.1.1'])('잘못된 IP %s를 거부한다', (ip) => {
     expect(middleware(request(ip)).status).toBe(400)
   })
