@@ -51,10 +51,10 @@ describe('공개 요금제', () => {
 
     expect(screen.queryByText('GovBiz 요금제', { exact: true })).toBeNull()
     expect(screen.getByRole('heading', { level: 1, name: '기업의 다음 단계에 맞는 요금제' })).toBeTruthy()
-    for (const name of ['무료', '프로', '팀']) {
+    for (const name of ['무료', '플러스', '프리미엄']) {
       expect(screen.getByRole('heading', { name })).toBeTruthy()
     }
-    // 팀만 출시 준비 중이고, 프로는 정식 출시 전까지 무료로 열려 있어 로그인 뒤 관심 공고함으로 이어집니다.
+    // 프리미엄만 출시 준비 중이고, 플러스는 정식 출시 전까지 무료로 열려 있어 로그인 뒤 관심 공고함으로 이어집니다.
     const pendingButtons = screen.getAllByRole('button', { name: '출시 준비 중' })
     expect(pendingButtons).toHaveLength(1)
     for (const button of pendingButtons) {
@@ -85,7 +85,7 @@ describe('공개 요금제', () => {
 
     expect(screen.queryByText('GovBiz 요금제', { exact: true })).toBeNull()
     expect(screen.getByRole('heading', { level: 1, name: '기업의 다음 단계에 맞는 요금제' })).toBeTruthy()
-    for (const name of ['무료', '프로', '팀']) {
+    for (const name of ['무료', '플러스', '프리미엄']) {
       expect(screen.getByRole('heading', { name })).toBeTruthy()
     }
     expect(screen.getByRole('complementary', { name: '작업 사이드바' })).toBeTruthy()
