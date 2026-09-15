@@ -19,6 +19,16 @@ def validate(config):
         errors.append("운영 서비스 구성이 다릅니다. 개발 Compose와 병합하지 마세요.")
         return errors
     core = services["core-api"]["environment"]
+    ai = services["ai-service"]["environment"]
+    agent_enabled = core.get("ASSISTANT_AGENT_ENABLED", "false")
+    if agent_enabled not in {"true", "false"}:
+        errors.append("ASSISTANT_AGENT_ENABLED는 true 또는 false여야 합니다.")
+    if agent_enabled == "true":
+        token = core.get("ASSISTANT_TOOLS_TOKEN", "")
+        if len(token.strip()) < 32 or token != ai.get("ASSISTANT_TOOLS_TOKEN"):
+            errors.append("도우미 활성화에는 Core/AI에 동일한 32자 이상 서버 전용 토큰이 필요합니다.")
+        if ai.get("ASSISTANT_TOOLS_BASE_URL") != "http://core-api:8080":
+            errors.append("도우미 도구는 내부 Core 주소 http://core-api:8080을 사용해야 합니다.")
     origin = core.get("APP_CORS_ALLOWED_ORIGIN", "")
     if not re.fullmatch(r"https://[a-z0-9-]+\.vercel\.app", origin):
         errors.append("고정 운영 Vercel HTTPS origin이 필요합니다(끝 / 제외).")
