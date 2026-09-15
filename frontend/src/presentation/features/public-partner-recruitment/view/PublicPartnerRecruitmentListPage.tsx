@@ -1,4 +1,5 @@
 import type { PartnerRecruitmentSummary } from '../../../../domain/entities/PartnerRecruitment'
+import { SelectField } from '../../../shared/workspace/SelectField'
 import { workspacePageStyles, workspaceTagClassName } from '../../../shared/workspace/WorkspacePage.styles'
 import {
   programDeadlineLabel,
@@ -133,30 +134,14 @@ export function PublicPartnerRecruitmentListPage() {
         </form>
         {/* 지원사업 찾기 필터 검색과 같은 "검색 결과 N건" 제목과 출처·정렬 선택입니다. 지역·분야 필터는 두지 않습니다. */}
           <h2 className={styles.resultCount} aria-live="polite">
-            {resultTotal === null
-              ? '검색 결과'
-              : <>검색 결과 <span className={styles.resultTotal}>{resultTotal.toLocaleString()}건</span></>}
+            검색 결과 <span className={styles.resultTotal}>{resultTotal.toLocaleString()}건</span>
           </h2>
           <div className={styles.listOptions}>
             <label className={styles.optionLabel}>출처
-              <select
-                className={styles.optionSelect}
-                aria-label="출처"
-                value={sourceCode}
-                onChange={(event) => selectSource(event.target.value)}
-              >
-                {sourceOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-              </select>
+              <SelectField className={styles.optionSelect} label="출처" value={sourceCode} options={sourceOptions} onChange={selectSource} />
             </label>
             <label className={styles.optionLabel}>정렬
-              <select
-                className={styles.optionSelect}
-                aria-label="정렬"
-                value={sort}
-                onChange={(event) => selectSort(event.target.value)}
-              >
-                {sortOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-              </select>
+              <SelectField className={styles.optionSelect} label="정렬" value={sort} options={sortOptions} onChange={selectSort} />
             </label>
           </div>
         </div>

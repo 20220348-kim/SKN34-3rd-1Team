@@ -100,7 +100,8 @@ export const partnerRecruitmentStyles = {
     'flex items-center justify-between gap-4 rounded-[0.85rem] border border-brand-primary bg-white px-4 py-[0.9rem]',
   selectedProgramTitle: 'text-[0.95rem] font-bold text-app-ink',
   selectedProgramMeta: 'text-[0.72rem] text-sample-muted',
-  programResultList: 'm-0 flex list-none flex-col gap-2 p-0',
+  // 8건(한 건 약 5.7rem + 간격)까지 보이고 그 이상은 목록 안에서 스크롤합니다.
+  programResultList: 'm-0 flex max-h-[46rem] list-none flex-col gap-2 overflow-y-auto p-0 pr-1',
   programResult: 'flex items-center justify-between gap-3 rounded-[0.85rem] border border-sample-border bg-white px-4 py-[0.7rem]',
   fieldRow: 'grid grid-cols-1 gap-[1.1rem] @min-[28rem]/column:grid-cols-2',
   field: 'flex flex-col gap-2 text-[0.9rem] font-bold text-app-ink',

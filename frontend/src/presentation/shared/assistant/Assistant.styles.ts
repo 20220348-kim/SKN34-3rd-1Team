@@ -26,15 +26,16 @@ export const assistantStyles = {
     'bg-[#c62828] text-[10.5px] font-bold text-white',
   ),
 
-  // 패널: 데스크톱 380×min(600, 화면-112) 비모달 팝오버, 모바일 전체 화면.
+  // 패널: 데스크톱 380×min(600, 화면 높이 - 아래 여백 - 위 여백 20px) 비모달 팝오버, 모바일 전체 화면.
+  // 높이는 아래 여백(bottom)과 함께 정해야 창을 줄여도 위쪽이 화면 밖으로 잘리지 않습니다.
   panel: classes(
     'fixed right-6 z-[31] flex w-[380px] flex-col overflow-hidden rounded-2xl border border-sample-border bg-white',
     'shadow-[0_2px_4px_rgb(20_24_22_/_6%),0_20px_44px_-20px_rgb(20_24_22_/_30%)]',
-    'h-[min(600px,calc(100dvh-112px))]',
     'max-[639px]:inset-0 max-[639px]:h-auto max-[639px]:w-auto max-[639px]:rounded-none max-[639px]:border-0',
   ),
-  panelDefault: 'bottom-[92px]',
-  panelLifted: 'bottom-[160px]',
+  panelDefault: 'bottom-[92px] h-[min(600px,calc(100dvh-112px))]',
+  // 채팅 화면에서는 입력창 위로 올리므로(bottom 160px) 그만큼 높이도 줄입니다.
+  panelLifted: 'bottom-[160px] h-[min(600px,calc(100dvh-180px))]',
   header: 'flex shrink-0 items-center gap-2.5 bg-brand-primary px-3.5 py-3 text-white',
   headerBack: 'hidden max-[639px]:flex size-8 cursor-pointer items-center justify-center rounded-lg border-0 bg-transparent text-white text-lg',
   avatar: 'flex size-9 shrink-0 items-center justify-center rounded-full bg-white text-[15px] font-bold text-brand-primary',
@@ -46,7 +47,7 @@ export const assistantStyles = {
     'flex size-8 cursor-pointer items-center justify-center rounded-lg border-0 bg-transparent text-white text-base',
     'hover:bg-white/15 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white',
   ),
-  menu: 'absolute right-0 top-9 z-[2] w-[176px] rounded-xl border border-sample-border bg-white p-1.5 text-[13px] text-app-ink shadow-[0_10px_30px_-12px_rgb(0_0_0_/_32%)]',
+  menu: 'z-[32] w-[176px] rounded-xl border border-sample-border bg-white p-1.5 text-[13px] text-app-ink shadow-[0_10px_30px_-12px_rgb(0_0_0_/_32%)]',
   menuItem: 'block w-full cursor-pointer rounded-lg border-0 bg-transparent px-2.5 py-2 text-left text-[13px] text-app-ink hover:bg-app-canvas focus-visible:outline-2 focus-visible:outline-brand-primary',
 
   // 대화 영역

@@ -42,7 +42,8 @@ export const pricingPageStyles = {
   availableButton: 'cursor-pointer bg-brand-primary text-white hover:bg-[#066538] focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-brand-primary',
   regularPendingButton: 'cursor-not-allowed bg-[#f1f2f4] text-sample-muted',
   featuredPendingButton: 'cursor-not-allowed bg-[#f1f2f4] text-sample-muted',
-  footerNote: 'm-0 text-center text-[0.7rem] leading-[1.65]',
+  // 두 줄까지의 높이를 미리 확보해, 안내 문구 길이가 달라도 세 카드의 버튼 높이가 같은 선에 놓입니다.
+  footerNote: 'm-0 min-h-[2.4rem] text-center text-[0.7rem] leading-[1.65]',
   releaseNote: 'm-0 break-keep text-center text-[0.78rem] leading-[1.75] text-sample-muted [text-wrap:pretty]',
   valueSection: 'flex flex-col gap-7 rounded-[1.75rem] border border-sample-border bg-white p-[clamp(1.4rem,4vw,2.5rem)]',
   sectionHeading: 'm-0 break-keep text-[clamp(1.4rem,2.8vw,2rem)] font-extrabold leading-[1.4] tracking-[-0.045em]',

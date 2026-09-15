@@ -17,7 +17,7 @@ export const yearPickerStyles = {
   placeholder: 'text-sample-muted',
   caret: 'text-[0.7rem] text-sample-muted',
   popover: classes(
-    'absolute top-full left-0 z-20 mt-1.5 w-[17rem] rounded-[0.9rem] border border-sample-border bg-white p-3',
+    'z-20 w-[17rem] rounded-[0.9rem] border border-sample-border bg-white p-3',
     'shadow-[0_14px_34px_rgb(32_33_36_/_14%)]',
   ),
   nav: 'mb-2 flex items-center justify-between text-[0.82rem] font-extrabold text-app-ink',

@@ -6,6 +6,7 @@ import {
   workspaceTagClassName,
 } from '../../../shared/workspace/WorkspacePage.styles'
 import { HelpTip } from '../../../shared/workspace/HelpTip'
+import { SelectField } from '../../../shared/workspace/SelectField'
 import { WorkspaceToggle } from '../../../shared/workspace/WorkspaceToggle'
 import { WorkspacePageHeader } from '../../../shared/workspace/WorkspacePageHeader'
 import { YearPicker } from '../../../shared/workspace/YearPicker'
@@ -455,6 +456,14 @@ function ProfileFields({ vm, idPrefix }: { vm: ViewModel; idPrefix: string }) {
     'aria-describedby': vm.formErrors[name] ? `${idPrefix}-${name}-error` : undefined,
     value: vm.form[name],
   })
+  // 공용 드롭다운은 같은 값을 prop 이름만 다르게 받습니다.
+  const selectField = (name: 'region' | 'industry') => ({
+    id: `${idPrefix}-${name}`,
+    name,
+    invalid: vm.formErrors[name] !== undefined,
+    describedBy: vm.formErrors[name] ? `${idPrefix}-${name}-error` : undefined,
+    value: vm.form[name],
+  })
   const errorOf = (name: keyof ProfileFormValues) =>
     vm.formErrors[name] ? <p id={`${idPrefix}-${name}-error`} className={companyProfileStyles.formError} role="alert">{vm.formErrors[name]}</p> : null
   const foundedYear = /^\d{4}$/.test(vm.form.foundedYear) ? Number(vm.form.foundedYear) : null
@@ -463,18 +472,16 @@ function ProfileFields({ vm, idPrefix }: { vm: ViewModel; idPrefix: string }) {
     <div className={companyProfileStyles.formGrid}>
       <div className={companyProfileStyles.formField}>
         <label className={companyProfileStyles.formLabel} htmlFor={`${idPrefix}-region`}>소재지</label>
-        <select className={companyProfileStyles.input} {...field('region')} onChange={(event) => vm.updateForm('region', event.target.value)}>
-          <option value="">선택</option>
-          {vm.regions.map((region) => <option key={region} value={region}>{region}</option>)}
-        </select>
+        <SelectField className={companyProfileStyles.input} {...selectField('region')}
+          options={[{ value: '', label: '선택' }, ...vm.regions.map((region) => ({ value: region, label: region }))]}
+          onChange={(value) => vm.updateForm('region', value)} />
         {errorOf('region')}
       </div>
       <div className={companyProfileStyles.formField}>
         <label className={companyProfileStyles.formLabel} htmlFor={`${idPrefix}-industry`}>업종</label>
-        <select className={companyProfileStyles.input} {...field('industry')} onChange={(event) => vm.updateForm('industry', event.target.value)}>
-          <option value="">선택</option>
-          {vm.industries.map((industry) => <option key={industry} value={industry}>{industry}</option>)}
-        </select>
+        <SelectField className={companyProfileStyles.input} {...selectField('industry')}
+          options={[{ value: '', label: '선택' }, ...vm.industries.map((industry) => ({ value: industry, label: industry }))]}
+          onChange={(value) => vm.updateForm('industry', value)} />
         {errorOf('industry')}
       </div>
       <div className={companyProfileStyles.formField}>

@@ -69,6 +69,7 @@ export function usePartnerRecruitmentListViewModel() {
       setDraft(emptyDraft)
       setQuery({ ...defaultPartnerRecruitmentQuery, sort: query.sort })
     },
-    resultSummary: page === null ? partnerRecruitmentSortLabels[query.sort] : `${page.total}건 · ${partnerRecruitmentSortLabels[query.sort]}`,
+    // 처음 읽기 전에도 "0건 · 정렬"로 보여 건수 자리를 비우지 않습니다.
+    resultSummary: `${page?.total ?? 0}건 · ${partnerRecruitmentSortLabels[query.sort]}`,
   }
 }

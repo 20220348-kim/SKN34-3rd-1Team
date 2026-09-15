@@ -18,6 +18,7 @@ import { loginMessages } from './presentation/features/auth/viewmodel/useLoginVi
 import { resetPasswordMessages } from './presentation/features/auth/viewmodel/useResetPasswordViewModel'
 import { signupMessages } from './presentation/features/auth/viewmodel/useSignupViewModel'
 import { sessionRestored } from './presentation/shared/auth/state/authSlice'
+import { chooseOption, optionLabels, selectedValue } from './test/selectField'
 
 vi.mock('./presentation/shared/core-api-status/CoreApiConnectionStatus', () => ({
   CoreApiConnectionStatus: () => null,
@@ -619,13 +620,13 @@ describe('기업 프로필 화면', () => {
     expect(within(result).queryByText(/법인등록번호|과세/)).toBeNull()
     expect(lookup).toHaveBeenCalledWith('124-81-00998')
 
-    fireEvent.change(within(form).getByLabelText('소재지'), { target: { value: '서울특별시' } })
-    fireEvent.change(within(form).getByLabelText('업종'), { target: { value: '정보통신업' } })
+    chooseOption(within(form).getByLabelText('소재지'), '서울특별시')
+    chooseOption(within(form).getByLabelText('업종'), '정보통신업')
     fireEvent.click(within(form).getByRole('button', { name: '기업 등록' }))
     expect(screen.getByRole('alert').textContent).toContain('설립연도')
     expect(register).not.toHaveBeenCalled()
 
-    fireEvent.change(within(form).getByLabelText('설립연도'), { target: { value: '2020' } })
+    chooseOption(within(form).getByLabelText('설립연도'), '2020')
     fireEvent.click(within(form).getByRole('button', { name: '기업 등록' }))
 
     const basics = await screen.findByRole('region', { name: '기업 기본정보' })
@@ -690,8 +691,8 @@ describe('기업 프로필 화면', () => {
     expect(within(readOnly).getByText('사업자 확인')).toBeTruthy()
     expect(within(form).queryByLabelText(/기업명|사업자등록번호/)).toBeNull()
     expect(within(form).queryByLabelText('사업자등록번호')).toBeNull()
-    expect((within(form).getByLabelText('설립연도') as HTMLInputElement).value).toBe('2020')
-    fireEvent.change(within(form).getByLabelText('소재지'), { target: { value: '부산광역시' } })
+    expect(selectedValue(within(form).getByLabelText('설립연도'))).toBe('2020')
+    chooseOption(within(form).getByLabelText('소재지'), '부산광역시')
     fireEvent.change(within(form).getByLabelText(/홈페이지/), { target: { value: ' https://example.co.kr ' } })
     fireEvent.click(within(form).getByRole('button', { name: '저장' }))
 
@@ -733,7 +734,7 @@ describe('기업 프로필 화면', () => {
     fireEvent.click(within(form).getByRole('button', { name: '설립연도 2016' }))
     fireEvent.click(within(screen.getByRole('dialog', { name: '설립연도 선택' })).getByRole('button', { name: '2020' }))
     expect(screen.queryByRole('dialog', { name: '설립연도 선택' })).toBeNull()
-    expect((within(form).getByLabelText('설립연도') as HTMLSelectElement).value).toBe('2020')
+    expect(selectedValue(within(form).getByLabelText('설립연도'))).toBe('2020')
 
     // 스킴이 없는 주소는 미리보기로 알려 주고 저장 시 https://를 붙입니다. 다른 스킴은 필드 아래 오류입니다.
     const homepage = within(form).getByLabelText(/홈페이지/)
@@ -1195,7 +1196,7 @@ describe('파트너 모집 화면', () => {
     expect(screen.getByRole('alert').textContent).toContain('2026-09-14까지')
 
     fireEvent.change(within(form).getByLabelText('모집 마감일'), { target: { value: '2026-09-14' } })
-    fireEvent.change(within(form).getByLabelText('희망 지역'), { target: { value: '서울' } })
+    chooseOption(within(form).getByLabelText('희망 지역'), '서울')
     fireEvent.change(within(form).getByLabelText('찾는 기업 수'), { target: { value: '2' } })
     fireEvent.change(within(form).getByLabelText(/희망 업력/), { target: { value: '3' } })
     fireEvent.change(within(form).getByLabelText('제목'), { target: { value: 'AI 실증 참여기관 구합니다' } })
@@ -1251,12 +1252,12 @@ describe('파트너 모집 화면', () => {
     fireEvent.keyDown(document, { key: 'Escape' })
     expect(screen.queryByRole('tooltip')).toBeNull()
 
-    const region = screen.getByLabelText('희망 지역') as HTMLSelectElement
-    expect(region.value).toBe('전국')
-    expect(within(region).getAllByRole('option')[0]!.textContent).toBe('전국')
-    expect(within(region).getByRole('option', { name: '서울' })).toBeTruthy()
-    fireEvent.change(region, { target: { value: '부산' } })
-    expect(region.value).toBe('부산')
+    const region = screen.getByLabelText('희망 지역')
+    expect(selectedValue(region)).toBe('전국')
+    expect(optionLabels(region)[0]).toBe('전국')
+    expect(optionLabels(region)).toContain('서울')
+    chooseOption(region, '부산')
+    expect(selectedValue(region)).toBe('부산')
     const seekingCount = screen.getByLabelText('찾는 기업 수') as HTMLInputElement
     expect(seekingCount.type).toBe('number')
     expect(seekingCount.value).toBe('1')

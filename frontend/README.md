@@ -280,8 +280,10 @@ Repository → UseCase → Hook → Redux 결과 메시지 → `ProgramResults`�
 실제 구현된 정책이 아니므로 표시하지 않습니다. 브랜드는 GovBiz를 유지합니다.
 
 요금제(`/pricing`)는 무료·프로·팀 3개 카드와 자주 묻는 질문을 제공하는 공개 소개 화면입니다.
-무료 카드와 하단 버튼은 공개 검색으로(사이드바 안 `/app/pricing`에서는 작업 채팅으로) 이동하며, 프로·팀 가격은 출시 예정으로 표시하고 신청 버튼은
-비활성화합니다. 결제·구독·카드 등록·사용량 제한을 구현한 화면이 아닙니다. 월간/연간 할인이나
+무료 카드는 기본 기능(검색·조건 확인·원문 질문·도우미·공개 모집글 열람)을,
+프로 카드는 정식 출시 전까지 회원에게 무료로 열어 둔 기업 맞춤 리포트·신청 문서 작성·관심 공고 진행 관리·중복 지원·수혜 검토를, 팀 카드는 출시 준비 중인 파트너 협업 방향을 적습니다.
+무료 카드와 하단 버튼은 공개 검색으로(사이드바 안 `/app/pricing`에서는 작업 채팅으로), 프로 카드 버튼은 관심 공고함으로(로그인 전에는 로그인 뒤 복귀) 이동하며,
+프로·팀 가격은 출시 예정으로 표시하고 팀의 신청 버튼은 비활성화합니다. 결제·구독·카드 등록·사용량 제한을 구현한 화면이 아닙니다. 월간/연간 할인이나
 제공 횟수를 임의로 표시하지 않습니다. 상단 메뉴와 작업 사이드바에서 요금제에 진입할 수 있으며,
 페이지 조회와 FAQ 열기에는 API 요청이 발생하지 않습니다.
 
@@ -470,7 +472,14 @@ IME 조합, 스크롤 effect와 검색 결과 안내도 페이지 ViewModel이 �
 브라우저가 스크롤을 되돌리지 않고, 로그인 뒤 화면은 문서가 아니라 작업 칸(div)이 스크롤하기 때문입니다. 쿼리만 바뀌는 탭 전환은 그대로 둡니다.
 파트너 모집·기업 프로필·어드민이 함께 쓰는 카드·태그·표·버튼 스타일과 켬·끔 스위치, 지원사업 검색과 파트너 모집이 함께 쓰는
 한 줄 라디오 필터(`FilterChoices`), 연도 하나를 고르는 `YearPicker`(넓은 화면은 12년 격자, 좁은 화면은 select), 확인·입력 모달 틀
-`WorkspaceModal`(포커스 가둠, Esc·배경 클릭 닫기, `tone="danger"`)은 `presentation/shared/workspace`에 둡니다. 프로필 계정 카드의 비밀번호 변경·계정 삭제 모달은
+`WorkspaceModal`(포커스 가둠, Esc·배경 클릭 닫기, `tone="danger"`)은 `presentation/shared/workspace`에 둡니다.
+드롭다운·말풍선·메뉴(`HelpTip`, `YearPicker`, 사이드바 계정 메뉴, 도우미 `⋯` 메뉴, 중복 검토 항목 도움말)는 같은 폴더의 `useFloatingPopover`(Floating UI)로
+위치를 잡습니다. 정한 방향(기본 아래)으로만 펼치고 반대편으로 뒤집지 않으며, 좌우로 벗어나면 안쪽으로 밀고, `position: fixed`라 `overflow: hidden` 부모에도
+잘리지 않습니다. 최대 높이(기본 8줄, 320px)와 펼치는 방향으로 남은 화면 안에서만 보여 주고 넘치는 내용은 안쪽 스크롤로 감춥니다. 공고 검색 결과처럼 본문에 펼치는 목록도 8건까지만 보이고 그 이상은 목록 안에서 스크롤합니다.
+브라우저 기본 `<select>`는 목록을 운영체제가 그려 창 밖으로 튀어나오고 줄 수도 정할 수 없으므로 쓰지 않고, 같은 폴더의 공용 드롭다운 `SelectField`
+(`role="combobox"` 버튼 + `role="listbox"` 목록, `value`·`onChange(value)`·`options` 계약, 키보드 위·아래·Home·End·Enter·Esc)를 씁니다. 출처·정렬·접수 상태·업종·소재지·
+달력 연도·월·진행 단계·참여 상태·작성 문서·관리자 조건 등 모든 선택 칸이 이 컴포넌트입니다. 테스트에서는 `src/test/selectField.ts`의
+`chooseOption`·`selectedValue`·`optionLabels`·`optionValues`로 값을 고르고 읽습니다(`fireEvent.change`·`.value`·`.options`는 쓰지 않음). 프로필 계정 카드의 비밀번호 변경·계정 삭제 모달은
 `features/company-profile/viewmodel/useAccountSecurityViewModel`이 소유하고, 삭제에 성공하면 Store를 비운 뒤 `setTimeout(0)`으로 랜딩에 갑니다(`RequireAuth`의 로그인 리다이렉트보다 늦게). 화면 고유 배치는 각 기능의 styles 파일에서 정의합니다.
 로그인 상태는 `presentation/shared/auth`의 Redux `auth` slice와 `useAuthSession`·`useRestoreAuthSession`이 소유합니다.
 `App`은 시작 시 세션을 복원하고, `RequireAuth(minimumTier)`·`GuestOnly`·`PublicOnly` 라우트 래퍼가 복원이 끝나기 전(`unknown`)에는

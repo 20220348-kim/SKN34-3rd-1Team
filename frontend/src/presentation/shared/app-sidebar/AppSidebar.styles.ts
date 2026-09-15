@@ -19,7 +19,8 @@ export const appSidebarStyles = {
   account: 'relative mt-auto shrink-0 border-t border-[#e7e7e7] pt-2',
   accountCard: 'flex min-h-14 w-full cursor-pointer items-center gap-2.5 rounded-lg border-0 bg-transparent px-2 py-2 text-left hover:bg-black/5 aria-expanded:bg-black/5 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-brand-primary',
   accountMenuIcon: 'ml-auto shrink-0 text-sample-muted',
-  accountMenu: 'absolute inset-x-0 bottom-full z-20 mb-2 flex flex-col gap-1 rounded-xl border border-sample-border bg-white p-1.5 shadow-[0_8px_28px_rgb(0_0_0_/_10%)]',
+  // 위치는 useFloatingPopover가 잡습니다(계정 카드 위).
+  accountMenu: 'z-20 flex flex-col gap-1 rounded-xl border border-sample-border bg-white p-1.5 shadow-[0_8px_28px_rgb(0_0_0_/_10%)]',
   accountMenuButton: 'flex min-h-11 w-full cursor-pointer items-center gap-3 rounded-lg border-0 bg-transparent px-3 py-2 text-left text-sm text-app-ink hover:bg-black/5 focus-visible:outline-2 focus-visible:outline-brand-primary',
   accountAvatar: 'grid size-8 shrink-0 place-items-center rounded-full bg-brand-primary text-sm font-medium text-white',
   accountName: 'block truncate text-sm font-medium text-app-ink',

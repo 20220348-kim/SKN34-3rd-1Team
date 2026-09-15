@@ -15,6 +15,7 @@ import { supportPrograms } from '../../../../data/fixtures/supportPrograms'
 import { CombinationReviewEditorPage, CombinationReviewListPage, CombinationReviewRunResultPage } from './CombinationReviewPages'
 import { reviewFixture, runFixture } from '../testing/reviewFixtures'
 import { useReviewSessionIsolation } from '../viewmodel/useReviewSessionIsolation'
+import { chooseOption, optionLabels, selectedValue } from '../../../../test/selectField'
 
 const original = appContainer.resolve('combinationReviewUseCase')
 const originalCatalog = appContainer.resolve('browseSupportProgramsUseCase')
@@ -336,7 +337,7 @@ describe('review screens and execution safety', () => {
     fireEvent.click(screen.getByText('새 분석 실행'))
     fireEvent.click(await screen.findByText('실패 실행 #30 확인'))
     await screen.findByText(/공식 첨부 문서를 자동으로 읽을 수 없어 분석해 드릴 수 없습니다/)
-    expect(screen.getByRole('option', { name: /실행 #30 · 분석 실패/ })).toBeTruthy()
+    expect(optionLabels(screen.getByLabelText('실행 결과 선택')).some((label) => /실행 #30 · 분석 실패/.test(label))).toBe(true)
     expect(screen.queryByText(/SOURCE_UNSUPPORTED/)).toBeNull()
     expect(screen.queryByText(/기술 실패/)).toBeNull()
     expect(screen.queryByText('공식 근거 부족')).toBeNull()
@@ -474,11 +475,12 @@ describe('review screens and execution safety', () => {
     repository.run.mockImplementation(async (_reviewId, selectedRunId) => selectedRunId === 29 ? olderRun : runFixture)
     mount('/app/combination-reviews/12/runs/30')
     await screen.findByRole('region', { name: '실행 30 결과' })
-    expect(screen.getByRole('option', { name: /실행 #30 · 분석 완료 · 2026년 9월 9일 오전 9:00/ })).toBeTruthy()
-    expect(screen.getByRole('option', { name: /실행 #29 · 분석 완료 · 2026년 9월 8일 오전 9:00/ })).toBeTruthy()
+    const runLabels = optionLabels(screen.getByLabelText('실행 결과 선택'))
+    expect(runLabels.some((label) => /실행 #30 · 분석 완료 · 2026년 9월 9일 오전 9:00/.test(label))).toBe(true)
+    expect(runLabels.some((label) => /실행 #29 · 분석 완료 · 2026년 9월 8일 오전 9:00/.test(label))).toBe(true)
     expect(screen.queryByText(/2026-09-0[89]T09:00:00/)).toBeNull()
 
-    fireEvent.change(screen.getByLabelText('실행 결과 선택'), { target: { value: '29' } })
+    chooseOption(screen.getByLabelText('실행 결과 선택'), '29')
 
     expect(await screen.findByRole('region', { name: '실행 29 결과' })).toBeTruthy()
     expect(repository.run).toHaveBeenCalledWith(12, 29, expect.any(AbortSignal))
@@ -488,8 +490,8 @@ describe('review screens and execution safety', () => {
     fireEvent.click(screen.getByText('다음: 참여 상태 설정'))
     expect(screen.getByText(/사업 1 · 청년창업 사업화 지원 공고/)).toBeTruthy()
     fireEvent.change(screen.getByLabelText('사업 1 신청'), { target: { value: 'YES' } })
-    expect((screen.getByLabelText('사업 1 교부') as HTMLSelectElement).value).toBe('UNKNOWN')
-    expect((screen.getByLabelText('사업 1 확약') as HTMLSelectElement).value).toBe('NO')
+    expect(selectedValue(screen.getByLabelText('사업 1 교부'))).toBe('UNKNOWN')
+    expect(selectedValue(screen.getByLabelText('사업 1 확약'))).toBe('NO')
     await waitFor(() => expect(repository.start).not.toHaveBeenCalled())
   })
   it('explains all six participation states on mouse hover and keyboard focus', async () => {
@@ -509,11 +511,19 @@ describe('review screens and execution safety', () => {
       expect(helpButtons).toHaveLength(2)
       const tooltip = document.getElementById(helpButtons[0]!.getAttribute('aria-describedby')!)!
       expect(tooltip.textContent).toBe(description)
-      expect(tooltip.className).toContain('group-hover:visible')
-      expect(tooltip.className).toContain('group-focus-within:visible')
+      // 말풍선은 항상 설명으로 연결돼 있고, 마우스를 올리거나 포커스가 올 때만 보입니다(위치는 화면 밖으로 나가지 않게 훅이 잡음).
+      expect(tooltip.className).toContain('invisible')
+      fireEvent.mouseEnter(helpButtons[0]!.parentElement!)
+      expect(tooltip.className).toContain('visible')
+      expect(tooltip.className).not.toContain('invisible')
+      fireEvent.mouseLeave(helpButtons[0]!.parentElement!)
+      expect(tooltip.className).toContain('invisible')
     }
-    screen.getAllByRole('button', { name: '신청 도움말' })[0]!.focus()
-    expect(document.activeElement).toBe(screen.getAllByRole('button', { name: '신청 도움말' })[0])
+    const firstHelp = screen.getAllByRole('button', { name: '신청 도움말' })[0]!
+    fireEvent.focus(firstHelp)
+    expect(document.getElementById(firstHelp.getAttribute('aria-describedby')!)!.className).not.toContain('invisible')
+    fireEvent.blur(firstHelp)
+    expect(document.getElementById(firstHelp.getAttribute('aria-describedby')!)!.className).toContain('invisible')
   })
   it('moves the workspace scroll area to the top whenever the step changes', async () => {
     const view = mount('/app/combination-reviews/12')
