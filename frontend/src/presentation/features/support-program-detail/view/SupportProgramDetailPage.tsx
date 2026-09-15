@@ -228,11 +228,17 @@ function SupportProgramDetail({ program, searchReturnTo }: {
           공고 원문 기반 질문
         </h2>
         {program.sourceCode === 'BIZINFO' ? (
-          <>
-            <p className={supportProgramDetailStyles.questionDescription}>
-              궁금한 신청 조건을 질문하고 공고 원문에서 답변 근거를 확인하세요.
-            </p>
-            {save.isAuthenticated ? (
+          <p className={supportProgramDetailStyles.questionDescription}>
+            궁금한 신청 조건을 질문하고 공고 원문에서 답변 근거를 확인하세요.
+          </p>
+        ) : (
+          <p className={supportProgramDetailStyles.questionDescription}>
+            이 제공처 공고는 아직 원문 근거 답변을 지원하지 않습니다. 원문 공고에서 확인해 주세요.
+          </p>
+        )}
+        <div className={supportProgramDetailStyles.questionActions}>
+          {program.sourceCode === 'BIZINFO' ? (
+            save.isAuthenticated ? (
               <Link className={supportProgramDetailStyles.questionLink} state={{ searchReturnTo }} to={questionPath}>
                 이 공고에 질문하기
               </Link>
@@ -244,25 +250,21 @@ function SupportProgramDetail({ program, searchReturnTo }: {
               >
                 로그인하고 이 공고에 질문하기
               </Link>
-            )}
-          </>
-        ) : (
-          <p className={supportProgramDetailStyles.questionDescription}>
-            이 제공처 공고는 아직 원문 근거 답변을 지원하지 않습니다. 원문 공고에서 확인해 주세요.
-          </p>
-        )}
-        {['BIZINFO', 'KSTARTUP', 'MSIT', 'CNTRADE_NOTICE'].includes(program.sourceCode) ? (
-          save.isAuthenticated ? (
-            <Link className={supportProgramDetailStyles.questionLink} to={applicationPreparationPath}>
-              이 공고의 신청 문서 작성하기
-            </Link>
-          ) : (
-            // 신청 문서 작성은 로그인 화면이라 비로그인에는 로그인 뒤 그 화면으로 이어지는 링크를 둡니다.
-            <Link className={supportProgramDetailStyles.questionLink} to={loginPathFor(applicationPreparationPath)}>
-              로그인하고 신청 문서 작성하기
-            </Link>
-          )
-        ) : null}
+            )
+          ) : null}
+          {['BIZINFO', 'KSTARTUP', 'MSIT', 'CNTRADE_NOTICE'].includes(program.sourceCode) ? (
+            save.isAuthenticated ? (
+              <Link className={supportProgramDetailStyles.questionLink} to={applicationPreparationPath}>
+                이 공고의 신청 문서 작성하기
+              </Link>
+            ) : (
+              // 신청 문서 작성은 로그인 화면이라 비로그인에는 로그인 뒤 그 화면으로 이어지는 링크를 둡니다.
+              <Link className={supportProgramDetailStyles.questionLink} to={loginPathFor(applicationPreparationPath)}>
+                로그인하고 신청 문서 작성하기
+              </Link>
+            )
+          ) : null}
+        </div>
       </section>
 
       <section className={supportProgramDetailStyles.sourceSection} aria-labelledby="source-information">

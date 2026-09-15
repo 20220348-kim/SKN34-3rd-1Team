@@ -1,5 +1,7 @@
 import { type KeyboardEvent, useEffect, useRef, useState } from 'react'
 
+import { SelectField } from './SelectField'
+import { useFloatingPopover } from './useFloatingPopover'
 import { yearPickerStyles } from './YearPicker.styles'
 
 const YEARS_PER_PAGE = 12
@@ -30,6 +32,8 @@ export function YearPicker({
   const [pageStart, setPageStart] = useState(() => pageStartFor(value ?? max, max))
   const rootRef = useRef<HTMLDivElement>(null)
   const triggerRef = useRef<HTMLButtonElement>(null)
+  // 아래로만 펼치되 오른쪽 공간이 부족하면 왼쪽으로 옮기고, 아래 공간이 부족하면 안에서 스크롤합니다.
+  const { reference, floating, floatingStyles } = useFloatingPopover({ open: isOpen, placement: 'bottom-start' })
   const gridRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -94,22 +98,20 @@ export function YearPicker({
         }
       }}
     >
-      {/* 좁은 화면: 네이티브 select. label의 htmlFor가 여기에 붙습니다. */}
-      <select
+      {/* 좁은 화면: 공용 드롭다운. label의 htmlFor가 여기에 붙습니다. */}
+      <SelectField
         id={id}
         className={yearPickerStyles.nativeSelect}
-        aria-invalid={invalid}
-        value={value ?? ''}
-        onChange={(event) => { if (event.target.value) onChange(Number(event.target.value)) }}
-      >
-        <option value="">선택</option>
-        {selectYears.map((year) => <option key={year} value={year}>{year}</option>)}
-      </select>
+        invalid={invalid}
+        value={value === null ? '' : String(value)}
+        options={[{ value: '', label: '선택' }, ...selectYears.map((year) => ({ value: String(year), label: String(year) }))]}
+        onChange={(next) => { if (next) onChange(Number(next)) }}
+      />
 
       {/* 넓은 화면: 격자 선택기 */}
       <div className={yearPickerStyles.popoverAnchor}>
         <button
-          ref={triggerRef}
+          ref={(node) => { triggerRef.current = node; reference(node) }}
           className={yearPickerStyles.trigger}
           type="button"
           aria-haspopup="dialog"
@@ -123,7 +125,7 @@ export function YearPicker({
         </button>
 
         {isOpen ? (
-          <div className={yearPickerStyles.popover} role="dialog" aria-label={`${label} 선택`}>
+          <div ref={floating} style={floatingStyles} className={yearPickerStyles.popover} role="dialog" aria-label={`${label} 선택`}>
             <div className={yearPickerStyles.nav}>
               <button
                 className={yearPickerStyles.navButton}

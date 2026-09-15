@@ -1,4 +1,5 @@
 import { useLayoutEffect, useRef, useState } from 'react'
+import { SelectField } from '../../../shared/workspace/SelectField'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router'
 import { useAppSelector } from '../../../../app/hooks'
 import {
@@ -441,7 +442,8 @@ function ApplicationPreparationEditor({ id, initialSourceCode, initialSourceProg
           {vm.catalog?.programs.length === 0 && <p className={s.notice}>검색 결과가 없습니다. 다른 검색어를 입력하거나 아래에서 공식 URL·공고 ID를 직접 입력해 주세요.</p>}
           {vm.catalog && vm.catalog.programs.length > 0 && <>
             <p className={s.muted}>검색 결과 {vm.catalog.total}건 · {vm.catalog.page}/{vm.catalog.totalPages}페이지</p>
-            <ul className="divide-y divide-slate-200" aria-label="신청 문서 공고 검색 결과">
+            {/* 8건(한 건 약 7rem)까지 보이고 그 이상은 목록 안에서 스크롤합니다. */}
+            <ul className="max-h-[56rem] divide-y divide-slate-200 overflow-y-auto" aria-label="신청 문서 공고 검색 결과">
               {vm.catalog.programs.map((program) => {
                 const selected = vm.selectedProgram?.sourceCode === program.sourceCode && vm.selectedProgram.id === program.id
                 const supported = supportedDocumentSources.includes(program.sourceCode)
@@ -509,18 +511,15 @@ function ApplicationPreparationEditor({ id, initialSourceCode, initialSourceProg
         <section className={s.card}>
           <h2 className={s.cardTitle}>작성 문서 선택</h2>
           <label className={s.label} htmlFor="application-form">작성할 공식 첨부</label>
-          <select
-            aria-describedby="application-form-hint"
+          <SelectField
+            id="application-form"
+            describedBy="application-form-hint"
             className={s.input}
             disabled={vm.submitting}
-            id="application-form"
             value={vm.selectedFormVersionId}
-            onChange={(event) => vm.selectForm(event.target.value)}
-          >
-            {vm.forms.map((form) => <option value={form.formVersionId} key={form.formVersionId}>
-              {form.programTitle} — {form.formTitle}
-            </option>)}
-          </select>
+            options={vm.forms.map((form) => ({ value: form.formVersionId, label: `${form.programTitle} — ${form.formTitle}` }))}
+            onChange={vm.selectForm}
+          />
           <p className={s.muted} id="application-form-hint">발견한 문서와 문항 위치를 원문에서 확인한 뒤 시작해 주세요.</p>
         </section>
 
@@ -530,17 +529,14 @@ function ApplicationPreparationEditor({ id, initialSourceCode, initialSourceProg
           <h2 className={s.cardTitle} id="service-field-title">작성 시작</h2>
           {!(vm.selectedForm.supportedServiceFields.length === 1 && vm.selectedForm.supportedServiceFields[0] === 'GENERAL') && <>
           <label className={s.label} htmlFor="application-service-field">작성할 지원 분야</label>
-          <select
+          <SelectField
+            id="application-service-field"
             className={s.input}
             disabled={vm.submitting}
-            id="application-service-field"
             value={vm.serviceField}
-            onChange={(event) => vm.setServiceField(event.target.value as typeof vm.serviceField)}
-          >
-            {vm.selectedForm.supportedServiceFields.map((field) => <option value={field} key={field}>
-              {applicationServiceFieldLabels[field]}
-            </option>)}
-          </select>
+            options={vm.selectedForm.supportedServiceFields.map((field) => ({ value: field, label: applicationServiceFieldLabels[field] }))}
+            onChange={(value) => vm.setServiceField(value as typeof vm.serviceField)}
+          />
           </>}
           <p className={s.muted}>추출된 문항을 확인했습니다. 작성 시작은 신청 준비 건만 만들며 추가 AI 호출은 하지 않습니다.</p>
           <button className={s.primary} disabled={vm.submitting} type="submit">

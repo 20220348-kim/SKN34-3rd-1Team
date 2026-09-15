@@ -78,7 +78,6 @@ export function ChatPage({ layout = 'landing' }: { layout?: ChatPageLayout }) {
     <div className={isDockedLanding ? chatPageStyles.guestComposerFooter : chatPageStyles.composerFooter}>
       <small className={`${chatPageStyles.composerHint} ${isDockedLanding ? chatPageStyles.dockedComposerHint : ''}`}>
         Enter로 전송 · Shift+Enter로 줄바꿈
-        {!isDockedLanding ? <span className="block text-[0.68rem]">검색 전 조건을 확인해요.</span> : null}
       </small>
     </div>
   )

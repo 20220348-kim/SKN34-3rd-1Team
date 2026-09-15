@@ -4,6 +4,7 @@ import { Link } from 'react-router'
 import { type AssistantCard as AssistantCardModel, type AssistantCardButton, type AssistantMessage } from './assistantConversation'
 import { assistantMessages } from './assistantMessages'
 import { assistantCardTagClassName, assistantStyles as styles } from './Assistant.styles'
+import { useFloatingPopover } from '../workspace/useFloatingPopover'
 import type { AssistantViewModel } from './useAssistantViewModel'
 
 /**
@@ -15,6 +16,8 @@ export function AssistantPanel({ vm, launcherRef }: { vm: AssistantViewModel; la
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const [draft, setDraft] = useState('')
   const [isMenuOpen, setIsMenuOpen] = useState(false)
+  // 패널이 overflow-hidden이라 메뉴는 fixed로 띄우고, 오른쪽 끝에서 잘리면 안쪽으로 옮깁니다.
+  const menuFloating = useFloatingPopover({ open: isMenuOpen, placement: 'bottom-end', gap: 4 })
   const lastMessageId = vm.messages[vm.messages.length - 1]?.id
 
   // 열면 입력창에 포커스, 닫으면 런처로 돌아갑니다.
@@ -76,6 +79,7 @@ export function AssistantPanel({ vm, launcherRef }: { vm: AssistantViewModel; la
         </div>
         <div className={styles.headerActions}>
           <button
+            ref={menuFloating.reference}
             className={styles.headerButton}
             type="button"
             aria-label={assistantMessages.menu}
@@ -87,7 +91,7 @@ export function AssistantPanel({ vm, launcherRef }: { vm: AssistantViewModel; la
           </button>
           <button className={styles.headerButton} type="button" aria-label={assistantMessages.close} onClick={vm.close}>✕</button>
           {isMenuOpen ? (
-            <div className={styles.menu} role="menu" aria-label={assistantMessages.menu}>
+            <div ref={menuFloating.floating} style={menuFloating.floatingStyles} className={styles.menu} role="menu" aria-label={assistantMessages.menu}>
               <button className={styles.menuItem} type="button" role="menuitem" onClick={() => { setIsMenuOpen(false); vm.startNewConversation() }}>
                 {assistantMessages.newConversation}
               </button>

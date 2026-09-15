@@ -13,6 +13,7 @@ import { ApplicationPreparationUseCase } from '../../../../domain/usecases/Appli
 import { signedIn } from '../../../shared/auth/state/authSlice'
 import { ApplicationPreparationEditorPage, ApplicationPreparationListPage } from './ApplicationPreparationPages'
 import { ApplicationDocumentPage } from './ApplicationDocumentPage'
+import { chooseOption, optionLabels, optionValues, selectedValue } from '../../../../test/selectField'
 
 const original = appContainer.resolve('applicationPreparationUseCase')
 const originalCatalog = appContainer.resolve('browseSupportProgramsUseCase')
@@ -630,15 +631,15 @@ describe('application preparation creation and detail', () => {
     fireEvent.click(screen.getByRole('button', { name: '신청 문서 찾기' }))
 
     const formSelect = await screen.findByLabelText('작성할 공식 첨부')
-    expect(within(formSelect).getAllByRole('option')).toHaveLength(2)
+    expect(optionValues(formSelect)).toHaveLength(2)
     expect(repository.discover).toHaveBeenCalledWith('BIZINFO', 'PBLN_1', expect.any(AbortSignal), expect.any(String))
     expect(screen.getByText('원문 대조 필요')).toBeTruthy()
-    fireEvent.change(formSelect, { target: { value: secondForm.formVersionId } })
+    chooseOption(formSelect, secondForm.formVersionId)
 
     expect(screen.getByText(secondForm.programTitle)).toBeTruthy()
     const fieldSelect = screen.getByLabelText('작성할 지원 분야')
-    expect(within(fieldSelect).getAllByRole('option').map((option) => option.textContent)).toEqual(['마케팅'])
-    expect((fieldSelect as HTMLSelectElement).value).toBe('MARKETING')
+    expect(optionLabels(fieldSelect)).toEqual(['마케팅'])
+    expect(selectedValue(fieldSelect)).toBe('MARKETING')
   })
 
   it('prevents duplicate submissions and opens the created detail', async () => {
@@ -647,7 +648,7 @@ describe('application preparation creation and detail', () => {
     mount('/app/application-preparations/new?sourceCode=BIZINFO&sourceProgramId=PBLN_1')
     fireEvent.click(screen.getByRole('button', { name: '신청 문서 찾기' }))
     await screen.findByLabelText('작성할 공식 첨부')
-    fireEvent.change(screen.getByLabelText('작성할 지원 분야'), { target: { value: 'MARKETING' } })
+    chooseOption(screen.getByLabelText('작성할 지원 분야'), 'MARKETING')
 
     const submit = screen.getByRole('button', { name: '신청 문서 작성 시작' })
     fireEvent.click(submit)

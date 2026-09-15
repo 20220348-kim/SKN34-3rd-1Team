@@ -6,6 +6,7 @@ import { catalogSourceCodes, catalogSourceLabels, type SupportProgramCatalogFilt
 import { isAppPath, supportProgramDetailPath } from '../../../shared/routes/appPaths'
 import { defaultCatalogFilters, readCatalogFilters, writeCatalogFilters } from '../../../shared/support-program/catalogSearchParams'
 import { FilterChoices } from '../../../shared/workspace/FilterChoices'
+import { SelectField } from '../../../shared/workspace/SelectField'
 import { toFilterChoiceOptions } from '../../../shared/workspace/filterChoiceOptions'
 import { useSupportProgramCatalogViewModel } from '../viewmodel/useSupportProgramCatalogViewModel'
 
@@ -34,12 +35,11 @@ export function SupportProgramCatalogPanel() {
           startupStages={catalog.startupStages} applicantTypes={catalog.applicantTypes} founderAges={catalog.founderAges} onApply={apply} />
         <section aria-label="필터 검색 결과" className="min-w-0">
           <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-            <h2 className="m-0 text-base font-bold" aria-live="polite">{catalog.data ? <>검색 결과 <span className="text-brand-primary">{catalog.data.total.toLocaleString()}건</span></> : '검색 결과'}</h2>
+            <h2 className="m-0 text-base font-bold" aria-live="polite">검색 결과 <span className="text-brand-primary">{(catalog.data?.total ?? 0).toLocaleString()}건</span></h2>
             <label className="flex items-center gap-2 text-xs text-sample-muted">정렬
-              <select aria-label="공고 정렬" className={`${inputStyle} !min-h-9 !w-auto !text-xs`} value={filters.sort}
-                onChange={(event) => apply({ ...filters, sort: event.target.value as SupportProgramCatalogFilters['sort'], page: 1 })}>
-                <option value="RECENT">최신순</option><option value="DEADLINE">마감일순</option>
-              </select>
+              <SelectField label="공고 정렬" className={`${inputStyle} !min-h-9 !w-auto !text-xs`} value={filters.sort}
+                options={[{ value: 'RECENT', label: '최신순' }, { value: 'DEADLINE', label: '마감일순' }]}
+                onChange={(value) => apply({ ...filters, sort: value as SupportProgramCatalogFilters['sort'], page: 1 })} />
             </label>
           </div>
           {catalog.phase === 'loading' ? <div role="status" className="rounded-2xl border border-sample-border px-5 py-14 text-center text-sm text-sample-muted">
@@ -97,23 +97,24 @@ function CatalogFilters({ filters, regions, categories, startupStages, applicant
     <div className="grid gap-4 border-t border-sample-border pt-4">
       <FilterChoices label="지역" name="catalog-region" options={toFilterChoiceOptions(regions)} selected={draft.region} onSelect={(region) => setDraft({ ...draft, region })} />
       <FilterChoices label="분야" name="catalog-category" options={toFilterChoiceOptions(categories)} selected={draft.category} onSelect={(category) => setDraft({ ...draft, category })} />
+      {/* 지역·분야 줄과 같은 라벨 폭(w-13)·간격으로 맞춰 드롭다운 상자가 같은 세로선에서 시작합니다. */}
       <div className="grid gap-3 sm:grid-cols-2 sm:gap-x-8">
-        <label className="flex min-w-0 items-center gap-3 text-xs font-semibold text-sample-muted">출처
-          <select className={`${inputStyle} !min-h-9 !w-auto flex-1 sm:max-w-64`} value={draft.sourceCode}
-            onChange={(event) => {
-              const sourceCode = event.target.value as SupportProgramCatalogFilters['sourceCode']
+        <label className="flex min-w-0 gap-3 text-xs font-semibold text-sample-muted max-chat:flex-col max-chat:gap-2">
+          <span className="w-13 shrink-0 pt-2.5 max-chat:pt-0">출처</span>
+          <SelectField label="출처" className={`${inputStyle} !min-h-9 min-w-0 flex-1`} value={draft.sourceCode}
+            options={catalogSourceCodes.map((code) => ({ value: code, label: catalogSourceLabels[code] }))}
+            onChange={(value) => {
+              const sourceCode = value as SupportProgramCatalogFilters['sourceCode']
               setDraft({ ...draft, sourceCode, startupStage: '', applicantType: '', founderAge: '' })
               setShowStartupFilters(false)
-            }}>
-            {catalogSourceCodes.map((code) => <option key={code} value={code}>{catalogSourceLabels[code]}</option>)}
-          </select>
+            }} />
         </label>
-        <label className="flex min-w-0 items-center gap-3 text-xs font-semibold text-sample-muted">접수 상태
-          <select className={`${inputStyle} !min-h-9 !w-auto flex-1 sm:max-w-52`} value={draft.status}
-            aria-describedby={needsPeriodNotice ? 'catalog-period-notice' : undefined}
-            onChange={(event) => setDraft({ ...draft, status: event.target.value as SupportProgramCatalogFilters['status'] })}>
-            {Object.entries(statusLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-          </select>
+        <label className="flex min-w-0 gap-3 text-xs font-semibold text-sample-muted max-chat:flex-col max-chat:gap-2">
+          <span className="w-13 shrink-0 pt-2.5 max-chat:pt-0">접수 상태</span>
+          <SelectField label="접수 상태" className={`${inputStyle} !min-h-9 min-w-0 flex-1`} value={draft.status}
+            describedBy={needsPeriodNotice ? 'catalog-period-notice' : undefined}
+            options={Object.entries(statusLabels).map(([value, label]) => ({ value, label }))}
+            onChange={(value) => setDraft({ ...draft, status: value as SupportProgramCatalogFilters['status'] })} />
         </label>
       </div>
       {needsPeriodNotice ? <p id="catalog-period-notice" className="m-0 rounded-xl bg-[#f7f8f9] px-3 py-2 text-xs leading-relaxed text-sample-muted">
@@ -149,10 +150,9 @@ function CatalogExtraSelect({ label, options, selected, onSelect }: {
 }) {
   const choices = selected && !options.includes(selected) ? [selected, ...options] : options
   return <label className="grid min-w-0 gap-2 text-xs font-semibold text-sample-muted">{label}
-    <select className={inputStyle} value={selected} onChange={(event) => onSelect(event.target.value)}>
-      <option value="">전체</option>
-      {choices.map((value) => <option key={value} value={value}>{value}</option>)}
-    </select>
+    <SelectField label={label} className={inputStyle} value={selected}
+      options={[{ value: '', label: '전체' }, ...choices.map((value) => ({ value, label: value }))]}
+      onChange={onSelect} />
   </label>
 }
 function CatalogRow({ program, returnTo, inApp }: { program: SupportProgram; returnTo: string; inApp: boolean }) {

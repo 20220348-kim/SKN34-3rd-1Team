@@ -25,6 +25,7 @@ import {
   type CalendarProgram,
   type SavedProgramCalendarFilters,
 } from '../viewmodel/savedProgramCalendar'
+import { SelectField } from '../../../shared/workspace/SelectField'
 import { savedCalendarStyles as s } from './SavedProgramsPage.styles'
 
 function Arrow({ direction }: { direction: 'left' | 'right' }) {
@@ -115,12 +116,12 @@ export function SavedProgramsPage({ initial, browseUseCase, preparationUseCase }
           <div className={s.toolbar}>
             <div className={s.navigation}>
               <div className="flex items-center gap-1">
-                <select aria-label="달력 연도" className={s.monthSelect} value={vm.year} onChange={event => vm.chooseMonth(Number(event.target.value), vm.month)}>
-                  {vm.years.map(year => <option key={year} value={year}>{year}년</option>)}
-                </select>
-                <select aria-label="달력 월" className={s.monthSelect} value={vm.month} onChange={event => vm.chooseMonth(vm.year, Number(event.target.value))}>
-                  {Array.from({ length: 12 }, (_, i) => <option key={i} value={i + 1}>{i + 1}월</option>)}
-                </select>
+                <SelectField label="달력 연도" className={s.monthSelect} value={String(vm.year)}
+                  options={vm.years.map(year => ({ value: String(year), label: `${year}년` }))}
+                  onChange={value => vm.chooseMonth(Number(value), vm.month)} />
+                <SelectField label="달력 월" className={s.monthSelect} value={String(vm.month)}
+                  options={Array.from({ length: 12 }, (_, i) => ({ value: String(i + 1), label: `${i + 1}월` }))}
+                  onChange={value => vm.chooseMonth(vm.year, Number(value))} />
               </div>
               <div className={s.arrowGroup} role="group" aria-label="월 이동">
                 <button type="button" className={s.arrow} aria-label="이전 달" title="이전 달" disabled={!vm.canPreviousMonth} onClick={() => vm.moveMonth(-1)}><Arrow direction="left" /></button>
@@ -308,10 +309,9 @@ function PipelineCard({ item, changing, onChangeProgress }: {
     <p className={s.pipelineFormTitle}>{item.formTitle}</p>
     <label className={s.pipelineStageField}>
       <span>단계 변경</span>
-      <select aria-label={`${item.programTitle} 단계 변경`} value={item.progressStage} disabled={changing}
-        onChange={event => void onChangeProgress(item, event.target.value as ApplicationProgressStage)}>
-        {applicationPipelineStages.map(stage => <option key={stage.key} value={stage.key}>{stage.label}</option>)}
-      </select>
+      <SelectField label={`${item.programTitle} 단계 변경`} value={item.progressStage} disabled={changing}
+        options={applicationPipelineStages.map(stage => ({ value: stage.key, label: stage.label }))}
+        onChange={value => void onChangeProgress(item, value as ApplicationProgressStage)} />
     </label>
     <p className={s.pipelineUpdatedAt}>최근 수정 {formatPipelineDate(item.updatedAt)}</p>
   </article>
@@ -499,9 +499,8 @@ function FilterSelect({ label, value, options, onChange }: {
 }) {
   return <label className={s.selectField}>
     <span>{label}</span>
-    <select aria-label={label} value={value} onChange={event => onChange(event.target.value)}>
-      <option value="">전체</option>
-      {options.map(option => <option key={option} value={option}>{option}</option>)}
-    </select>
+    <SelectField label={label} value={value}
+      options={[{ value: '', label: '전체' }, ...options.map(option => ({ value: option, label: option }))]}
+      onChange={onChange} />
   </label>
 }

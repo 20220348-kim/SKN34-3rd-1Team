@@ -1,6 +1,7 @@
 import { Link } from 'react-router'
 
 import { workspacePageStyles, workspaceTagClassName } from '../../../shared/workspace/WorkspacePage.styles'
+import { SelectField } from '../../../shared/workspace/SelectField'
 import { WorkspacePageHeader } from '../../../shared/workspace/WorkspacePageHeader'
 import { useAdminAccountListViewModel } from '../viewmodel/useAdminAccountListViewModel'
 import { adminAccountsPageStyles as styles, adminStatValueClassName } from './AdminAccountsPage.styles'
@@ -79,14 +80,8 @@ export function AdminAccountsPage() {
             <div className={styles.filters}>
               {filters.map((filter) => (
                 <label className={styles.filterLabel} key={filter.label}>{filter.label}
-                  <select
-                    className={styles.filterSelect}
-                    aria-label={filter.label}
-                    value={filter.value}
-                    onChange={(event) => filter.onChange(event.target.value)}
-                  >
-                    {filter.options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-                  </select>
+                  <SelectField className={styles.filterSelect} label={filter.label} value={filter.value}
+                    options={filter.options} onChange={filter.onChange} />
                 </label>
               ))}
               {vm.hasFilters ? (

@@ -11,6 +11,7 @@ import { ChatActivityDot } from '../chat-activity/ChatActivityDot'
 import { ChatActivityPanel } from '../chat-activity/ChatActivityPanel'
 import { usePendingReceivedProposalCount } from '../partner-proposal/useReceivedProposals'
 import { appPaths, publicPaths } from '../routes/appPaths'
+import { useFloatingPopover } from '../workspace/useFloatingPopover'
 import { appSidebarStyles, sidebarMenuItemClassName } from './AppSidebar.styles'
 import type { ChatHistoryViewModel } from '../../features/chat/hooks/useChatHistory'
 
@@ -160,6 +161,8 @@ export function AppSidebar({ onClose, onNewChat, closeLabel, onNavigate, history
   const accountMenuId = useId()
   const accountRef = useRef<HTMLDivElement>(null)
   const [isAccountMenuOpen, setIsAccountMenuOpen] = useState(false)
+  // 계정 메뉴는 카드와 같은 폭으로 위에 펼치고, 위 공간이 모자라면 안에서 스크롤합니다.
+  const accountMenuFloating = useFloatingPopover({ open: isAccountMenuOpen, placement: 'top-start', gap: 8, matchReferenceWidth: true })
 
   useEffect(() => {
     setIsAccountMenuOpen(false)
@@ -282,7 +285,8 @@ export function AppSidebar({ onClose, onNewChat, closeLabel, onNavigate, history
       {account ? (
         <div className={appSidebarStyles.account} ref={accountRef}>
           {isAccountMenuOpen ? (
-            <div className={appSidebarStyles.accountMenu} id={accountMenuId} aria-label="계정 메뉴">
+            <div ref={accountMenuFloating.floating} style={accountMenuFloating.floatingStyles}
+              className={appSidebarStyles.accountMenu} id={accountMenuId} aria-label="계정 메뉴">
               <Link
                 className={sidebarMenuItemClassName(pathname.startsWith(appPaths.profile) ? 'active' : 'inactive')}
                 to={appPaths.profile}
@@ -308,6 +312,7 @@ export function AppSidebar({ onClose, onNewChat, closeLabel, onNavigate, history
             </div>
           ) : null}
           <button
+            ref={accountMenuFloating.reference}
             className={appSidebarStyles.accountCard}
             type="button"
             aria-label={`계정 메뉴 · ${account.email}`}

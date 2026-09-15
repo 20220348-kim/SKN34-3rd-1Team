@@ -5,6 +5,7 @@ import { afterEach, expect, it, vi } from 'vitest'
 
 import { SavedProgramsPage } from './SavedProgramsPage'
 import { createCalendarPreview } from '../viewmodel/savedProgramCalendar'
+import { chooseOption, optionLabels } from '../../../../test/selectField'
 
 afterEach(() => { cleanup(); vi.useRealTimers() })
 
@@ -34,7 +35,7 @@ it('관심 공고를 내부 스크롤 없이 달력과 페이지 목록으로 �
   expect(within(screen.getByRole('table')).getAllByText('끝').length).toBeGreaterThan(0)
   expect(within(screen.getByRole('table')).getAllByText('당일').length).toBeGreaterThan(0)
   expect(within(screen.getByRole('table')).queryByRole('link')).toBeNull()
-  fireEvent.change(screen.getByRole('combobox', { name: '지원 분야' }), { target: { value: '사업화' } })
+  chooseOption(screen.getByRole('combobox', { name: '지원 분야' }), '사업화')
   expect(screen.getByText(/표시 공고/).textContent).toContain('4건 / 전체 24건')
   fireEvent.click(screen.getByRole('button', { name: /분야 · 사업화/ }))
   fireEvent.change(screen.getByRole('searchbox', { name: '공고명 또는 기관명' }), { target: { value: '서울경제' } })
@@ -50,15 +51,15 @@ it('관심 공고를 내부 스크롤 없이 달력과 페이지 목록으로 �
   expect(screen.getByRole('button', { name: '2페이지' }).getAttribute('aria-current')).toBe('page')
   fireEvent.click(screen.getByRole('tab', { name: '달력 보기' }))
   // 연도 목록은 2000년부터 2030년까지입니다.
-  const yearOptions = within(screen.getByRole('combobox', { name: '달력 연도' })).getAllByRole('option').map((option) => option.textContent)
+  const yearOptions = optionLabels(screen.getByRole('combobox', { name: '달력 연도' }))
   expect(yearOptions).toHaveLength(31)
   expect(yearOptions[0]).toBe('2000년')
   expect(yearOptions[30]).toBe('2030년')
   expect(screen.queryByRole('button', { name: '다음 연도' })).toBeNull()
-  fireEvent.change(screen.getByRole('combobox', { name: '달력 연도' }), { target: { value: '2027' } })
+  chooseOption(screen.getByRole('combobox', { name: '달력 연도' }), '2027')
   expect(screen.getByRole('table', { name: '2027년 9월 접수 일정' })).toBeTruthy()
   expect(screen.queryByText('이 달에 표시할 관심 공고가 없습니다.')).toBeNull()
-  fireEvent.change(screen.getByRole('combobox', { name: '달력 월' }), { target: { value: '12' } })
+  chooseOption(screen.getByRole('combobox', { name: '달력 월' }), '12')
   fireEvent.click(screen.getByRole('button', { name: '다음 달' }))
   expect(screen.getByRole('table', { name: '2028년 1월 접수 일정' })).toBeTruthy()
 })
@@ -124,7 +125,7 @@ it('진행 관리를 열 때 실제 신청 준비 건만 준비 중 단계에 �
     .toBe('/app/application-preparations/41')
   expect(screen.getByRole('form', { name: '관심 공고 필터' })).toBeTruthy()
 
-  fireEvent.change(screen.getByRole('combobox', { name: '해외 진출 역량 강화 지원사업 단계 변경' }), { target: { value: 'APPLIED' } })
+  chooseOption(screen.getByRole('combobox', { name: '해외 진출 역량 강화 지원사업 단계 변경' }), 'APPLIED')
   await waitFor(() => expect(updateProgress).toHaveBeenCalledWith(41, {
     expectedProgressRevision: 1,
     progressStage: 'APPLIED',

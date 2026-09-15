@@ -12,6 +12,7 @@ import { partnerRecruitmentDetail, partnerRecruitmentPage } from './data/fixture
 import { maskedCompanyLabel } from './presentation/features/public-partner-recruitment/view/publicPartnerMessages'
 import type { Account } from './domain/entities/Account'
 import { sessionRestored } from './presentation/shared/auth/state/authSlice'
+import { chooseOption, optionLabels, selectedValue } from './test/selectField'
 
 vi.mock('./presentation/shared/core-api-status/CoreApiConnectionStatus', () => ({
   CoreApiConnectionStatus: () => null,
@@ -36,9 +37,11 @@ describe('공개 파트너 모집', () => {
   it('공개 목록은 출처·정렬·검색어를 바꾸면 첫 페이지부터 다시 읽는다', async () => {
     const browse = appContainer.resolve('browsePartnerRecruitmentsUseCase').execute as ReturnType<typeof vi.fn>
     renderApp('/partners', null)
+    // 처음 읽기 전에도 건수 자리를 비우지 않고 0건으로 보여 줍니다.
+    expect(screen.getByRole('heading', { level: 2, name: '검색 결과 0건' })).toBeTruthy()
     await screen.findAllByRole('article')
 
-    fireEvent.change(screen.getByRole('combobox', { name: '정렬' }), { target: { value: 'RECENT' } })
+    chooseOption(screen.getByRole('combobox', { name: '정렬' }), 'RECENT')
     await waitFor(() => expect(browse).toHaveBeenLastCalledWith(
       { keyword: '', seekingRoles: [], regions: [], mineOnly: false, sourceCode: '', sort: 'RECENT', page: 1 },
       expect.any(AbortSignal),
@@ -47,10 +50,10 @@ describe('공개 파트너 모집', () => {
     expect(await screen.findByRole('heading', { level: 2, name: '검색 결과 4건' })).toBeTruthy()
 
     // 출처는 지원사업 찾기와 같은 선택지이고 모집글이 묶인 공고의 출처로 좁힙니다.
-    const source = screen.getByRole('combobox', { name: '출처' }) as HTMLSelectElement
-    expect([...source.options].map((option) => option.textContent))
+    const source = screen.getByRole('combobox', { name: '출처' })
+    expect(optionLabels(source))
       .toEqual(['전체 출처', '기업마당', 'K-Startup', '과학기술정보통신부', '충청남도 온라인수출지원시스템'])
-    fireEvent.change(source, { target: { value: 'BIZINFO' } })
+    chooseOption(source, 'BIZINFO')
     await waitFor(() => expect(browse).toHaveBeenLastCalledWith(
       { keyword: '', seekingRoles: [], regions: [], mineOnly: false, sourceCode: 'BIZINFO', sort: 'RECENT', page: 1 },
       expect.any(AbortSignal),
@@ -91,7 +94,7 @@ describe('공개 파트너 모집', () => {
 
     // 아무 조건 없이 비어 있을 때만 로그인해 첫 글을 올리라고 안내합니다.
     browse.mockResolvedValueOnce({ ...partnerRecruitmentPage, recruitments: [], total: 0, totalPages: 0 })
-    fireEvent.change(screen.getByRole('combobox', { name: '정렬' }), { target: { value: 'RECENT' } })
+    chooseOption(screen.getByRole('combobox', { name: '정렬' }), 'RECENT')
     expect(await screen.findByText('아직 모집 중인 글이 없습니다. 로그인해 첫 모집글을 올려 보세요.')).toBeTruthy()
     expect(screen.queryByRole('button', { name: '검색·필터 초기화' })).toBeNull()
   })
@@ -111,8 +114,8 @@ describe('공개 파트너 모집', () => {
     expect(screen.getByRole('heading', { level: 2, name: '검색 결과 4건' })).toBeTruthy()
     // 제목 위 초록 눈썹 문구는 없고, 출처·정렬은 선택 상자로 고릅니다. 지역·분야 필터는 두지 않습니다.
     expect(within(screen.getByRole('heading', { level: 1, name: '함께 신청할 기업 찾기' }).closest('section')!).queryByText('파트너 모집')).toBeNull()
-    expect((screen.getByRole('combobox', { name: '정렬' }) as HTMLSelectElement).value).toBe('DEADLINE')
-    expect((screen.getByRole('combobox', { name: '출처' }) as HTMLSelectElement).value).toBe('')
+    expect(selectedValue(screen.getByRole('combobox', { name: '정렬' }))).toBe('DEADLINE')
+    expect(selectedValue(screen.getByRole('combobox', { name: '출처' }))).toBe('')
     expect(screen.queryByRole('combobox', { name: /지역|분야/ })).toBeNull()
     // 내 글 표시와 프로필 일치는 로그인 뒤에만 의미가 있습니다.
     expect(screen.queryByText('내가 쓴 모집글')).toBeNull()

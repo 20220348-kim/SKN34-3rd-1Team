@@ -12,6 +12,7 @@ import { SavedSupportProgramPickerDialog } from '../../../shared/support-program
 import { formatReviewDateTime, runLabels } from './reviewLabels'
 import { reviewStyles as s } from './CombinationReview.styles'
 import { workspacePageStyles } from '../../../shared/workspace/WorkspacePage.styles'
+import { SelectField } from '../../../shared/workspace/SelectField'
 import { WorkspacePageHeader } from '../../../shared/workspace/WorkspacePageHeader'
 
 const listTitle = '중복 지원·수혜 검토'
@@ -97,10 +98,12 @@ function RunResultPage({ reviewId, runId, account }: { reviewId: number; runId: 
     {vm.review && <section className={`${s.card} space-y-1`}><h2 className="font-bold">{vm.review.title}</h2><p className={s.muted}>저장 입력 버전 {vm.review.inputRevision}의 실행 이력입니다.</p></section>}
     <section className={`${s.card} space-y-3`} aria-label="다른 실행 이력">
       <label className="block text-sm font-semibold">실행 결과 선택
-        <select className={s.input} value={String(runId)} onChange={(event) => navigate(combinationReviewRunResultPath(reviewId, Number(event.target.value)))}>
-          {!currentRunInOptions && <option value={runId}>실행 #{runId} · 현재 결과</option>}
-          {runOptions.map((run) => <option key={run.id} value={run.id}>실행 #{run.id} · {runLabels[run.status]} · {formatReviewDateTime(run.startedAt)}</option>)}
-        </select>
+        <SelectField label="실행 결과 선택" className={s.input} value={String(runId)}
+          options={[
+            ...(currentRunInOptions ? [] : [{ value: String(runId), label: `실행 #${runId} · 현재 결과` }]),
+            ...runOptions.map((run) => ({ value: String(run.id), label: `실행 #${run.id} · ${runLabels[run.status]} · ${formatReviewDateTime(run.startedAt)}` })),
+          ]}
+          onChange={(value) => navigate(combinationReviewRunResultPath(reviewId, Number(value)))} />
       </label>
       {vm.runs?.nextBeforeId && <button className={s.button} type="button" disabled={vm.busy.includes('history')} onClick={() => vm.history(vm.runs!.nextBeforeId!)}>이전 실행 더 보기</button>}
     </section>

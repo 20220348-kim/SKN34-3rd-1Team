@@ -12,6 +12,7 @@ import type { Account } from './domain/entities/Account'
 import type { AdminAccountDetail, AdminAccountPage, AdminAccountStats, AdminAccountSummary } from './domain/entities/AdminAccount'
 import { adminAccountDetailMessages } from './presentation/features/admin/viewmodel/useAdminAccountDetailViewModel'
 import { sessionRestored } from './presentation/shared/auth/state/authSlice'
+import { chooseOption, selectedValue } from './test/selectField'
 
 vi.mock('./presentation/shared/core-api-status/CoreApiConnectionStatus', () => ({
   CoreApiConnectionStatus: () => null,
@@ -92,11 +93,11 @@ describe('관리자 계정 관리', () => {
     expect(within(table).getByText('카카오')).toBeTruthy()
     expect(browse).toHaveBeenLastCalledWith(allAccountsQuery, expect.any(AbortSignal))
 
-    fireEvent.change(screen.getByRole('combobox', { name: '상태' }), { target: { value: 'SUSPENDED' } })
+    chooseOption(screen.getByRole('combobox', { name: '상태' }), 'SUSPENDED')
     await waitFor(() => expect(browse).toHaveBeenLastCalledWith(
       expect.objectContaining({ status: 'SUSPENDED', page: 1 }), expect.any(AbortSignal),
     ))
-    fireEvent.change(screen.getByRole('combobox', { name: '로그인 방법' }), { target: { value: 'KAKAO' } })
+    chooseOption(screen.getByRole('combobox', { name: '로그인 방법' }), 'KAKAO')
     await waitFor(() => expect(browse).toHaveBeenLastCalledWith(
       expect.objectContaining({ status: 'SUSPENDED', loginMethod: 'KAKAO' }), expect.any(AbortSignal),
     ))
@@ -123,8 +124,8 @@ describe('관리자 계정 관리', () => {
     await waitFor(() => expect(browse).toHaveBeenLastCalledWith(
       { keyword: '', status: 'SUSPENDED', role: '', loginMethod: '', sort: 'LAST_LOGIN', page: 2 }, expect.any(AbortSignal),
     ))
-    expect((screen.getByRole('combobox', { name: '정렬' }) as HTMLSelectElement).value).toBe('LAST_LOGIN')
-    expect((screen.getByRole('combobox', { name: '권한' }) as HTMLSelectElement).value).toBe('')
+    expect(selectedValue(screen.getByRole('combobox', { name: '정렬' }))).toBe('LAST_LOGIN')
+    expect(selectedValue(screen.getByRole('combobox', { name: '권한' }))).toBe('')
   })
 
   it('상세에서 사유를 적어 정지하면 최신 상세와 결과 안내를 보여 준다', async () => {

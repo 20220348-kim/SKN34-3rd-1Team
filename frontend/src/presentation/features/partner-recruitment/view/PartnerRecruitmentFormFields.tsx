@@ -1,4 +1,5 @@
 import { HelpTip } from '../../../shared/workspace/HelpTip'
+import { SelectField } from '../../../shared/workspace/SelectField'
 import { recruitmentWritingTips, type RecruitmentFormFields } from '../viewmodel/useRecruitmentFormFields'
 import {
   partnerRecruitmentStyles,
@@ -90,17 +91,14 @@ export function PartnerRecruitmentFormFields({
 
           <div className={partnerRecruitmentStyles.field}>
             <label htmlFor="seeking-region">희망 지역</label>
-            <select
+            <SelectField
               className={partnerRecruitmentStyles.fieldControl}
               id="seeking-region"
               name="seekingRegion"
               value={form.seekingRegion}
-              onChange={(event) => form.updateSeekingRegion(event.target.value)}
-            >
-              {form.regionOptions.map((region) => (
-                <option key={region} value={region}>{region}</option>
-              ))}
-            </select>
+              options={form.regionOptions.map((region) => ({ value: region, label: region }))}
+              onChange={form.updateSeekingRegion}
+            />
             {programTargetDescription ? (
               <span className={partnerRecruitmentStyles.fieldHint}>공고 지원대상 원문: {programTargetDescription}</span>
             ) : null}

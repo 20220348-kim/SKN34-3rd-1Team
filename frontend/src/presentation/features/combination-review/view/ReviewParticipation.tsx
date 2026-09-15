@@ -1,5 +1,7 @@
-import { useId } from 'react'
+import { useId, useState } from 'react'
 import type { Participation, ReviewProgram } from '../../../../domain/entities/CombinationReview'
+import { SelectField } from '../../../shared/workspace/SelectField'
+import { useFloatingPopover } from '../../../shared/workspace/useFloatingPopover'
 import { reviewStyles as s } from './CombinationReview.styles'
 
 const fields = [
@@ -31,17 +33,27 @@ export function ReviewParticipation({ program, index, name, onChange, onRemove }
         return <div className="text-sm" key={key}>
           <div className="flex items-center justify-between gap-2">
             {onChange ? <label htmlFor={fieldId}>{label}</label> : <span>{label}</span>}
-            <span className="group relative">
-              <button type="button" aria-label={`${label} 도움말`} aria-describedby={tooltipId} className="grid size-5 place-items-center rounded-full bg-emerald-700 text-xs font-bold text-white shadow-sm hover:bg-emerald-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-700">?</button>
-              <span id={tooltipId} role="tooltip" className="pointer-events-none invisible absolute right-0 bottom-full z-20 mb-2 w-64 rounded-lg bg-emerald-950 px-3 py-2 text-xs leading-5 text-white opacity-0 shadow-lg transition-opacity group-hover:visible group-hover:opacity-100 group-focus-within:visible group-focus-within:opacity-100">{fieldHelp[key]}</span>
-            </span>
+            <ParticipationHelp id={tooltipId} label={label} text={fieldHelp[key]} />
           </div>
-          {onChange ? <select id={fieldId} aria-label={`사업 ${index + 1} ${label}`} className={s.input} value={program.participation[key]} onChange={(e) => onChange({ ...program.participation, [key]: e.target.value })}>
-            {Object.entries(options).map(([value, text]) => <option key={value} value={value}>{text}</option>)}
-          </select> : <strong className="mt-1 block">{Object.entries(options).find(([value]) => value === program.participation[key])?.[1]}</strong>}
+          {onChange ? <SelectField id={fieldId} label={`사업 ${index + 1} ${label}`} className={s.input} value={program.participation[key]}
+            options={Object.entries(options).map(([value, text]) => ({ value, label: text }))}
+            onChange={(value) => onChange({ ...program.participation, [key]: value })} /> : <strong className="mt-1 block">{Object.entries(options).find(([value]) => value === program.participation[key])?.[1]}</strong>}
         </div>
       })}
     </div>
     {onRemove && <button type="button" className={`${s.button} mt-4`} onClick={onRemove}>사업 {index + 1} 선택 해제</button>}
   </fieldset>
+}
+
+/** 항목 옆 `?` 도움말입니다. 위쪽에 띄우되 좌우로 화면을 벗어나면 안쪽으로 옮깁니다. */
+function ParticipationHelp({ id, label, text }: { id: string; label: string; text: string }) {
+  const [isOpen, setIsOpen] = useState(false)
+  const { reference, floating, floatingStyles } = useFloatingPopover({ open: isOpen, placement: 'top-end', gap: 8 })
+  return <span className="relative inline-flex" onMouseEnter={() => setIsOpen(true)} onMouseLeave={() => setIsOpen(false)}>
+    <button ref={reference} type="button" aria-label={`${label} 도움말`} aria-describedby={id}
+      onFocus={() => setIsOpen(true)} onBlur={() => setIsOpen(false)}
+      className="grid size-5 place-items-center rounded-full bg-emerald-700 text-xs font-bold text-white shadow-sm hover:bg-emerald-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-700">?</button>
+    <span id={id} role="tooltip" ref={floating} style={floatingStyles}
+      className={`pointer-events-none z-20 w-64 rounded-lg bg-emerald-950 px-3 py-2 text-xs leading-5 text-white shadow-lg transition-opacity ${isOpen ? 'visible opacity-100' : 'invisible opacity-0'}`}>{text}</span>
+  </span>
 }
