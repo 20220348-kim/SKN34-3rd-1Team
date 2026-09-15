@@ -25,8 +25,8 @@ export const pricingPageStyles = {
   regularMuted: 'text-sample-muted',
   featuredMuted: 'text-sample-muted',
   priceBlock: 'mt-7 mb-6 flex flex-col justify-end gap-2 min-[1024px]:min-h-[5.5rem]',
-  freePrice: 'm-0 text-[2.85rem] font-extrabold leading-tight tracking-[-0.07em]',
-  pendingPrice: 'm-0 break-keep text-[1.7rem] font-extrabold leading-tight tracking-[-0.045em]',
+  // 세 카드의 가격 글자 크기를 같게 맞춥니다(예정가 카드 기준 1.7rem).
+  price: 'm-0 break-keep text-[1.7rem] font-extrabold leading-tight tracking-[-0.045em]',
   priceNote: 'm-0 text-[0.75rem] leading-relaxed',
   divider: 'h-px w-full border-0',
   regularDivider: 'bg-sample-border',

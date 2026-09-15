@@ -6,8 +6,8 @@ import { loginPathFor } from '../../../shared/auth/returnPath'
 
 import { pricingPageStyles } from './PricingPage.styles'
 
-// 현재 제공 기능과 출시 준비 방향을 구분합니다. 유료 가격·결제 정책은 아직 확정하지 않습니다.
-// 무료는 지금 누구나 쓰는 기본 기능, 프로는 정식 출시 전까지 회원에게 무료로 열어 둔 기능, 팀은 출시 준비 중인 방향입니다.
+// 무료(지금 누구나)·플러스(우리 회사 하나를 관리, 정식 출시 전까지 회원 무료)·프리미엄(출시 준비 중) 세 단계입니다.
+// 가격은 출시 시 확정하며, 현재 결제·구독은 받지 않습니다.
 const plans = [
   {
     id: 'free',
@@ -30,30 +30,38 @@ const plans = [
     isFeatured: false,
   },
   {
-    id: 'pro',
-    label: 'PRO',
-    name: '프로',
+    id: 'plus',
+    label: 'PLUS',
+    name: '플러스',
     status: '지금 이용 가능',
     description: '공고를 모아 진행을 관리하고, 맞춤 리포트·중복 검토·신청 문서까지 이어가고 싶다면.',
-    price: '가격 공개 예정',
-    priceNote: '정식 출시 전까지 회원 무료 제공',
+    price: '월 9,900원',
+    priceNote: '정식 출시 전까지 회원 무료',
     featureHeading: '제공 기능',
-    features: ['기업 맞춤 리포트', '신청 문서 작성', '관심 공고 진행 관리', '중복 지원·수혜 검토'],
-    footerNote: '정식 출시 전까지 회원에게 무료로 제공하며, 가격과 제공 범위는 출시 시 안내합니다.',
+    features: [
+      '기업 맞춤 리포트',
+      '신청 문서 작성',
+      '관심 공고 진행 관리',
+      '중복 지원·수혜 검토',
+    ],
+    footerNote: '정식 출시 전까지 회원에게 무료로 제공하며, 가격은 출시 시 확정합니다.',
     action: 'pro',
     isAvailable: true,
     isFeatured: true,
   },
   {
-    id: 'team',
-    label: 'TEAM',
-    name: '팀',
+    id: 'premium',
+    label: 'PREMIUM',
+    name: '프리미엄',
     status: '출시 예정',
-    description: '함께할 기업을 살펴보고, 지원사업을 중심으로 협업을 준비하고 싶다면.',
-    price: '가격 공개 예정',
-    priceNote: '유료 요금제 · 출시 준비 중',
+    description: '신청서 초안까지 AI가 먼저 채우고, 검색과 해석을 더 빠르게 받고 싶다면.',
+    price: '월 29,000원',
+    priceNote: '출시 준비 중',
     featureHeading: '출시 준비 방향',
-    features: ['기업 프로필 기반 파트너 탐색', '공고별 파트너 모집', '협업을 위한 기업 간 제안'],
+    features: [
+      '신청서 항목별 AI 초안 자동 채움과 원문 대조',
+      '검색·조건 해석 우선 처리와 넉넉한 요청 한도',
+    ],
     footerNote: '가격과 제공 범위는 출시 시 안내합니다.',
     action: 'pending',
     isAvailable: false,
@@ -85,8 +93,8 @@ const frequentlyAskedQuestions = [
     answer: 'AI 대화 검색과 필터 검색, 입력한 기업 조건을 바탕으로 한 자격 조건 확인, 공고 원문 근거 질문, 도우미 안내, 공개 파트너 모집글 열람을 로그인 후 이용할 수 있습니다.',
   },
   {
-    question: '프로와 팀은 지금 신청할 수 있나요?',
-    answer: '프로의 기업 맞춤 리포트, 신청 문서 작성, 관심 공고 진행 관리, 중복 지원·수혜 검토는 정식 출시 전까지 회원에게 무료로 열려 있어 별도 신청 없이 바로 이용할 수 있습니다. 팀은 출시 준비 중이며 가격, 제공 범위와 이용 정책은 출시 시 안내합니다. 현재는 결제나 구독 신청을 받지 않습니다.',
+    question: '플러스와 프리미엄은 지금 신청할 수 있나요?',
+    answer: '플러스의 기업 맞춤 리포트, 신청 문서 작성, 관심 공고 진행 관리, 중복 지원·수혜 검토는 정식 출시 전까지 회원에게 무료로 열려 있어 별도 신청 없이 바로 이용할 수 있습니다. 프리미엄은 출시 준비 중이며, 표시한 가격은 예정가로 제공 범위와 이용 정책은 출시 시 확정합니다. 현재는 결제나 구독 신청을 받지 않습니다.',
   },
   {
     question: 'AI가 지원 자격이나 선정을 보장하나요?',
@@ -136,7 +144,7 @@ function PricingTitle() {
  */
 export function PricingPage({ layout = 'public' }: { layout?: PricingPageLayout }) {
   const searchPath = layout === 'workspace' ? appPaths.chat : publicPaths.landing
-  // 프로 기능은 회원 전용이라 로그인 전에는 로그인 뒤 관심 공고함으로 돌아오게 하고, 로그인 뒤에는 바로 관심 공고함으로 갑니다.
+  // 플러스 기능은 회원 전용이라 로그인 전에는 로그인 뒤 관심 공고함으로 돌아오게 하고, 로그인 뒤에는 바로 관심 공고함으로 갑니다.
   const proPath = layout === 'workspace' ? appPaths.savedPrograms : loginPathFor(appPaths.savedPrograms)
   return (
     <main className={pricingPageStyles.page}>
@@ -145,7 +153,7 @@ export function PricingPage({ layout = 'public' }: { layout?: PricingPageLayout 
         <p className={pricingPageStyles.description}>
           지원사업 탐색부터 신청 준비까지 지금 무료로 시작하세요.
           <br />
-          기업 간 파트너 협업은 다음 단계로 준비하고 있습니다.
+          신청서 AI 초안과 우선 처리는 프리미엄으로 준비하고 있습니다.
         </p>
       </section>
 
@@ -187,7 +195,7 @@ export function PricingPage({ layout = 'public' }: { layout?: PricingPageLayout 
                   {plan.description}
                 </p>
                 <div className={pricingPageStyles.priceBlock}>
-                  <p className={plan.isAvailable ? pricingPageStyles.freePrice : pricingPageStyles.pendingPrice}>
+                  <p className={pricingPageStyles.price}>
                     {plan.price}
                   </p>
                   <p className={`${pricingPageStyles.priceNote} ${mutedTone}`}>{plan.priceNote}</p>
@@ -245,7 +253,7 @@ export function PricingPage({ layout = 'public' }: { layout?: PricingPageLayout 
           })}
         </div>
         <p className={pricingPageStyles.releaseNote}>
-          팀은 출시 예정입니다. 프로는 정식 출시 전까지 회원에게 무료로 제공하고, 현재 결제·구독은 제공하지 않습니다.
+          표시한 가격은 예정가이며 출시 시 확정합니다. 플러스는 정식 출시 전까지 회원에게 무료로 제공하고, 프리미엄은 출시 예정이며, 현재 결제·구독은 제공하지 않습니다.
         </p>
       </section>
 
