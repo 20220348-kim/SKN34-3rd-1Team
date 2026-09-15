@@ -89,7 +89,7 @@ class SeedDemoDataTest(unittest.TestCase):
         # 모집글은 실제 공고 행에 붙으므로 공고 테이블은 읽기만 합니다.
         self.assertNotRegex(sql, r"(?i)(INSERT INTO|DELETE FROM|UPDATE)\s+support_program\b")
         demo_emails = set(re.findall(r"'([a-z.]+@demo\.govbiz\.local)'", sql))
-        self.assertEqual(len(demo_emails), 20)
+        self.assertEqual(len(demo_emails), 4)
         # 직접 가입한 실제 이메일은 데모 자료에 넣지 않습니다. 허용 도메인은 govbiz.local뿐입니다.
         for email in re.findall(r"[A-Za-z0-9._+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}", sql):
             self.assertTrue(email.endswith("govbiz.local"), email)

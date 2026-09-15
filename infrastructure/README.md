@@ -358,10 +358,10 @@ docker compose --env-file .env --file infrastructure/compose.yaml down --volumes
 
 `docker compose up -d`를 하면 `demo-seed` 서비스가 `core-api`가 healthy(Flyway 마이그레이션 완료)된 뒤 실행됩니다.
 데모 계정이 없을 때는 [`demo-data.sql`](seed/demo-data.sql)과 [`application-preparations.sql`](seed/application-preparations.sql)을 순서대로 적재합니다.
-계정 22개(개발용 시드 admin·member 포함, 소셜 전용 3개),
-기업 16개(협업·파트너 설정 12개), 파트너 모집글 6개(마감 1·기한 지남 1), 제안 11개(대기·수락·거절·철회·만료), 관심 공고 5개,
+파트너 제안을 서로 주고받는 시연에 맞춘 구성으로, 계정 6개(개발용 시드 admin·member + 데모 회원 4개),
+기업 6개(협업·파트너 설정 6개), 파트너 모집글 5개(회원마다 1개, 모두 모집 중), 제안 4개(데모 회원 4곳이 서로에게 1건씩, 모두 대기), 관심 공고 20개(계정마다 3~4개),
 중복 지원 검토 2건(저장된 데모 자동 분석 1건), 신청 준비 2건(확인 입력·작성본 포함), 관리자 조치 기록 2건입니다.
-모집글은 접수 마감이 3주 이상 남은 기업마당 공고 6건에 붙이므로 공고 동기화가 끝날 때까지(최대 `DEMO_SEED_WAIT_SECONDS`) 기다렸다가 넣고,
+모집글은 접수 마감이 3주 이상 남은 기업마당 공고 5건에 붙이므로 공고 동기화가 끝날 때까지(최대 `DEMO_SEED_WAIT_SECONDS`) 기다렸다가 넣고,
 공고가 부족하면 이유를 남기고 실패합니다(`BIZINFO_API_KEY` 확인). `DEMO_SEED_ENABLED=false`면 아무것도 하지 않습니다.
 
 `jihoon.park@demo.govbiz.local` 계정이 이미 있으면 전체 초기화를 건너뛰고 신청도우미 SQL만 실행합니다.
@@ -392,9 +392,14 @@ RUN_SEED_MYSQL_TESTS=1 python3 -m unittest discover -s infrastructure/scripts -p
 
 | 계정 | 비밀번호 | 용도 |
 |---|---|---|
-| `member@govbiz.local` | `govbiz-admin1`(개발용 로그인도 가능) | 모집글 2개(모집 중·마감), 받은 제안 3건, 보낸 제안 2건, 관심 공고 5건, 중복 검토 2건, 신청 준비 2건 |
-| `admin@govbiz.local` | `govbiz-admin1` | 관리자 계정 관리 화면(요약·목록·조치 기록), 가상 기업 1개와 보낸 제안 1건 |
-| `*@demo.govbiz.local` 20개 | `govbiz-demo1` | 일반 회원. `woojin.han`·`chaewon.song`·`jiwoo.seo`는 소셜 전용이라 비밀번호가 없음 |
+| `member@govbiz.local` | `govbiz-admin1`(개발용 로그인도 가능) | 넥스트웨이브. 모집글 R1(공고 1), 관심 공고 1·2·3·4, 중복 검토 2건, 신청 준비 2건 |
+| `admin@govbiz.local` | `govbiz-admin1` | 거북섬테크. 관리자 계정 관리 화면(요약·목록·조치 기록), 모집글 없음, 관심 공고 1·2·5 |
+| `jihoon.park@demo.govbiz.local` | `govbiz-demo1` | 데이터브릿지. 모집글 R2(공고 2), 보낸 제안 R4·받은 제안 1건(한빛정밀), 관심 공고 2·1·3 |
+| `hana.choi@demo.govbiz.local` | `govbiz-demo1` | 한빛정밀. 모집글 R3(공고 3), 보낸 제안 R2·받은 제안 1건(오션로지스), 관심 공고 3·1·5 |
+| `dohyun.jung@demo.govbiz.local` | `govbiz-demo1` | 마루헬스케어. 모집글 R4(공고 4), 보낸 제안 R5·받은 제안 1건(데이터브릿지), 관심 공고 4·2·5·1 |
+| `yuna.kang@demo.govbiz.local` | `govbiz-demo1` | 오션로지스. 모집글 R5(공고 5), 보낸 제안 R3·받은 제안 1건(마루헬스케어), 관심 공고 5·3·4 |
+
+데모 회원 4곳의 제안은 모두 대기 상태입니다. `member`·`admin`은 제안을 보내지도 받지도 않은 상태라 시연에서 직접 주고받고, 모집글 주인 계정에서 수락·거절합니다.
 
 기업명·사업자등록번호·이메일은 모두 가상입니다. 로컬 데이터를 초기화(`down --volumes`)하면 다음 기동 때 다시 들어갑니다.
 
