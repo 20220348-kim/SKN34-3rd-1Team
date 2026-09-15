@@ -36,6 +36,34 @@ class ProductionConfigTest(unittest.TestCase):
     def test_valid_config(self):
         self.assertEqual(checker.validate(self.config), [])
 
+    def test_assistant_disabled_by_default(self):
+        self.assertEqual(self.config["services"]["core-api"]["environment"]["ASSISTANT_AGENT_ENABLED"], "false")
+        for name in ("core-api", "ai-service"):
+            self.assertEqual(self.config["services"][name]["environment"]["ASSISTANT_TOOLS_TOKEN"], "")
+
+    def test_assistant_server_token_is_forwarded_to_both_services_only(self):
+        token = "dummy-server-only-assistant-token-" * 2
+        result = subprocess.run(["docker", "compose", "--env-file", os.devnull, "-f", str(checker.COMPOSE),
+                                 "config", "--format", "json"],
+                                env={**self.env, "ASSISTANT_AGENT_ENABLED": "true", "ASSISTANT_TOOLS_TOKEN": token},
+                                capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0)
+        config = json.loads(result.stdout)
+        self.assertEqual(checker.validate(config), [])
+        for name, service in config["services"].items():
+            if name in {"core-api", "ai-service"}:
+                self.assertEqual(service["environment"]["ASSISTANT_TOOLS_TOKEN"], token)
+            else:
+                self.assertNotIn("ASSISTANT_TOOLS_TOKEN", service.get("environment", {}))
+        for name, key, value in [("core-api", "ASSISTANT_TOOLS_TOKEN", "short"),
+                                 ("ai-service", "ASSISTANT_TOOLS_TOKEN", "different-token-" * 3),
+                                 ("ai-service", "ASSISTANT_TOOLS_BASE_URL", "http://127.0.0.1:8080"),
+                                 ("core-api", "ASSISTANT_AGENT_ENABLED", "yes")]:
+            with self.subTest(service=name, key=key):
+                invalid = copy.deepcopy(config)
+                invalid["services"][name]["environment"][key] = value
+                self.assertTrue(checker.validate(invalid))
+
     def test_default_schedulers_do_not_start_paid_work(self):
         env = self.config["services"]["core-api"]["environment"]
         for key in ["BIZINFO_SYNC_ENABLED", "KSTARTUP_SYNC_ENABLED", "MSIT_SYNC_ENABLED",

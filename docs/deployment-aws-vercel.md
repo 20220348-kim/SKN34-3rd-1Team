@@ -136,6 +136,20 @@ Node 24.x/pnpm 11.22.x, Vite, `pnpm build`, output `dist`를 사용한다.
 OpenAI·DB·JWT·Redis·RabbitMQ·Qdrant 비밀값은 Vercel이 아닌 EC2에만 둔다.
 `VITE_DEV_PROXY_TARGET`은 Vercel 운영 프록시가 아니다.
 
+### 도우미 LLM과 카카오 문의 활성화
+
+- Vercel **Production**에 `VITE_ASSISTANT_AI_ENABLED=true`와 `VITE_KAKAO_CHANNEL_ID`(채널 공개 ID)를
+  설정한 뒤 재배포한다. 개발 Compose의 `ASSISTANT_AI_ENABLED`/`KAKAO_CHANNEL_ID` 이름만 Vercel에 넣어서는 반영되지 않는다.
+- EC2 환경 파일에 `ASSISTANT_AGENT_ENABLED=true`, 32자 이상의 `ASSISTANT_TOOLS_TOKEN`을 설정한다.
+  운영 Compose가 같은 토큰을 Core와 AI에 전달하고, AI의 도구 주소는 `http://core-api:8080`을 사용한다.
+  공유 토큰은 Vercel, `VITE_*`, Git, 브라우저에 넣지 않는다.
+- 호출 흐름은 `브라우저 → 운영 프록시 → Core → AI 도우미 → OpenAI`다. 로그인 사용자 데이터가 필요한 경우에만
+  AI가 공유 토큰과 사용자별 서명 토큰으로 Core 내부의 읽기 전용 도구를 호출한다.
+- 켜진 뒤 자유 질문에는 LLM 비용이 발생한다. 이 설정으로 자동 수집이나 백그라운드 사전 색인을 켜지는 않는다.
+  기존 호출 제한을 유지하고 별도 동의 없이 정기 작업을 활성화하지 않는다.
+- 환경 파일 수정만으로는 컨테이너 환경이 바뀌지 않는다. 운영 Compose의 전달 항목을 확인하고 AI/Core만 재생성한다.
+  기존 서버의 고정 IP·메일·비밀값을 보존한다. 백엔드 자동 배포는 이미지 값만 교체하므로 이 서버 설정은 유지된다.
+
 Core CORS·OAuth 콜백/복귀 주소는 같은 고정 Vercel origin으로 설정한다.
 Google/Kakao 콘솔에 `<운영 origin>/api/v1/auth/oauth/{google|kakao}/callback`을 별도 등록한다.
 OAuth 자격증명이 없는 공급자는 사용할 수 없으며 이메일 회원가입/로그인은 별도로 검증한다.
