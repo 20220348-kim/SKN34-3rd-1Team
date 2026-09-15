@@ -105,8 +105,7 @@ class BizInfoSupportProgramCatalogSyncServiceTest {
     private fun service() = BizInfoSupportProgramCatalogSyncService(
         catalogFacade = catalogFacade,
         supportProgramRepository = supportProgramRepository,
-        indexSyncService = indexSyncService,
-    )
+        indexSyncService = indexSyncService, publicationService = ai.govbiz.core.supportprogram.service.sync.SupportProgramCatalogPublicationService(supportProgramRepository, org.mockito.Mockito.mock(ai.govbiz.core.applicationpreparation.repository.ApplicationFormAvailabilityRepository::class.java)))
 
     private fun catalogProgram(id: String) = CatalogSupportProgram(
         program = SupportProgram(

@@ -356,6 +356,11 @@ class ApiExceptionHandler {
             request,
         )
 
+    @ExceptionHandler(ai.govbiz.core.applicationpreparation.client.ai.exception.ApplicationFormTimeoutException::class)
+    fun handleApplicationFormTimeout(exception: ai.govbiz.core.applicationpreparation.client.ai.exception.ApplicationFormTimeoutException,
+        request: HttpServletRequest): ResponseEntity<ProblemDetail> =
+        handleAiServiceCallException(AiServiceCallException.timeout(exception), request)
+
     @ExceptionHandler(AiServiceCallException::class)
     fun handleAiServiceCallException(
         exception: AiServiceCallException,

@@ -13,7 +13,7 @@ import { ApplicationPreparationUseCase } from '../../../../domain/usecases/Appli
 import { signedIn } from '../../../shared/auth/state/authSlice'
 import { ApplicationPreparationEditorPage, ApplicationPreparationListPage } from './ApplicationPreparationPages'
 import { ApplicationDocumentPage } from './ApplicationDocumentPage'
-import { chooseOption, optionLabels, optionValues, selectedValue } from '../../../../test/selectField'
+import { chooseOption, optionValues, selectedValue } from '../../../../test/selectField'
 
 const original = appContainer.resolve('applicationPreparationUseCase')
 const originalCatalog = appContainer.resolve('browseSupportProgramsUseCase')
@@ -66,7 +66,7 @@ const detail = {
   updatedAt: '2026-09-11T01:00:00+09:00',
   form: structuredClone(firstForm),
 }
-const repository = { documents: vi.fn(), generateDocuments: vi.fn(), downloadDocument: vi.fn(), generateDraft: vi.fn(), saveContent: vi.fn(), confirmContent: vi.fn(), discoveryJobs: vi.fn(), discoveryJob: vi.fn(), forms: vi.fn(), discover: vi.fn(), list: vi.fn(), delete: vi.fn(), get: vi.fn(), create: vi.fn(), interpret: vi.fn(), replaceInputs: vi.fn(), updateProgress: vi.fn() }
+const repository = { documents: vi.fn(), generateDocuments: vi.fn(), downloadDocument: vi.fn(), generateDraft: vi.fn(), saveContent: vi.fn(), confirmContent: vi.fn(), discoveryJobs: vi.fn(), discoveryJob: vi.fn(), availability: vi.fn(), forms: vi.fn(), discover: vi.fn(), list: vi.fn(), delete: vi.fn(), get: vi.fn(), create: vi.fn(), interpret: vi.fn(), replaceInputs: vi.fn(), updateProgress: vi.fn() }
 
 function completedDiscovery(result: { items: ApplicationForm[]; warnings: string[]; cached: boolean }) {
   return { id: 77, sourceCode: result.items[0].sourceCode, sourceProgramId: result.items[0].sourceProgramId,
@@ -250,6 +250,8 @@ beforeEach(() => {
   repository.documents.mockResolvedValue([])
   repository.generateDocuments.mockResolvedValue([documentFile])
   repository.discoveryJobs.mockResolvedValue([])
+  repository.availability.mockResolvedValue({ state: { sourceCode: 'BIZINFO', sourceProgramId: 'PBLN_1', status: 'AVAILABLE',
+    reasonCode: 'FORM_FOUND', nextRetryAt: null, attemptCount: 1 }, forms: { items: [structuredClone(firstForm)] } })
   repository.forms.mockResolvedValue([structuredClone(firstForm)])
   repository.discover.mockResolvedValue(completedDiscovery({ items: [structuredClone(firstForm)], warnings: ['원문 대조 필요'], cached: false }))
   repository.list.mockResolvedValue({ items: [], nextBeforeId: null })
@@ -431,239 +433,43 @@ describe('application preparation list', () => {
 })
 
 describe('application preparation creation and detail', () => {
-  it('automatically selects the notice passed by the support preparation link', async () => {
-    const program = { ...structuredClone(supportPrograms[0]), sourceCode: 'KSTARTUP', id: '177911', title: '자동 선택할 창업 지원 공고' }
-    getProgramDetail.mockResolvedValueOnce(program)
-
-    mount('/app/application-preparations/new?sourceCode=KSTARTUP&sourceProgramId=177911')
-
-    const selectedHeading = await screen.findByRole('heading', { name: '선택한 공고' })
-    expect(selectedHeading.closest('section')?.textContent).toContain('자동 선택할 창업 지원 공고')
-    expect(getProgramDetail).toHaveBeenCalledWith(
-      { sourceCode: 'KSTARTUP', sourceProgramId: '177911' },
-      expect.any(AbortSignal),
-    )
-    expect(screen.getByRole('button', { name: '신청 문서 찾기' })).toBeTruthy()
-  })
-
-  it('selects a notice from saved programs without searching the catalog', async () => {
-    const program = { ...structuredClone(supportPrograms[0]), sourceCode: 'KSTARTUP', id: '177911', title: '관심 창업 지원 공고' }
-    const form = { ...structuredClone(firstForm), sourceCode: 'KSTARTUP', sourceProgramId: program.id }
-    browseSavedPrograms.mockResolvedValueOnce([{ savedAt: '2026-09-12T10:00:00+09:00', program }])
-    repository.discover.mockResolvedValueOnce(completedDiscovery({ items: [form], warnings: [], cached: false }))
-    mount('/app/application-preparations/new')
-
-    expect(browseSavedPrograms).not.toHaveBeenCalled()
-    fireEvent.click(screen.getByRole('button', { name: '관심 공고함에서 선택' }))
-    const dialog = await screen.findByRole('dialog', { name: '관심 공고함에서 선택' })
-    const savedPrograms = await within(dialog).findByRole('list', { name: '신청 문서 관심 공고 목록' })
-    fireEvent.click(within(savedPrograms).getByRole('button', { name: '관심 창업 지원 공고 관심 공고 선택' }))
-    expect(within(dialog).queryByText('1/1 선택')).toBeNull()
-    fireEvent.click(within(dialog).getByRole('button', { name: '선택 완료' }))
-
-    expect(browsePrograms).not.toHaveBeenCalled()
-    expect((screen.getByLabelText('K-Startup 공식 공고 ID') as HTMLInputElement).value).toBe('177911')
-    fireEvent.click(screen.getByRole('button', { name: '신청 문서 찾기' }))
-    await screen.findByRole('heading', { name: '신청 문서를 찾았습니다' })
-    expect(repository.discover).toHaveBeenCalledWith('KSTARTUP', '177911', expect.any(AbortSignal), expect.any(String))
-  })
-
-  it('shows the saved-program empty state only after the picker opens', async () => {
-    mount('/app/application-preparations/new')
-    expect(browseSavedPrograms).not.toHaveBeenCalled()
-    expect(screen.queryByText('관심 공고함에 담은 공고가 없습니다.')).toBeNull()
-    const searchHeading = screen.getByRole('heading', { name: '전체 공고 검색' })
-    const savedProgramsButton = screen.getByRole('button', { name: '관심 공고함에서 선택' })
-    const searchInput = screen.getByLabelText('공고명·기관명')
-    expect(searchHeading.compareDocumentPosition(savedProgramsButton) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-    expect(savedProgramsButton.compareDocumentPosition(searchInput) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-
-    fireEvent.click(savedProgramsButton)
-
-    const dialog = await screen.findByRole('dialog', { name: '관심 공고함에서 선택' })
-    expect(await within(dialog).findByText('관심 공고함에 담은 공고가 없습니다.')).toBeTruthy()
-    expect(browseSavedPrograms).toHaveBeenCalledWith(expect.any(AbortSignal))
-  })
-
-  it('searches the catalog and discovers documents only after the user selects a notice', async () => {
-    const program = { ...structuredClone(supportPrograms[0]), sourceCode: 'BIZINFO', id: 'PBLN_123' }
-    browsePrograms.mockResolvedValueOnce({
-      programs: [program], total: 1, page: 1, pageSize: 10, totalPages: 1,
-      regions: [], categories: [], startupStages: [], applicantTypes: [], founderAges: [],
-    })
-    mount('/app/application-preparations/new')
-
-    fireEvent.change(screen.getByLabelText('공고명·기관명'), { target: { value: '혁신 바우처' } })
-    fireEvent.click(screen.getByRole('button', { name: '공고 검색' }))
-
-    const results = await screen.findByRole('list', { name: '신청 문서 공고 검색 결과' })
-    expect(browsePrograms).toHaveBeenCalledWith(expect.objectContaining({
-      keyword: '혁신 바우처', sourceCode: '', status: 'ALL', page: 1, pageSize: 10,
-    }), expect.any(AbortSignal))
-    expect(repository.discover).not.toHaveBeenCalled()
-    fireEvent.click(within(results).getByRole('button', { name: '선택' }))
-
-    const selectedHeading = screen.getByRole('heading', { name: '선택한 공고' })
-    const searchHeading = screen.getByRole('heading', { name: '전체 공고 검색' })
-    expect(selectedHeading.compareDocumentPosition(searchHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-    expect((screen.getByLabelText('기업마당 공식 공고 URL 또는 공고 ID') as HTMLInputElement).value).toBe('PBLN_123')
-    expect(repository.discover).not.toHaveBeenCalled()
-    fireEvent.click(within(selectedHeading.closest('section')!).getByRole('button', { name: '신청 문서 찾기' }))
-
-    expect(await screen.findByLabelText('작성할 공식 첨부')).toBeTruthy()
-    expect(screen.queryByRole('heading', { name: '전체 공고 검색' })).toBeNull()
-    expect(screen.getByRole('heading', { name: '신청 문서를 찾았습니다' })).toBe(document.activeElement)
-    expect(repository.discover).toHaveBeenCalledWith('BIZINFO', 'PBLN_123', expect.any(AbortSignal), expect.any(String))
-  })
-
-  it('searches all providers and discovers K-Startup through the same flow', async () => {
-    const msitProgram = { ...structuredClone(supportPrograms[0]), sourceCode: 'MSIT', id: '3186573', sourceName: '과학기술정보통신부' }
-    const startupProgram = { ...structuredClone(supportPrograms[0]), sourceCode: 'KSTARTUP', id: '177911', sourceName: 'K-Startup', title: 'K-Startup 공고' }
-    const startupForm = {
-      ...structuredClone(firstForm), sourceCode: 'KSTARTUP', sourceProgramId: startupProgram.id,
-      sourceUrl: 'https://www.k-startup.go.kr/web/contents/bizpbanc-ongoing.do?pbancSn=177911&schM=view',
-      attachmentFileName: '신청양식.hwp',
-    }
-    browsePrograms.mockResolvedValueOnce({
-      programs: [msitProgram, startupProgram], total: 2, page: 1, pageSize: 10, totalPages: 1,
-      regions: [], categories: [], startupStages: [], applicantTypes: [], founderAges: [],
-    })
-    repository.discover.mockResolvedValueOnce(completedDiscovery({ items: [startupForm], warnings: [], cached: false }))
-    mount('/app/application-preparations/new')
-
-    fireEvent.click(screen.getByRole('button', { name: '공고 검색' }))
-    const results = await screen.findByRole('list', { name: '신청 문서 공고 검색 결과' })
-    expect(within(results).queryByRole('button', { name: '문서 지원 준비 중' })).toBeNull()
-    fireEvent.click(within(results).getAllByRole('button', { name: '선택' })[1]!)
-    fireEvent.click(screen.getByRole('button', { name: '신청 문서 찾기' }))
-
-    expect(await screen.findByRole('heading', { name: '신청 문서를 찾았습니다' })).toBeTruthy()
-    expect(repository.discover).toHaveBeenCalledWith('KSTARTUP', '177911', expect.any(AbortSignal), expect.any(String))
-    fireEvent.click(screen.getByRole('button', { name: '공고 다시 선택' }))
-    expect(screen.getByRole('heading', { name: '전체 공고 검색' })).toBeTruthy()
-  })
-
-  it('preserves an MSIT identity passed from the program detail page', async () => {
-    const msitForm = {
-      ...structuredClone(firstForm), sourceCode: 'MSIT', sourceProgramId: '3186573',
-      sourceUrl: 'https://www.msit.go.kr/bbs/view.do?bbsSeqNo=100&nttSeqNo=3186573',
-    }
-    repository.discover.mockResolvedValueOnce(completedDiscovery({ items: [msitForm], warnings: [], cached: false }))
-    mount('/app/application-preparations/new?sourceCode=MSIT&sourceProgramId=3186573')
-
-    expect((screen.getByLabelText('과학기술정보통신부 공식 공고 ID') as HTMLInputElement).value).toBe('3186573')
-    fireEvent.click(screen.getByRole('button', { name: '신청 문서 찾기' }))
-
-    await screen.findByRole('heading', { name: '신청 문서를 찾았습니다' })
-    expect(repository.discover).toHaveBeenCalledWith('MSIT', '3186573', expect.any(AbortSignal), expect.any(String))
-  })
-
-  it.each([
-    ['KSTARTUP', '177911', 'K-Startup 공식 공고 ID'],
-    ['CNTRADE_NOTICE', '3862', '충남 온라인수출지원시스템 공식 공고 ID'],
-  ])('preserves a %s identity passed from the program detail page', async (sourceCode, sourceProgramId, inputLabel) => {
-    const form = { ...structuredClone(firstForm), sourceCode, sourceProgramId }
-    repository.discover.mockResolvedValueOnce(completedDiscovery({ items: [form], warnings: [], cached: false }))
-    mount(`/app/application-preparations/new?sourceCode=${sourceCode}&sourceProgramId=${sourceProgramId}`)
-
-    expect((screen.getByLabelText(inputLabel) as HTMLInputElement).value).toBe(sourceProgramId)
-    fireEvent.click(screen.getByRole('button', { name: '신청 문서 찾기' }))
-
-    await screen.findByRole('heading', { name: '신청 문서를 찾았습니다' })
-    expect(repository.discover).toHaveBeenCalledWith(sourceCode, sourceProgramId, expect.any(AbortSignal), expect.any(String))
-  })
-
-  it('explains when the selected notice has no discoverable application form', async () => {
-    const program = {
-      ...structuredClone(supportPrograms[0]),
-      sourceCode: 'BIZINFO',
-      id: 'PBLN_126043',
-      sourceUrl: 'https://www.bizinfo.go.kr/official-notice',
-    }
-    browsePrograms.mockResolvedValueOnce({
-      programs: [program], total: 1, page: 1, pageSize: 10, totalPages: 1,
-      regions: [], categories: [], startupStages: [], applicantTypes: [], founderAges: [],
-    })
-    repository.discover.mockRejectedValueOnce(new ApplicationPreparationError(422, 'APPLICATION_FORM_NO_FORM'))
-    mount('/app/application-preparations/new')
-
-    fireEvent.click(screen.getByRole('button', { name: '공고 검색' }))
-    const results = await screen.findByRole('list', { name: '신청 문서 공고 검색 결과' })
-    fireEvent.click(within(results).getByRole('button', { name: '선택' }))
-    const selected = screen.getByRole('heading', { name: '선택한 공고' }).closest('section')!
-    fireEvent.click(within(selected).getByRole('button', { name: '신청 문서 찾기' }))
-
-    expect((await screen.findByRole('alert')).textContent).toContain('현재 지원하지 않는 신청 문서 형식입니다')
-    expect(screen.queryByRole('button', { name: '다시 시도' })).toBeNull()
-    expect(screen.getByRole('link', { name: /공고 원문 열기/ }).getAttribute('href')).toBe(program.sourceUrl)
-    expect(screen.queryByRole('button', { name: '신청 문서 작성 시작' })).toBeNull()
-  })
-
-  it('links to the selected official notice when its attachment cannot be analyzed', async () => {
-    const program = {
-      ...structuredClone(supportPrograms[0]),
-      sourceCode: 'BIZINFO',
-      id: 'PBLN_126422',
-      sourceUrl: 'https://www.bizinfo.go.kr/official-scanned-notice',
-    }
-    browsePrograms.mockResolvedValueOnce({
-      programs: [program], total: 1, page: 1, pageSize: 10, totalPages: 1,
-      regions: [], categories: [], startupStages: [], applicantTypes: [], founderAges: [],
-    })
-    repository.discover.mockRejectedValueOnce(new ApplicationPreparationError(422, 'APPLICATION_FORM_SOURCE_UNSUPPORTED'))
-    mount('/app/application-preparations/new')
-
-    fireEvent.click(screen.getByRole('button', { name: '공고 검색' }))
-    const results = await screen.findByRole('list', { name: '신청 문서 공고 검색 결과' })
-    fireEvent.click(within(results).getByRole('button', { name: '선택' }))
-    const selected = screen.getByRole('heading', { name: '선택한 공고' }).closest('section')!
-    fireEvent.click(within(selected).getByRole('button', { name: '신청 문서 찾기' }))
-
-    expect((await screen.findByRole('alert')).textContent).toContain('공식 PDF/HWP/HWPX 첨부를 확보하고 읽을 수 있는 공고만')
-    expect(screen.getByRole('button', { name: '다시 시도' })).toBeTruthy()
-    expect(screen.getByRole('link', { name: /공고 원문 열기/ }).getAttribute('href')).toBe(program.sourceUrl)
-  })
-
-  it('discovers the selected notice and lets the user choose among its official forms', async () => {
-    repository.discover.mockResolvedValueOnce(completedDiscovery({ items: [structuredClone(firstForm), structuredClone(secondForm)], warnings: ['원문 대조 필요'], cached: false }))
+  it('opens active snapshots directly from a selected notice without a discovery job', async () => {
     mount('/app/application-preparations/new?sourceCode=BIZINFO&sourceProgramId=PBLN_1')
-    expect((screen.getByLabelText('기업마당 공식 공고 URL 또는 공고 ID') as HTMLInputElement).value).toBe('PBLN_1')
-    fireEvent.click(screen.getByRole('button', { name: '신청 문서 찾기' }))
+    await screen.findByRole('heading', { name: '신청 문서를 찾았습니다' })
+    expect(repository.availability).toHaveBeenCalledWith('BIZINFO', 'PBLN_1', expect.any(AbortSignal))
+    expect(repository.discover).not.toHaveBeenCalled()
+    expect(repository.discoveryJobs).not.toHaveBeenCalled()
+    expect(repository.discoveryJob).not.toHaveBeenCalled()
+  })
 
+  it.each(['PENDING', 'STALE', 'NO_FORM', 'DOCUMENT_UNAVAILABLE', 'TOO_LARGE', 'RETRY_WAITING', 'REVIEW_REQUIRED'])('does not start writing for %s', async (status) => {
+    repository.availability.mockResolvedValue({ state: { sourceCode: 'BIZINFO', sourceProgramId: 'PBLN_1', status,
+      reasonCode: 'SOURCE_CHECK_REQUIRED', nextRetryAt: null, attemptCount: 1 }, forms: { items: [] } })
+    mount('/app/application-preparations/new?sourceCode=BIZINFO&sourceProgramId=PBLN_1')
+    await screen.findByText('공식 문서와 양식 준비 상태를 확인해야 합니다.')
+    expect(screen.queryByRole('heading', { name: '신청 문서를 찾았습니다' })).toBeNull()
+    expect(repository.create).not.toHaveBeenCalled()
+    expect(repository.discover).not.toHaveBeenCalled()
+  })
+
+  it('offers multiple stored forms for one notice', async () => {
+    repository.availability.mockResolvedValue({ state: { sourceCode: 'BIZINFO', sourceProgramId: 'PBLN_1', status: 'AVAILABLE',
+      reasonCode: 'FORM_FOUND', nextRetryAt: null, attemptCount: 1 }, forms: { items: [firstForm, { ...secondForm, sourceProgramId: 'PBLN_1' }] } })
+    mount('/app/application-preparations/new?sourceCode=BIZINFO&sourceProgramId=PBLN_1')
     const formSelect = await screen.findByLabelText('작성할 공식 첨부')
-    expect(optionValues(formSelect)).toHaveLength(2)
-    expect(repository.discover).toHaveBeenCalledWith('BIZINFO', 'PBLN_1', expect.any(AbortSignal), expect.any(String))
-    expect(screen.getByText('원문 대조 필요')).toBeTruthy()
+    expect(optionValues(formSelect)).toEqual([firstForm.formVersionId, secondForm.formVersionId])
     chooseOption(formSelect, secondForm.formVersionId)
-
-    expect(screen.getByText(secondForm.programTitle)).toBeTruthy()
-    const fieldSelect = screen.getByLabelText('작성할 지원 분야')
-    expect(optionLabels(fieldSelect)).toEqual(['마케팅'])
-    expect(selectedValue(fieldSelect)).toBe('MARKETING')
+    expect(selectedValue(formSelect)).toBe(secondForm.formVersionId)
+    expect(repository.discover).not.toHaveBeenCalled()
   })
 
-  it('prevents duplicate submissions and opens the created detail', async () => {
-    const creation = deferred<ApplicationPreparation>()
-    repository.create.mockReturnValueOnce(creation.promise)
-    mount('/app/application-preparations/new?sourceCode=BIZINFO&sourceProgramId=PBLN_1')
-    fireEvent.click(screen.getByRole('button', { name: '신청 문서 찾기' }))
-    await screen.findByLabelText('작성할 공식 첨부')
-    chooseOption(screen.getByLabelText('작성할 지원 분야'), 'MARKETING')
-
-    const submit = screen.getByRole('button', { name: '신청 문서 작성 시작' })
-    fireEvent.click(submit)
-    fireEvent.submit(submit.closest('form')!)
-
-    expect(repository.create).toHaveBeenCalledOnce()
-    expect(repository.create).toHaveBeenCalledWith(expect.objectContaining({
-      formVersionId: firstForm.formVersionId,
-      serviceField: 'MARKETING',
-    }), expect.any(AbortSignal))
-    expect(screen.getByRole('status').textContent).toContain('생성하고 있습니다')
-    await act(async () => creation.resolve({ ...structuredClone(detail), serviceField: 'MARKETING' }))
-
-    expect(await screen.findByRole('heading', { name: '공식 작성 항목' })).toBeTruthy()
-    expect(repository.get).toHaveBeenCalledWith(12, expect.any(AbortSignal))
+  it('aborts active snapshot lookup when leaving the page', async () => {
+    repository.availability.mockReturnValue(new Promise(() => {}))
+    const page = mount('/app/application-preparations/new?sourceCode=BIZINFO&sourceProgramId=PBLN_1')
+    await waitFor(() => expect(repository.availability).toHaveBeenCalled())
+    const signal = repository.availability.mock.calls[0][2] as AbortSignal
+    page.unmount()
+    expect(signal.aborted).toBe(true)
   })
 
   it('displays the complete official detail without starting AI', async () => {
@@ -820,135 +626,4 @@ describe('application preparation creation and detail', () => {
     expect((await screen.findByRole('alert')).textContent).toContain(message)
   })
 
-  it('clears a selected program and allows choosing it again without analysis', async () => {
-    mount('/app/application-preparations/new')
-    fireEvent.click(screen.getByRole('button', { name: '공고 검색' }))
-    fireEvent.click(await screen.findByRole('button', { name: '선택' }))
-    expect(screen.getByRole('heading', { name: '선택한 공고' })).toBeTruthy()
-    fireEvent.click(screen.getByRole('button', { name: '선택 취소' }))
-    expect(screen.queryByRole('heading', { name: '선택한 공고' })).toBeNull()
-    expect(screen.queryByRole('button', { name: '신청 문서 찾기' })).toBeNull()
-    expect(screen.queryByRole('region', { name: '최근 공식 문서 분석 작업' })).toBeNull()
-    fireEvent.click(screen.getByRole('button', { name: '선택' }))
-    expect(screen.getByRole('heading', { name: '선택한 공고' })).toBeTruthy()
-    expect(repository.discover).not.toHaveBeenCalled()
-    expect(repository.discoveryJobs).toHaveBeenCalledTimes(1)
-  })
-
-  it('restores a running discovery after returning and shows its completed result without another POST', async () => {
-    vi.useFakeTimers()
-    const completed = completedDiscovery({ items: [firstForm], warnings: [], cached: false })
-    const running = { ...completed, status: 'RUNNING' as const, result: null }
-    repository.discoveryJobs.mockResolvedValueOnce([running])
-    repository.discoveryJob.mockResolvedValueOnce(running).mockResolvedValueOnce(completed)
-
-    mount('/app/application-preparations/new')
-    await act(async () => { await Promise.resolve() })
-    expect(screen.getByText('공식 첨부를 수집하고 AI가 문항을 분석하고 있습니다.')).toBeTruthy()
-    expect(within(screen.getByRole('region', { name: '최근 공식 문서 분석 작업' })).getByText('분석 중')).toBeTruthy()
-
-    await act(async () => vi.advanceTimersByTimeAsync(3000))
-
-    expect(screen.getByLabelText('작성할 공식 첨부')).toBeTruthy()
-    expect(repository.discoveryJobs).toHaveBeenCalledTimes(1)
-    expect(repository.discoveryJob).toHaveBeenCalledTimes(2)
-    expect(repository.discover).not.toHaveBeenCalled()
-  })
-
-  it('restores a completed discovery result immediately after returning', async () => {
-    const completed = completedDiscovery({ items: [firstForm], warnings: ['원문 대조 필요'], cached: false })
-    repository.discoveryJobs.mockResolvedValueOnce([{ ...completed, result: null }])
-    repository.discoveryJob.mockResolvedValueOnce(completed)
-
-    mount('/app/application-preparations/new')
-
-    expect(await screen.findByLabelText('작성할 공식 첨부')).toBeTruthy()
-    expect(screen.getByRole('region', { name: '공고 분석 안내' }).textContent).toContain('원문 대조 필요')
-    expect(repository.discoveryJob).toHaveBeenCalledWith(77, expect.any(AbortSignal))
-    expect(repository.discover).not.toHaveBeenCalled()
-  })
-
-  it('polls an accepted job and shows its saved result without another POST', async () => {
-    vi.useFakeTimers()
-    const completed = completedDiscovery({ items: [firstForm], warnings: [], cached: false })
-    repository.discover.mockResolvedValueOnce({ ...completed, status: 'QUEUED', result: null })
-    repository.discoveryJob.mockResolvedValueOnce({ ...completed, status: 'RUNNING', result: null }).mockResolvedValueOnce(completed)
-    mount('/app/application-preparations/new?sourceCode=BIZINFO&sourceProgramId=PBLN_1')
-    await act(async () => fireEvent.click(screen.getByRole('button', { name: '신청 문서 찾기' })))
-    expect(screen.getByText('작업이 접수되어 분석 순서를 기다리고 있습니다.')).toBeTruthy()
-    await act(async () => vi.advanceTimersByTimeAsync(3000))
-    expect(screen.getByText('공식 첨부를 수집하고 AI가 문항을 분석하고 있습니다.')).toBeTruthy()
-    await act(async () => vi.advanceTimersByTimeAsync(3000))
-    expect(screen.getByLabelText('작성할 공식 첨부')).toBeTruthy()
-    expect(repository.discover).toHaveBeenCalledTimes(1)
-    expect(repository.discoveryJob).toHaveBeenCalledTimes(2)
-  })
-
-  it('allows an explicit new request after reselecting a program whose evidence validation failed', async () => {
-    browsePrograms.mockResolvedValueOnce({
-      programs: [{ ...structuredClone(supportPrograms[0]), sourceCode: 'BIZINFO', id: 'PBLN_1' }],
-      total: 1, page: 1, pageSize: 10, totalPages: 1,
-      regions: [], categories: [], startupStages: [], applicantTypes: [], founderAges: [],
-    })
-    repository.discover.mockResolvedValueOnce({
-      ...completedDiscovery({ items: [firstForm], warnings: [], cached: false }),
-      status: 'FAILED', result: null, failureCode: 'APPLICATION_FORM_AI_INVALID_RESPONSE',
-    })
-    mount('/app/application-preparations/new')
-    fireEvent.click(screen.getByRole('button', { name: '공고 검색' }))
-    fireEvent.click(await screen.findByRole('button', { name: '선택' }))
-    fireEvent.click(screen.getByRole('button', { name: '신청 문서 찾기' }))
-    expect((await screen.findByRole('alert')).textContent).toContain('공고를 다시 선택하면 새 분석을 요청할 수 있습니다.')
-    expect(repository.discover).toHaveBeenCalledTimes(1)
-    fireEvent.click(screen.getByRole('button', { name: '선택 취소' }))
-    fireEvent.click(screen.getByRole('button', { name: '선택' }))
-    expect(repository.discover).toHaveBeenCalledTimes(1)
-    fireEvent.click(screen.getByRole('button', { name: '신청 문서 찾기' }))
-    await screen.findByLabelText('작성할 공식 첨부')
-    expect(repository.discover).toHaveBeenCalledTimes(2)
-    expect(repository.discover.mock.calls[0][3]).not.toBe(repository.discover.mock.calls[1][3])
-  })
-
-
-
-  it('keeps the request key when submission response is lost', async () => {
-    repository.discover.mockRejectedValueOnce(new ApplicationPreparationError(0, 'REQUEST_FAILED'))
-    mount('/app/application-preparations/new?sourceCode=BIZINFO&sourceProgramId=PBLN_1')
-    fireEvent.click(screen.getByRole('button', { name: '신청 문서 찾기' }))
-    await screen.findByRole('alert')
-    fireEvent.click(screen.getByRole('button', { name: '신청 문서 찾기' }))
-    await screen.findByLabelText('작성할 공식 첨부')
-    expect(repository.discover.mock.calls[0][3]).toBe(repository.discover.mock.calls[1][3])
-  })
-
-
-  it('stops polling on failure and retries only the existing GET', async () => {
-    vi.useFakeTimers()
-    const job = { ...completedDiscovery({ items: [firstForm], warnings: [], cached: false }), status: 'QUEUED', result: null }
-    repository.discover.mockResolvedValueOnce(job)
-    repository.discoveryJob.mockRejectedValueOnce(new ApplicationPreparationError(0, 'REQUEST_FAILED'))
-      .mockResolvedValueOnce({ ...job, status: 'UNKNOWN', failureCode: 'RUN_OUTCOME_UNKNOWN' })
-    mount('/app/application-preparations/new?sourceCode=BIZINFO&sourceProgramId=PBLN_1')
-    await act(async () => fireEvent.click(screen.getByRole('button', { name: '신청 문서 찾기' })))
-    await act(async () => vi.advanceTimersByTimeAsync(3000))
-    await act(async () => vi.advanceTimersByTimeAsync(9000))
-    expect(repository.discoveryJob).toHaveBeenCalledTimes(1)
-    await act(async () => fireEvent.click(screen.getByRole('button', { name: '다시 시도' })))
-    expect(screen.getByRole('alert').textContent).toContain('관리자 확인이 필요합니다')
-    await act(async () => vi.advanceTimersByTimeAsync(9000))
-    expect(repository.discover).toHaveBeenCalledTimes(1)
-    expect(repository.discoveryJob).toHaveBeenCalledTimes(2)
-  })
-
-  it('aborts an in-flight discovery request when the screen unmounts', () => {
-    const discoveryRequest = deferred<{ items: ApplicationForm[]; warnings: string[]; cached: boolean }>()
-    repository.discover.mockReturnValueOnce(discoveryRequest.promise)
-    const { unmount } = mount('/app/application-preparations/new?sourceCode=BIZINFO&sourceProgramId=PBLN_1')
-    fireEvent.click(screen.getByRole('button', { name: '신청 문서 찾기' }))
-    const signal = repository.discover.mock.calls[0]?.[2] as AbortSignal
-
-    unmount()
-
-    expect(signal.aborted).toBe(true)
-  })
 })

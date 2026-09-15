@@ -289,3 +289,26 @@ describe('application preparation HTTP boundary', () => {
     expect(requestSignal?.aborted).toBe(true)
   })
 })
+
+
+it('reads active snapshots through the availability HTTP contract without posting a discovery job', async () => {
+  const response = { state: { sourceCode: 'BIZINFO', sourceProgramId: 'PBLN_1', status: 'AVAILABLE',
+    reasonCode: 'FORM_FOUND', nextRetryAt: null, attemptCount: 1 }, forms: { items: [form] } }
+  const fetcher = vi.fn().mockResolvedValue(Response.json(response))
+  vi.stubGlobal('fetch', fetcher)
+  const result = await new ApplicationPreparationRepositoryImpl().availability('BIZINFO', 'PBLN_1')
+  expect(result.forms.items[0].formVersionId).toBe(form.formVersionId)
+  expect(fetcher).toHaveBeenCalledTimes(1)
+  expect(fetcher.mock.calls[0][0]).toContain('/forms/availability?sourceCode=BIZINFO&sourceProgramId=PBLN_1')
+  expect(fetcher.mock.calls[0][1].method).toBe('GET')
+  expect(fetcher.mock.calls[0][1].credentials).toBe('include')
+})
+
+it('rejects available states without snapshots and snapshots from another notice', async () => {
+  const state = { sourceCode: 'BIZINFO', sourceProgramId: 'PBLN_1', status: 'AVAILABLE', reasonCode: 'FORM_FOUND', nextRetryAt: null, attemptCount: 1 }
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce(Response.json({ state, forms: { items: [] } }))
+    .mockResolvedValueOnce(Response.json({ state, forms: { items: [{ ...form, sourceProgramId: 'PBLN_2' }] } }))
+    .mockResolvedValueOnce(Response.json({ state: { ...state, status: 'PENDING' }, forms: { items: [form] } })))
+  const repository = new ApplicationPreparationRepositoryImpl()
+  for (let index = 0; index < 3; index++) await expect(repository.availability('BIZINFO', 'PBLN_1')).rejects.toMatchObject({ code: 'INVALID_RESPONSE' })
+})

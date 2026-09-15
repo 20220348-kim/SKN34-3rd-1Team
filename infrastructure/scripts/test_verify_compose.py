@@ -39,6 +39,7 @@ if [[ "${VERIFY_CHECK_SAFE_UPSTREAM_ENV:-false}" == "true" ]]; then
   [[ -z "$ACCOUNT_OAUTH_KAKAO_ADMIN_KEY$ACCOUNT_OAUTH_KAKAO_CLIENT_ID$ACCOUNT_OAUTH_KAKAO_CLIENT_SECRET$ACCOUNT_OAUTH_GOOGLE_CLIENT_ID$ACCOUNT_OAUTH_GOOGLE_CLIENT_SECRET" ]] || exit 114
   [[ "$COMBINATION_REVIEW_QUEUE_ENABLED" == "true" ]] || exit 111
   [[ "$APPLICATION_FORM_DISCOVERY_QUEUE_ENABLED" == "true" ]] || exit 112
+  [[ "$APPLICATION_FORM_ANALYSIS_ENABLED" == "false" ]] || exit 116
   [[ "$RABBITMQ_USERNAME" == "govbiz-verification" && "$RABBITMQ_PASSWORD" == "govbiz-verification-not-a-secret" ]] || exit 110
 fi
 case "$*" in

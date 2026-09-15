@@ -27,8 +27,8 @@ describe('상세 오류 복구와 검색 화면 복귀', () => {
     expect(question).not.toHaveBeenCalled()
     // 비로그인은 로그인 뒤 신청 문서 작성으로 이어지고, 관심 공고 저장도 로그인 뒤 이 공고로 돌아옵니다.
     const preparationPath = `/app/application-preparations/new?${new URLSearchParams({ sourceCode: supportPrograms[0].sourceCode, sourceProgramId: supportPrograms[0].id })}`
-    expect(screen.getByRole('link', { name: '로그인하고 신청 문서 작성하기' }).getAttribute('href')).toBe(`/login?next=${encodeURIComponent(preparationPath)}`)
-    expect(screen.queryByRole('link', { name: '이 공고의 신청 문서 작성하기' })).toBeNull()
+    expect(screen.getByRole('link', { name: '로그인하고 신청 양식 상태 확인' }).getAttribute('href')).toBe(`/login?next=${encodeURIComponent(preparationPath)}`)
+    expect(screen.queryByRole('link', { name: '이 공고의 신청 양식 상태 확인' })).toBeNull()
     const detailPath = `/support-programs/detail?${new URLSearchParams({ sourceCode: supportPrograms[0].sourceCode, sourceProgramId: supportPrograms[0].id })}`
     expect(screen.getByRole('link', { name: '로그인하고 관심 공고 저장' }).getAttribute('href')).toBe(`/login?next=${encodeURIComponent(detailPath)}`)
     expect(screen.queryByRole('button', { name: /관심 공고 저장/ })).toBeNull()
@@ -55,7 +55,7 @@ describe('상세 오류 복구와 검색 화면 복귀', () => {
 
     await screen.findByRole('heading', { name: program.title })
     expect(screen.queryByRole('link', { name: '이 공고에 질문하기' })).toBeNull()
-    expect(screen.getByRole('link', { name: '로그인하고 신청 문서 작성하기' }).getAttribute('href')).toBe(
+    expect(screen.getByRole('link', { name: '로그인하고 신청 양식 상태 확인' }).getAttribute('href')).toBe(
       `/login?next=${encodeURIComponent(`/app/application-preparations/new?${new URLSearchParams({ sourceCode: program.sourceCode, sourceProgramId: program.id })}`)}`,
     )
   })
@@ -70,7 +70,7 @@ describe('상세 오류 복구와 검색 화면 복귀', () => {
 
     await screen.findByRole('heading', { name: program.title })
     const preparationPath = `/app/application-preparations/new?${new URLSearchParams({ sourceCode, sourceProgramId: id })}`
-    expect(screen.getByRole('link', { name: '로그인하고 신청 문서 작성하기' }).getAttribute('href')).toBe(
+    expect(screen.getByRole('link', { name: '로그인하고 신청 양식 상태 확인' }).getAttribute('href')).toBe(
       `/login?next=${encodeURIComponent(preparationPath)}`,
     )
   })

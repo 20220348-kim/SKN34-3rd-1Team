@@ -31,14 +31,6 @@ const programStatusLabels = {
   CLOSED: '접수 종료',
   UNKNOWN: '접수 상태 미확인',
 } as const
-const discoveryJobStatusLabels = {
-  QUEUED: '분석 대기',
-  RUNNING: '분석 중',
-  SUCCEEDED: '분석 완료',
-  FAILED: '분석 실패',
-  UNKNOWN: '확인 필요',
-} as const
-const supportedDocumentSources = ['BIZINFO', 'KSTARTUP', 'MSIT', 'CNTRADE_NOTICE']
 const directInputLabels: Record<string, string> = {
   BIZINFO: '기업마당 공식 공고 URL 또는 공고 ID',
   KSTARTUP: 'K-Startup 공식 공고 ID',
@@ -283,7 +275,7 @@ export function ApplicationPreparationEditorPage({ create = false }: { create?: 
     </>
   }
   const requestedSourceCode = create ? searchParams.get('sourceCode') ?? '' : ''
-  const initialSourceCode = supportedDocumentSources.includes(requestedSourceCode) ? requestedSourceCode : ''
+  const initialSourceCode = /^[A-Z][A-Z0-9_]{0,63}$/.test(requestedSourceCode) ? requestedSourceCode : ''
   const initialSourceProgramId = initialSourceCode ? searchParams.get('sourceProgramId') ?? '' : ''
   return <ApplicationPreparationEditor
     key={`${account.email}:${id ?? `new:${initialSourceCode}:${initialSourceProgramId}`}`}
@@ -312,8 +304,6 @@ function ApplicationPreparationEditor({ id, initialSourceCode, initialSourceProg
     && ['APPLICATION_FORM_NO_FORM', 'APPLICATION_FORM_SOURCE_UNSUPPORTED'].includes(vm.error.code)
   const officialSource = vm.selectedProgram
     ? { title: vm.selectedProgram.title, url: vm.selectedProgram.sourceUrl }
-    : vm.activeDiscoveryJob?.programSourceUrl
-      ? { title: vm.activeDiscoveryJob.programTitle, url: vm.activeDiscoveryJob.programSourceUrl }
       : undefined
   return <>
     <WorkspacePageHeader
@@ -324,56 +314,28 @@ function ApplicationPreparationEditor({ id, initialSourceCode, initialSourceProg
       {vm.loading && <p className={s.status} role="status" aria-live="polite">
         {id === null ? '지원 가능한 공식 양식을 불러오는 중입니다.' : '신청 문서 정보를 불러오는 중입니다.'}
       </p>}
-      {id === null && vm.discoveryJobsLoading && <p className={s.status} role="status" aria-live="polite">최근 공식 문서 분석 작업을 확인하는 중입니다.</p>}
+
       {vm.error && <ErrorNotice
         message={vm.error.message}
         onRetry={noDiscoveredForm || vm.submitting || vm.discovering ? undefined : id === null ? vm.discoverForms : vm.load}
         officialSource={canOpenOfficialSource ? officialSource : undefined}
       />}
-        {id === null && vm.activeDiscoveryJob && vm.creationStep === 'PROGRAM' && <p role="status" aria-live="polite">
-          {{ QUEUED: '작업이 접수되어 분석 순서를 기다리고 있습니다.', RUNNING: '공식 첨부를 수집하고 AI가 문항을 분석하고 있습니다.',
-            SUCCEEDED: '저장된 분석 결과를 확인했습니다.', FAILED: '분석 작업이 실패로 종료되었습니다.', UNKNOWN: '분석 결과가 불확실하여 관리자 확인이 필요합니다.' }[vm.activeDiscoveryJob.status]}
-          {vm.discoveryPollingPaused && ' 상태 조회가 중단되었습니다. 다시 시도하면 기존 작업만 조회하며 새 분석을 실행하지 않습니다.'}
-        </p>}
+
 
       {id === null && <form className={s.form} aria-labelledby="create-preparation-title" onSubmit={(event) => {
         event.preventDefault()
         if (vm.selectedForm) void vm.create()
       }}>
+        {vm.discoveryWarnings.length > 0 && <section className={s.notice} aria-label="공고 분석 안내">
+          <ul className="list-disc space-y-1 pl-5">{vm.discoveryWarnings.map((warning) => <li key={warning}>{warning}</li>)}</ul>
+        </section>}
+
         <ol className={s.steps} aria-label="신청 문서 작성 준비 단계">
           <li className={vm.creationStep === 'PROGRAM' ? s.activeStep : s.inactiveStep} aria-current={vm.creationStep === 'PROGRAM' ? 'step' : undefined}>1. 지원 공고 선택</li>
           <li className={vm.creationStep === 'FORM' ? s.activeStep : s.inactiveStep} aria-current={vm.creationStep === 'FORM' ? 'step' : undefined}>2. 신청 문서 확인</li>
         </ol>
 
         {vm.creationStep === 'PROGRAM' && <>
-        {vm.discoveryJobsError && <section aria-label="최근 공식 문서 분석 작업">
-          <ErrorNotice message={vm.discoveryJobsError.message} retryLabel="최근 작업 다시 불러오기" onRetry={() => vm.loadDiscoveryJobs()} />
-        </section>}
-        {vm.discoveryJobs.length > 0 && <section className={s.card} aria-labelledby="recent-discovery-jobs-title">
-          <div>
-            <h2 className={s.cardTitle} id="recent-discovery-jobs-title">최근 공식 문서 분석 작업</h2>
-            <p className={s.muted}>다른 화면을 다녀오거나 새로고침해도 서버에 저장된 진행 상태와 결과를 이어서 확인할 수 있습니다.</p>
-          </div>
-          <ul className={s.jobList}>
-            {vm.discoveryJobs.map((job) => {
-              const selected = vm.activeDiscoveryJob?.id === job.id
-              return <li className={s.jobItem} key={job.id}>
-                <div className="min-w-0">
-                  <strong className={s.jobTitle}>{job.programTitle}</strong>
-                  <div className={s.jobMeta}>
-                    <span>{catalogSourceLabels[job.sourceCode as keyof typeof catalogSourceLabels] ?? job.sourceCode}</span>
-                    <span>{readableTime(job.createdAt)}</span>
-                    <span className={s.jobStatus}>{discoveryJobStatusLabels[job.status]}</span>
-                  </div>
-                </div>
-                <button className={s.button} type="button" disabled={vm.discovering || vm.submitting || selected}
-                  onClick={() => { void vm.loadDiscoveryJob(job.id) }}>
-                  {selected ? '확인 중' : job.status === 'SUCCEEDED' ? '결과 보기' : '작업 이어보기'}
-                </button>
-              </li>
-            })}
-          </ul>
-        </section>}
         {vm.selectedProgram && <section className={s.card} aria-labelledby="selected-application-program-title">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="min-w-0 flex-1">
@@ -383,12 +345,12 @@ function ApplicationPreparationEditor({ id, initialSourceCode, initialSourceProg
               <p className={s.muted}>{vm.selectedProgram.applicationPeriod}</p>
             </div>
             <button className={s.primary} disabled={vm.discovering || vm.submitting} type="button" onClick={() => { void vm.discoverForms() }}>
-              {vm.discovering ? '공식 첨부 분석 중…' : '신청 문서 찾기'}
+              {vm.discovering ? '양식 상태 조회 중…' : '저장된 신청 양식 확인'}
             </button>
           </div>
-          {vm.discovering && <p className={s.status} role="status" aria-live="polite">공식 페이지의 PDF/HWP/HWPX 첨부를 수집하고 작성 문항을 찾고 있습니다.</p>}
+          {vm.discovering && <p className={s.status} role="status" aria-live="polite">저장된 분석 상태와 활성 신청 양식을 확인하고 있습니다.</p>}
           <div className="flex flex-wrap items-end justify-between gap-3">
-            <p className={`${s.muted} min-w-0 flex-1`}>선택만으로 분석하지 않습니다. 버튼을 누르면 공식 첨부의 작성 문항을 찾습니다.</p>
+            <p className={`${s.muted} min-w-0 flex-1`}>공고별 사전분석 상태를 확인하고 사용 가능한 양식으로 작성을 시작합니다.</p>
             <button className={`${s.button} ml-auto shrink-0`} disabled={vm.discovering || vm.submitting} type="button" onClick={vm.clearProgramSelection}>선택 취소</button>
           </div>
         </section>}
@@ -404,7 +366,7 @@ function ApplicationPreparationEditor({ id, initialSourceCode, initialSourceProg
             selectionLimit={1}
             description="신청 문서를 작성할 공고를 1개 선택하세요."
             listLabel="신청 문서 관심 공고 목록"
-            isSupported={(program) => supportedDocumentSources.includes(program.sourceCode)}
+            isSupported={() => true}
             unsupportedLabel="문서 지원 준비 중"
             onToggle={(program) => {
               const selected = vm.selectedProgram?.sourceCode === program.sourceCode && vm.selectedProgram.id === program.id
@@ -436,7 +398,7 @@ function ApplicationPreparationEditor({ id, initialSourceCode, initialSourceProg
               {vm.catalogLoading ? '공고 검색 중…' : '공고 검색'}
             </button>
           </div>
-          <p className={s.muted}>공고명이나 기관명으로 모든 제공처를 검색하고 공식 PDF/HWP/HWPX를 분석할 수 있습니다.</p>
+          <p className={s.muted}>공고명이나 기관명으로 검색하고 공고별 양식 준비 상태를 확인할 수 있습니다.</p>
           {vm.catalogLoading && <p className={s.status} role="status" aria-live="polite">전체 제공처의 공고를 검색하고 있습니다.</p>}
           {vm.catalogError && <ErrorNotice message={vm.catalogError.message} retryLabel="공고 다시 검색" onRetry={() => { void vm.searchPrograms(vm.catalog?.page ?? 1, vm.appliedCatalogKeyword || vm.catalogKeyword) }} />}
           {vm.catalog?.programs.length === 0 && <p className={s.notice}>검색 결과가 없습니다. 다른 검색어를 입력하거나 아래에서 공식 URL·공고 ID를 직접 입력해 주세요.</p>}
@@ -446,7 +408,6 @@ function ApplicationPreparationEditor({ id, initialSourceCode, initialSourceProg
             <ul className="max-h-[56rem] divide-y divide-slate-200 overflow-y-auto" aria-label="신청 문서 공고 검색 결과">
               {vm.catalog.programs.map((program) => {
                 const selected = vm.selectedProgram?.sourceCode === program.sourceCode && vm.selectedProgram.id === program.id
-                const supported = supportedDocumentSources.includes(program.sourceCode)
                 return <li className="py-3" key={`${program.sourceCode}:${program.id}`}>
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <div className="min-w-0 flex-1">
@@ -454,8 +415,8 @@ function ApplicationPreparationEditor({ id, initialSourceCode, initialSourceProg
                       <p className={s.muted}>{catalogSourceLabels[program.sourceCode as keyof typeof catalogSourceLabels] ?? program.sourceName} · {program.organization} · {programStatusLabels[program.status]}</p>
                       <p className={s.muted}>{program.applicationPeriod}</p>
                     </div>
-                    <button className={s.button} disabled={!supported || selected || vm.discovering || vm.submitting} type="button" onClick={() => vm.selectProgram(program)}>
-                      {!supported ? '문서 지원 준비 중' : selected ? '선택됨' : '선택'}
+                    <button className={s.button} disabled={selected || vm.discovering || vm.submitting} type="button" onClick={() => vm.selectProgram(program)}>
+                      {selected ? '선택됨' : '선택'}
                     </button>
                   </div>
                 </li>
@@ -485,9 +446,9 @@ function ApplicationPreparationEditor({ id, initialSourceCode, initialSourceProg
 
         {!vm.selectedProgram && vm.discoveryInput.trim() && <section className={s.card} aria-label="입력한 공고 분석">
           <button className={s.primary} disabled={vm.discovering || vm.submitting || !vm.discoveryInput.trim()} type="button" onClick={() => { void vm.discoverForms() }}>
-            {vm.discovering ? '공식 첨부 분석 중…' : '신청 문서 찾기'}
+            {vm.discovering ? '양식 상태 조회 중…' : '저장된 신청 양식 확인'}
           </button>
-          {vm.discovering && <p className={s.status} role="status" aria-live="polite">공식 페이지의 PDF/HWP/HWPX 첨부를 수집하고 작성 문항을 찾고 있습니다.</p>}
+          {vm.discovering && <p className={s.status} role="status" aria-live="polite">저장된 분석 상태와 활성 신청 양식을 확인하고 있습니다.</p>}
           <p className={s.muted}>공식 페이지가 직접 연결한 PDF/HWP/HWPX만 분석합니다. 분석 결과는 확인 전 AI 제안이며 자동 제출되지 않습니다.</p>
         </section>}
         </>}
@@ -503,9 +464,6 @@ function ApplicationPreparationEditor({ id, initialSourceCode, initialSourceProg
           </div>
         </section>
 
-        {vm.discoveryWarnings.length > 0 && <section className={s.notice} aria-label="공고 분석 안내">
-          <ul className="list-disc space-y-1 pl-5">{vm.discoveryWarnings.map((warning) => <li key={warning}>{warning}</li>)}</ul>
-        </section>}
 
         {vm.selectedForm && <>
         <section className={s.card}>

@@ -31,7 +31,7 @@ def test_responses_contract_and_limits(method, request_type, request_factory, se
     call = model.calls[0]
     body = json.loads(call.content)
     assert call.url.path == "/v1/responses"
-    assert call.extensions["timeout"]["read"] == 2
+    assert call.extensions["timeout"]["read"] == (210 if method == "discover" else 2)
     assert body["max_output_tokens"] == tokens
     assert body["store"] is False
     assert body["reasoning"] == {"effort": "none"}
@@ -51,7 +51,8 @@ def test_model_failure_is_not_a_success(method, request_type, request_factory, s
         "deadline": {"delay": 1},
     }[failure]
     model = make_model(selection_factory(), **options)
-    agent = ApplicationPreparationAgent(model=model, run_timeout_seconds=0.3 if failure == "deadline" else 3)
+    agent = ApplicationPreparationAgent(model=model, run_timeout_seconds=0.3 if failure == "deadline" else 3,
+        discovery_model_timeout_seconds=0.1, discovery_run_timeout_seconds=0.3 if failure == "deadline" else 3)
     expected_error = (TimeoutError if failure in ("transport_timeout", "deadline")
                       else InternalServerError if failure == "http" else ValueError)
     with pytest.raises(expected_error):
@@ -75,3 +76,29 @@ def test_document_images_and_repair_are_preserved():
     texts = [json.loads(item["text"]) for item in content if item["type"] == "input_text"]
     assert "pageImages" not in texts[0]
     assert texts[1]["repair"]["excludedPlacementTargetIds"] == ["excluded"]
+
+
+@pytest.mark.parametrize("options,stage", [({"transport_timeout": True}, "AI_MODEL"), ({"delay": 1}, "AI_RUN")])
+def test_discovery_timeout_stage_and_separate_deadlines(options, stage):
+    from app.application_preparation.agent import ApplicationFormDiscoveryTimeoutError
+    model = make_model(discovery_selection_data(), **options)
+    agent = ApplicationPreparationAgent(model=model, run_timeout_seconds=0.01,
+        discovery_model_timeout_seconds=0.1, discovery_run_timeout_seconds=0.2)
+    with pytest.raises(ApplicationFormDiscoveryTimeoutError) as caught:
+        asyncio.run(agent.discover(DiscoverFormsRequest.model_validate(discovery_request_data())))
+    assert caught.value.stage == stage
+    assert agent._run_timeout_seconds == 0.01
+    assert model.request_timeout == 2
+
+
+def test_discovery_timeout_settings_do_not_change_global_defaults(monkeypatch):
+    from app.config import Settings, SettingsConfigurationError
+    monkeypatch.setenv("OPENAI_API_KEY", "test")
+    monkeypatch.setenv("APPLICATION_FORM_DISCOVERY_MODEL_TIMEOUT_SECONDS", "210")
+    monkeypatch.setenv("APPLICATION_FORM_DISCOVERY_RUN_TIMEOUT_SECONDS", "240")
+    settings = Settings.from_environment()
+    assert settings.application_form_discovery_model_timeout_seconds == 210
+    assert settings.application_form_discovery_run_timeout_seconds == 240
+    monkeypatch.setenv("APPLICATION_FORM_DISCOVERY_RUN_TIMEOUT_SECONDS", "200")
+    with pytest.raises(SettingsConfigurationError):
+        Settings.from_environment()

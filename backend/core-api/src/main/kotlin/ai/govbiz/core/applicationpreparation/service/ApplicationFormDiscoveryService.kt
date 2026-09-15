@@ -3,6 +3,7 @@ package ai.govbiz.core.applicationpreparation.service
 import ai.govbiz.core._common.exception.AiServiceCallException
 import ai.govbiz.core.account.domain.Account
 import ai.govbiz.core.applicationpreparation.client.ai.exception.AiApplicationFormValidationException
+import ai.govbiz.core.applicationpreparation.domain.ApplicationFormAnalysisMetadata
 import ai.govbiz.core.applicationpreparation.domain.ApplicationFormDiscoveryBlock
 import ai.govbiz.core.applicationpreparation.domain.ApplicationFormDiscoveryDocument
 import ai.govbiz.core.applicationpreparation.domain.ApplicationFormDiscoveryInput
@@ -79,6 +80,22 @@ class ApplicationFormDiscoveryService(
             )
     }
 
+    /** 시스템 작업과 백필은 계정별 discovery job을 사용하지 않으며 저장 transaction을 호출자가 소유한다. */
+    fun analyzeSystem(
+        sourceCode: String, sourceProgramId: String,
+        configuration: ai.govbiz.core.applicationpreparation.domain.ApplicationFormDiscoveryConfiguration,
+        observe: (ApplicationFormAnalysisMetadata) -> Unit,
+        beforeAi: () -> Unit,
+        persist: (List<ApplicationFormManifest>, ApplicationFormAnalysisMetadata) -> Unit,
+        recordedPayload: ai.govbiz.core.applicationpreparation.client.ai.dto.AiApplicationFormDiscoveryPayload? = null,
+        expectedFiles: List<Pair<String, String>>? = null,
+    ): ApplicationFormDiscoveryResult {
+        validateIdentity(sourceCode, sourceProgramId)
+        val program = details.get(sourceCode, sourceProgramId)
+        return discoverFresh(sourceCode, sourceProgramId, program.title, program.targetDescription, program.sourceUrl,
+            configuration, beforeAi, observe, persist, recordedPayload, expectedFiles)
+    }
+
     private fun discoverFresh(
         sourceCode: String,
         sourceProgramId: String,
@@ -87,6 +104,10 @@ class ApplicationFormDiscoveryService(
         sourceUrl: String,
         configuration: ai.govbiz.core.applicationpreparation.domain.ApplicationFormDiscoveryConfiguration,
         beforeAi: () -> Unit,
+        observe: (ApplicationFormAnalysisMetadata) -> Unit = {},
+        persist: ((List<ApplicationFormManifest>, ApplicationFormAnalysisMetadata) -> Unit)? = null,
+        recordedPayload: ai.govbiz.core.applicationpreparation.client.ai.dto.AiApplicationFormDiscoveryPayload? = null,
+        expectedFiles: List<Pair<String, String>>? = null,
     ): ApplicationFormDiscoveryResult {
         return try {
             val collected = when (sourceCode) {
@@ -100,17 +121,25 @@ class ApplicationFormDiscoveryService(
             val sourceFingerprint = sha256(collected.files.joinToString("\n") { file ->
                 "${file.sourceUrl}\u0000${file.fileName}\u0000${sha256(file.bytes)}"
             }.toByteArray())
+            val metadata = ApplicationFormAnalysisMetadata(sourceFingerprint, configuration, SupportProgramDocumentParser.VERSION)
+            if (expectedFiles != null && collected.files.map { it.sourceUrl to sha256(it.bytes) } != expectedFiles) {
+                throw ApplicationFormDiscoveryException(Reason.SOURCE_CHANGED)
+            }
+            observe(metadata)
             snapshots.findByProgram(
                 sourceCode, sourceProgramId, sourceFingerprint, SupportProgramDocumentParser.VERSION,
                 configuration.model, configuration.promptVersion,
             )
                 .takeIf { it.isNotEmpty() }?.let { cached ->
+                    persist?.invoke(cached, metadata)
                     return ApplicationFormDiscoveryResult(
                         cached,
                         warnings + "동일한 공식 첨부에서 이전에 추출한 양식을 재사용했습니다.",
                         true,
                     )
                 }
+            var excludedReason = Reason.SOURCE_UNSUPPORTED
+            var hasExcludedDocument = false
             val documents = collected.files.mapIndexedNotNull { documentIndex, file ->
                 val blocks = try {
                     parser.parse(file.bytes, file.format)
@@ -119,6 +148,8 @@ class ApplicationFormDiscoveryService(
                             SupportProgramDocumentException.Reason.UNSUPPORTED,
                             SupportProgramDocumentException.Reason.TOO_LARGE,
                         )) throw error
+                    hasExcludedDocument = true
+                    if (error.reason == SupportProgramDocumentException.Reason.TOO_LARGE) excludedReason = Reason.SOURCE_TOO_LARGE
                     warnings.add("자동 분석 제외 첨부(SOURCE_${error.reason.name}): ${file.fileName.take(250)}")
                     return@mapIndexedNotNull null
                 }
@@ -134,7 +165,7 @@ class ApplicationFormDiscoveryService(
                     },
                 )
             }
-            if (documents.isEmpty()) throw ApplicationFormDiscoveryException(Reason.SOURCE_UNSUPPORTED)
+            if (documents.isEmpty()) throw ApplicationFormDiscoveryException(excludedReason)
             if (documents.sumOf { document -> document.blocks.sumOf { it.text.length } } > 120_000) {
                 throw ApplicationFormDiscoveryException(Reason.SOURCE_TOO_LARGE)
             }
@@ -145,9 +176,9 @@ class ApplicationFormDiscoveryService(
                 sourceUrl,
                 documents,
             )
-            beforeAi()
-            val extracted = ai.discover(input, configuration)
-            if (extracted.isEmpty()) throw ApplicationFormDiscoveryException(Reason.NO_FORM)
+            val extracted = if (recordedPayload != null) ai.validateDiscoveryPayload(input, configuration, recordedPayload)
+                else { beforeAi(); ai.discover(input, configuration) }
+            if (extracted.isEmpty()) throw ApplicationFormDiscoveryException(if (hasExcludedDocument) excludedReason else Reason.NO_FORM)
             val forms = try {
                 extracted.map { candidate ->
                     val document = requireNotNull(documents.find { it.documentIndex == candidate.documentIndex })
@@ -155,7 +186,7 @@ class ApplicationFormDiscoveryService(
                     ApplicationFormManifest(
                         schemaVersion = 1,
                         formVersionId = formVersionId(
-                            sourceCode, sourceProgramId, document.sha256, configuration.model, configuration.promptVersion,
+                            sourceCode, sourceProgramId, document.sha256, configuration.model, configuration.promptVersion, sourceFingerprint,
                         ),
                         sourceCode = sourceCode,
                         sourceProgramId = sourceProgramId,
@@ -186,7 +217,8 @@ class ApplicationFormDiscoveryService(
             } catch (error: IllegalArgumentException) {
                 throw AiServiceCallException.invalidResponse("Application form discovery output could not form a safe manifest", error)
             }
-            snapshots.save(forms, sourceFingerprint, SupportProgramDocumentParser.VERSION, configuration)
+            if (persist != null) persist(forms, metadata)
+            else snapshots.save(forms, sourceFingerprint, SupportProgramDocumentParser.VERSION, configuration)
             val storedForms = forms.map { form -> requireNotNull(snapshots.findByVersion(form.formVersionId)) }
             ApplicationFormDiscoveryResult(storedForms, warnings.distinct(), false)
         } catch (error: AiApplicationFormValidationException) {
@@ -217,9 +249,10 @@ class ApplicationFormDiscoveryService(
         documentHash: String,
         model: String,
         promptVersion: String,
+        sourceFingerprint: String,
     ): String {
         val versionHash = sha256(
-            "$documentHash\u0000${SupportProgramDocumentParser.VERSION}\u0000$model\u0000$promptVersion".toByteArray(),
+            "$sourceFingerprint\u0000$documentHash\u0000${SupportProgramDocumentParser.VERSION}\u0000$model\u0000$promptVersion".toByteArray(),
         )
         val source = sourceCode.lowercase().replace('_', '-')
         val hash = versionHash.take(28)

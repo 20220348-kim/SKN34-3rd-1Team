@@ -26,7 +26,8 @@ class SupportProgramCatalogSyncOnceConfig {
         @Qualifier("cnTradeNoticeSupportProgramCatalogFacade") cnTrade: SupportProgramCatalogFacade,
         repository: SupportProgramRepository,
         indexService: SupportProgramIndexSyncService,
-    ) = SupportProgramCatalogSyncOnceService(bizInfo, kStartup, msit, cnTrade, repository, indexService)
+        publicationService: ai.govbiz.core.supportprogram.service.sync.SupportProgramCatalogPublicationService,
+    ) = SupportProgramCatalogSyncOnceService(bizInfo, kStartup, msit, cnTrade, repository, indexService, publicationService)
 
     @Bean
     fun supportProgramCatalogSyncOnceCommandLineRunner(
@@ -50,7 +51,7 @@ class SupportProgramCatalogSyncOnceConfig {
             "app.bizinfo.sync.enabled", "app.kstartup.sync.enabled", "app.msit.sync.enabled",
             "app.cntrade-notice.sync.enabled", "app.support-program-index.enabled",
             "app.daily-report.enabled", "app.daily-report.queue.enabled", "app.daily-report.queue.delivery-enabled",
-            "app.combination-review.queue.enabled", "app.application-form-discovery.queue.enabled",
+            "app.combination-review.queue.enabled", "app.application-form-discovery.queue.enabled", "app.application-form-analysis.enabled",
             "app.account.oauth.unlink.enabled", "app.account.oauth.unlink.queue-enabled",
             "app.daily-report.mail-enabled", "app.account.password-reset.mail-enabled", "spring.flyway.enabled",
         ).associateWith { false }

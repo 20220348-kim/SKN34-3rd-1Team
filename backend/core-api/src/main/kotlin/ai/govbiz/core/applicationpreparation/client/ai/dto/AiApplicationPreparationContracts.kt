@@ -7,6 +7,8 @@ data class AiApplicationPreparationConfigurationPayload(
     val contractVersion: String,
     val model: String,
     val promptVersion: String,
+    val modelTimeoutSeconds: Double? = null,
+    val runTimeoutSeconds: Double? = null,
 )
 
 data class AiApplicationPreparationInterpretRequest(

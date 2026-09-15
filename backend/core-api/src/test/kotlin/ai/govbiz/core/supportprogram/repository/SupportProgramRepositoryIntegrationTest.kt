@@ -71,7 +71,7 @@ class SupportProgramRepositoryIntegrationTest {
         val index = Mockito.mock(SupportProgramIndexSyncService::class.java)
         Mockito.`when`(index.indexSnapshot(snapshot)).thenReturn(1)
         val unused = SupportProgramCatalogFacade { error("unselected source called") }
-        val service = SupportProgramCatalogSyncOnceService(SupportProgramCatalogFacade { snapshot }, unused, unused, unused, repository, index)
+        val service = SupportProgramCatalogSyncOnceService(SupportProgramCatalogFacade { snapshot }, unused, unused, unused, repository, index, publicationService)
         repeat(2) { attempt ->
             service.run(SupportProgramCatalogSyncOnceProperties(listOf("BIZINFO"), BigDecimal.ONE,
                 syncOnceDirectory.resolve("approved-$attempt"), true))
@@ -90,6 +90,7 @@ class SupportProgramRepositoryIntegrationTest {
         assertEquals(SupportProgramSyncOutcome.FAILURE, repository.findSyncStatus("BIZINFO")?.lastSyncOutcome)
     }
 
+    @Autowired private lateinit var publicationService: ai.govbiz.core.supportprogram.service.sync.SupportProgramCatalogPublicationService
     @Autowired
     private lateinit var repository: SupportProgramRepository
 
@@ -166,7 +167,7 @@ class SupportProgramRepositoryIntegrationTest {
         repository.upsert(bizinfo)
         repository.synchronizeSource("KSTARTUP", listOf(first, removed))
         val index = Mockito.mock(SupportProgramIndexSyncService::class.java)
-        val service = KStartupSupportProgramCatalogSyncService(SupportProgramCatalogFacade { listOf(first) }, repository, index)
+        val service = KStartupSupportProgramCatalogSyncService(SupportProgramCatalogFacade { listOf(first) }, repository, index, publicationService)
 
         repeat(2) {
             assertEquals(1, service.sync())
@@ -188,13 +189,13 @@ class SupportProgramRepositoryIntegrationTest {
         repository.upsert(bizinfo)
         val index = Mockito.mock(SupportProgramIndexSyncService::class.java)
         val collectionFailure = KStartupSupportProgramCatalogSyncService(
-            SupportProgramCatalogFacade { throw IllegalStateException("second page failed") }, repository, index)
+            SupportProgramCatalogFacade { throw IllegalStateException("second page failed") }, repository, index, publicationService)
         assertThrows(IllegalStateException::class.java) { collectionFailure.sync() }
         Mockito.verifyNoInteractions(index)
 
         val next = listOf(original.copy(program = original.program.copy(title = "아직 공개하면 안 되는 공고")))
         Mockito.`when`(index.indexSnapshot(next)).thenThrow(IllegalStateException("second index batch failed"))
-        val indexFailure = KStartupSupportProgramCatalogSyncService(SupportProgramCatalogFacade { next }, repository, index)
+        val indexFailure = KStartupSupportProgramCatalogSyncService(SupportProgramCatalogFacade { next }, repository, index, publicationService)
         assertThrows(IllegalStateException::class.java) { indexFailure.sync() }
 
         assertEquals(listOf(original), repository.findPublishedPresent())
@@ -1152,8 +1153,8 @@ class SupportProgramRepositoryIntegrationTest {
 
     private fun syncNotice(source: String, facade: SupportProgramCatalogFacade, index: SupportProgramIndexSyncService): Int? =
         when (source) {
-            "MSIT" -> MsitSupportProgramCatalogSyncService(facade, repository, index).sync()
-            "CNTRADE_NOTICE" -> CnTradeNoticeSupportProgramCatalogSyncService(facade, repository, index).sync()
+            "MSIT" -> MsitSupportProgramCatalogSyncService(facade, repository, index, publicationService).sync()
+            "CNTRADE_NOTICE" -> CnTradeNoticeSupportProgramCatalogSyncService(facade, repository, index, publicationService).sync()
             else -> error("Unexpected test source")
         }
 

@@ -11,13 +11,14 @@ class CnTradeNoticeSupportProgramCatalogSyncService(
     @param:Qualifier("cnTradeNoticeSupportProgramCatalogFacade") private val catalogFacade: SupportProgramCatalogFacade,
     private val repository: SupportProgramRepository,
     private val indexSyncService: SupportProgramIndexSyncService,
+    private val publicationService: SupportProgramCatalogPublicationService,
 ) {
     fun sync(): Int? {
         val generation = repository.startSyncGeneration("CNTRADE_NOTICE")
         try {
             val programs = catalogFacade.load()
             indexSyncService.indexSnapshot(programs)
-            if (!repository.publishSnapshotIfCurrent("CNTRADE_NOTICE", programs, generation)) return null
+            if (!publicationService.publish("CNTRADE_NOTICE", programs, generation)) return null
             return programs.size
         } catch (exception: RuntimeException) {
             try {

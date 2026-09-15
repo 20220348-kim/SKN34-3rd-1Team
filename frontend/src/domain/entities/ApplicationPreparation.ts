@@ -162,3 +162,12 @@ export function validateNewApplicationPreparation(input: NewApplicationPreparati
   if (!applicationServiceFields.includes(input.serviceField)) throw new Error('작성할 지원 분야를 선택해 주세요.')
   return { ...input }
 }
+
+export type ApplicationFormAvailability = {
+  state: {
+    sourceCode: string; sourceProgramId: string;
+    status: 'PENDING' | 'AVAILABLE' | 'NO_FORM' | 'DOCUMENT_UNAVAILABLE' | 'TOO_LARGE' | 'RETRY_WAITING' | 'STALE' | 'REVIEW_REQUIRED';
+    reasonCode: string; nextRetryAt: string | null; attemptCount: number;
+  };
+  forms: { items: ApplicationForm[] };
+}

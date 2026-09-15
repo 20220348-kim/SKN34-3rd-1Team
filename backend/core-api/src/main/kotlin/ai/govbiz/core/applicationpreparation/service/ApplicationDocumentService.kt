@@ -33,6 +33,7 @@ class ApplicationDocumentService(
     private val cnTrade: CnTradeNoticeAttachmentClient,
     private val details: SupportProgramDetailService,
     private val admission: SupportProgramRequestAdmissionService,
+    private val availability: ai.govbiz.core.applicationpreparation.repository.ApplicationFormAvailabilityRepository,
 ) {
     private val running = java.util.concurrent.ConcurrentHashMap.newKeySet<Long>()
     fun current(account: Account, id: Long): List<ApplicationDocumentFile> {
@@ -59,7 +60,7 @@ class ApplicationDocumentService(
             else ApplicationDocumentFact("${section.key}:${field.key}", "${section.title} / ${field.label}", requireNotNull(fact.value))
         } }
         if (facts.isEmpty() || facts.size > 200) throw ApplicationDocumentException("APPLICATION_DOCUMENT_INPUT_REQUIRED", "문서에 기입할 답변을 확인해 주세요.")
-        val collected = when (manifest.sourceCode) {
+        val collected = try { when (manifest.sourceCode) {
             "BIZINFO" -> bizInfo.collect(manifest.sourceCode, manifest.sourceProgramId)
             "MSIT" -> msit.collect(manifest.sourceCode, manifest.sourceProgramId, manifest.sourceUrl)
             "KSTARTUP" -> kStartup.collect(manifest.sourceCode, manifest.sourceProgramId, manifest.sourceUrl)
@@ -69,8 +70,18 @@ class ApplicationDocumentService(
             }
             else -> throw ApplicationDocumentException("APPLICATION_DOCUMENT_UNSUPPORTED", "원본 첨부를 확보할 수 없는 제공처입니다.")
         }
+        } catch (error: ai.govbiz.core.supportprogram.service.detail.exception.SupportProgramNotFoundException) {
+            availability.stale(manifest.sourceCode, manifest.sourceProgramId, "SOURCE_NOT_FOUND")
+            throw error
+        } catch (error: ai.govbiz.core.supportprogram.client.document.SupportProgramDocumentException) {
+            availability.stale(manifest.sourceCode, manifest.sourceProgramId, "DOCUMENT_${error.reason.name}")
+            throw error
+        }
         val original = collected.files.find { MessageDigest.getInstance("SHA-256").digest(it.bytes).joinToString("") { b -> "%02x".format(b) } == manifest.attachmentSha256 }
-            ?: throw ApplicationDocumentException("APPLICATION_DOCUMENT_SOURCE_CHANGED", "공식 첨부가 변경되었거나 없어졌습니다. 공고에서 양식을 다시 찾아 새 작성을 시작해 주세요.")
+            ?: run {
+                availability.stale(manifest.sourceCode, manifest.sourceProgramId, "ATTACHMENT_HASH_CHANGED_OR_MISSING")
+                throw ApplicationDocumentException("APPLICATION_DOCUMENT_SOURCE_CHANGED", "공식 첨부가 변경되었거나 없어졌습니다. 재분석 완료 후 새 작성을 시작해 주세요.")
+            }
         val inspection = editor.inspect(original.bytes, original.format)
         // Exact, unique option captions are native form values, not free-text insertion locations.
         fun normalized(value: String) = value.replace(Regex("\\s+"), "")

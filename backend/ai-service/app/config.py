@@ -33,6 +33,8 @@ class Settings:
     openai_model: str
     llm_model_timeout_seconds: float
     llm_run_timeout_seconds: float
+    application_form_discovery_model_timeout_seconds: float = 210.0
+    application_form_discovery_run_timeout_seconds: float = 240.0
     qdrant_url: str = "http://localhost:6333"
     qdrant_api_key: str | None = None
     qdrant_timeout_seconds: float = 5.0
@@ -57,6 +59,10 @@ class Settings:
     assistant_tool_timeout_seconds: float = DEFAULT_ASSISTANT_TOOL_TIMEOUT_SECONDS
 
     def __post_init__(self) -> None:
+        model = self.application_form_discovery_model_timeout_seconds
+        run = self.application_form_discovery_run_timeout_seconds
+        if isinstance(model, bool) or isinstance(run, bool) or not isfinite(model) or not isfinite(run) or not 0 < model < run <= 1500:
+            raise SettingsConfigurationError("Application form discovery requires 0 < model timeout < run timeout <= 1500")
         if self.openai_assistant_agent_reasoning_effort not in ("none", "low"):
             raise SettingsConfigurationError("OPENAI_ASSISTANT_AGENT_REASONING_EFFORT must be none or low")
         if (
@@ -155,6 +161,8 @@ class Settings:
                 "LLM_COMBINATION_REVIEW_RUN_TIMEOUT_SECONDS",
                 DEFAULT_LLM_COMBINATION_REVIEW_RUN_TIMEOUT_SECONDS,
             ),
+            application_form_discovery_model_timeout_seconds=_strict_timeout("APPLICATION_FORM_DISCOVERY_MODEL_TIMEOUT_SECONDS", 210.0),
+            application_form_discovery_run_timeout_seconds=_strict_timeout("APPLICATION_FORM_DISCOVERY_RUN_TIMEOUT_SECONDS", 240.0),
             qdrant_url=_optional_value(environ.get("QDRANT_URL")) or "http://localhost:6333",
             qdrant_api_key=_optional_value(environ.get("QDRANT_API_KEY")),
             qdrant_timeout_seconds=_positive_float(

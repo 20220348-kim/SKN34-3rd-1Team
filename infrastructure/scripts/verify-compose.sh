@@ -54,6 +54,12 @@ export ACCOUNT_OAUTH_GOOGLE_CLIENT_ID=""
 export ACCOUNT_OAUTH_GOOGLE_CLIENT_SECRET=""
 export COMBINATION_REVIEW_QUEUE_ENABLED="true"
 export APPLICATION_FORM_DISCOVERY_QUEUE_ENABLED="true"
+# This smoke uses an explicit stored fixture; system discovery is covered by MySQL integration tests.
+export APPLICATION_FORM_ANALYSIS_ENABLED="false"
+export APPLICATION_FORM_DISCOVERY_MODEL_TIMEOUT_SECONDS="210"
+export APPLICATION_FORM_DISCOVERY_RUN_TIMEOUT_SECONDS="240"
+export APPLICATION_FORM_DISCOVERY_READ_TIMEOUT="270s"
+export APPLICATION_FORM_WORKER_LEASE="1800s"
 export RABBITMQ_USERNAME="govbiz-verification"
 export RABBITMQ_PASSWORD="govbiz-verification-not-a-secret"
 export DAILY_REPORT_MAIL_ENABLED="false"
@@ -242,6 +248,28 @@ verify_application_preparation_flow() {
     echo "Application preparation smoke could not create a development session: HTTP ${actual_status}" >&2
     return 1
   fi
+
+  # A bundled legacy manifest alone no longer authorizes new drafts. Seed this known fixture only
+  # inside the isolated verification database, through the same snapshot + availability contract.
+  local manifest_hex
+  manifest_hex="$(od -An -v -tx1 "${INFRASTRUCTURE_DIR}/../backend/core-api/src/main/resources/application-preparation/innovation-voucher-2026-v1.json" | tr -d ' \n')"
+  "${COMPOSE[@]}" exec -T mysql sh -c 'exec mysql --user="$MYSQL_USER" --password="$MYSQL_PASSWORD" "$MYSQL_DATABASE"' <<SQL
+SET @manifest = CONVERT(UNHEX('${manifest_hex}') USING utf8mb4);
+START TRANSACTION;
+INSERT INTO application_form_snapshot
+(form_version_id, source_code, source_program_id, source_fingerprint, attachment_sha256, manifest_json,
+ parser_version, extraction_model, extraction_prompt_version, created_at)
+VALUES (JSON_UNQUOTE(JSON_EXTRACT(@manifest, '$.formVersionId')), 'BIZINFO', 'PBLN_000000000118979',
+ SHA2(@manifest,256), JSON_UNQUOTE(JSON_EXTRACT(@manifest, '$.attachmentSha256')), CAST(@manifest AS JSON),
+ 'compose-fixture', 'test-model', CONCAT('sha256:', REPEAT('a',64)), NOW());
+INSERT INTO application_form_availability
+(source_code,source_program_id,catalog_fingerprint,source_fingerprint,parser_version,extraction_model,
+ extraction_prompt_version,status,reason_code,active_form_version_id)
+SELECT source_code,source_program_id,source_fingerprint,source_fingerprint,parser_version,extraction_model,
+ extraction_prompt_version,'AVAILABLE','COMPOSE_FIXTURE',form_version_id FROM application_form_snapshot
+WHERE form_version_id=JSON_UNQUOTE(JSON_EXTRACT(@manifest, '$.formVersionId'));
+COMMIT;
+SQL
 
   actual_status="$(curl --silent --output "${LAST_RESPONSE_FILE}" --write-out '%{http_code}' --max-time 10 \
     --cookie "${cookie_jar}" "${WEB_BASE_URL}/api/v1/application-preparations/forms")"

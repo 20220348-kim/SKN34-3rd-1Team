@@ -19,24 +19,42 @@ from app.application_preparation.models import DraftRequest, DraftSelection
 from app.application_preparation.document import DOCUMENT_INSTRUCTIONS, DocumentRequest, DocumentSelection
 
 
+class ApplicationFormDiscoveryTimeoutError(TimeoutError):
+    def __init__(self, stage: str):
+        super().__init__("Application form discovery timed out")
+        self.stage = stage
+
+
 class ApplicationPreparationAgent:
     """Structured application calls with no tools or handoffs."""
 
-    def __init__(self, *, model: ChatOpenAI, run_timeout_seconds: float):
+    def __init__(self, *, model: ChatOpenAI, run_timeout_seconds: float, discovery_model_timeout_seconds: float = 210.0, discovery_run_timeout_seconds: float = 240.0):
         self._run_timeout_seconds = run_timeout_seconds
         self._model = model
+        self.discovery_model_timeout_seconds = discovery_model_timeout_seconds
+        self.discovery_run_timeout_seconds = discovery_run_timeout_seconds
+        if not 0 < discovery_model_timeout_seconds < discovery_run_timeout_seconds:
+            raise ValueError("Discovery model timeout must be less than run timeout")
 
-    async def _invoke(self, selection_type, instructions, content, max_tokens, timeout_message):
-        structured = self._model.model_copy(update={"max_tokens": max_tokens}).with_structured_output(
+    async def _invoke(self, selection_type, instructions, content, max_tokens, timeout_message, *, discovery=False):
+        updates = {"max_tokens": max_tokens}
+        structured = self._model.model_copy(update=updates).with_structured_output(
             selection_type, method="json_schema", strict=True, include_raw=True,
+            **({"timeout": self.discovery_model_timeout_seconds} if discovery else {}),
         )
         try:
-            async with asyncio.timeout(self._run_timeout_seconds):
+            async with asyncio.timeout(self.discovery_run_timeout_seconds if discovery else self._run_timeout_seconds):
                 with tracing_context(enabled=False):
                     result = await structured.ainvoke(
                         [SystemMessage(content=instructions), HumanMessage(content=content)],
                     )
-        except (APITimeoutError, TimeoutError) as error:
+        except APITimeoutError as error:
+            if discovery:
+                raise ApplicationFormDiscoveryTimeoutError("AI_MODEL") from error
+            raise TimeoutError(timeout_message) from error
+        except TimeoutError as error:
+            if discovery:
+                raise ApplicationFormDiscoveryTimeoutError("AI_RUN") from error
             raise TimeoutError(timeout_message) from error
         if (result["parsing_error"] is not None
                 or result["raw"].response_metadata.get("status") != "completed"
@@ -98,5 +116,5 @@ class ApplicationPreparationAgent:
     async def discover(self, request: DiscoverFormsRequest) -> FormDiscoverySelection:
         return await self._invoke(
             FormDiscoverySelection, DISCOVERY_INSTRUCTIONS, json.dumps(request.model_dump(), ensure_ascii=False),
-            5000, "Application form discovery agent timed out",
+            5000, "Application form discovery agent timed out", discovery=True,
         )

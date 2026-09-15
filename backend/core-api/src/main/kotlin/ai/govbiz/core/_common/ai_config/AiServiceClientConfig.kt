@@ -9,6 +9,10 @@ import org.springframework.web.client.RestClient
 @Configuration(proxyBeanMethods = false)
 @EnableConfigurationProperties(AiServiceClientProperties::class)
 class AiServiceClientConfig {
+    @Bean
+    fun aiApplicationFormDiscoveryRestClient(restClientBuilder: RestClient.Builder, properties: AiServiceClientProperties): RestClient =
+        buildRestClient(restClientBuilder, properties.baseUrl, properties.connectTimeout, properties.applicationFormDiscoveryReadTimeout)
+
 
     @Bean
     fun aiCombinationReviewRestClient(

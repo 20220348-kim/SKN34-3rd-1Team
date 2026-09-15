@@ -120,6 +120,8 @@ def build_application_container(
                 root_async_client=openai_client, async_client=openai_client.chat.completions,
             ),
             run_timeout_seconds=settings.llm_run_timeout_seconds,
+            discovery_model_timeout_seconds=settings.application_form_discovery_model_timeout_seconds,
+            discovery_run_timeout_seconds=settings.application_form_discovery_run_timeout_seconds,
         )
 
     if assistant_agent is None:

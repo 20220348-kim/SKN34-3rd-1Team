@@ -77,7 +77,8 @@ async def discover(payload: DiscoverFormsRequest, service: Annotated[Application
         raise HTTPException(
             status_code=(status.HTTP_422_UNPROCESSABLE_CONTENT if validation_failed
                          else status.HTTP_504_GATEWAY_TIMEOUT if timed_out else status.HTTP_503_SERVICE_UNAVAILABLE),
-            detail={"code": "APPLICATION_FORM_AI_INVALID_RESPONSE" if validation_failed else str(error)},
+            detail={"code": "APPLICATION_FORM_AI_INVALID_RESPONSE" if validation_failed else str(error),
+                    **({"timeoutStage": getattr(cause, "stage", "AI_UNKNOWN")} if timed_out else {})},
         ) from error
 
 

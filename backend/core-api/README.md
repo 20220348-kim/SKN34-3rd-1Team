@@ -123,8 +123,9 @@ UNKNOWN은 같은 검토의 새 실행도 차단합니다. [한도·만료·재�
 
 | 신청 준비 API | 동작 |
 |---|---|
-| `GET /api/v1/application-preparations/forms` | 로그인 회원에게 지원 양식·분야·문항 조회. DB·AI 호출 없음 |
-| `POST /api/v1/application-preparations/forms/discovery-jobs` | UUID requestKey·공고 식별자로 V26 작업 접수. 202·Location 반환, Worker가 네 제공처 공식 문서 분석 |
+| `GET /api/v1/application-preparations/forms` | DB에서 AVAILABLE 공고의 양식·분야·문항 조회. AI 호출 없음 |
+| `GET /api/v1/application-preparations/forms/availability?sourceCode=...&sourceProgramId=...` | 공고별 분석 상태·사유와 활성 snapshot 전체 조회. 현재 작성 화면의 시작 경로 |
+| `POST /api/v1/application-preparations/forms/discovery-jobs` | UUID requestKey·공고 식별자로 V26 계정별 수동 작업 접수. 기존 API이며 현재 작성 화면에서는 호출하지 않음 |
 | `GET /api/v1/application-preparations/forms/discovery-jobs` | 본인의 최근 20개 분석 작업을 공고명·공식 원문 URL과 함께 요약 |
 | `GET /api/v1/application-preparations/forms/discovery-jobs/{id}` | 본인 작업의 공고명·공식 원문 URL·상태·결과 조회 |
 | `POST /api/v1/application-preparations` | 공고·양식 버전·지원 분야를 검증해 본인 준비 건 생성. 201·Location·상세 반환 |
@@ -845,3 +846,11 @@ C02 회귀는 공개 HTTP의 nullable 필수 키·엄격한 타입·문자/날�
 실행 조건·범위·기록은 [RAG 평가 안내](../../evaluation/support-program-evidence/README.md)를 참고하세요.
 
 HWP 체크박스의 FORM_OBJECT Caption은 주변 문항과 함께 별도 근거 블록으로 보존한다. 공식 신청 문항의 단일 선택지는 AI Service가 원문 인용에 포함된 `options`로 추출하고, Core API가 다시 검증한 뒤 양식 스냅샷과 공개 응답에 보존한다. Frontend는 선택지를 라디오 버튼으로 표시한다. 기존 스냅샷에서 `options`가 없으면 빈 목록으로 읽으며, 선택형 문항의 선택지를 확인하지 못한 경우 공식 원문 확인을 안내한다.
+
+## 공고별 신청 양식 사전분석
+
+신규·변경 공고의 상태와 시스템 분석 Outbox는 `application_form_availability`에 저장합니다. 공식 제공처 전체 동기화 성공 transaction에서 등록하고, 별도 Worker가 첨부 수집·파싱·AI 분석을 수행합니다. 성공 snapshot 저장과 AVAILABLE 활성화는 하나의 짧은 transaction입니다.
+
+현재 사용자 작성 화면은 계정별 Discovery Job을 실행하지 않고 공고별 availability API에서 활성 snapshot을 읽습니다. 기존 계정별 discovery job API는 별도 책임으로 남아 있습니다. 새 작성은 활성 formVersionId만 허용하고, 기존 작성의 과거 버전과 최종 생성의 공식 원본 해시 대조는 유지합니다.
+
+Discovery 전용 timeout은 model 210초 < AI run 240초 < Core read 270초 < Worker lease 1,800초입니다. 다른 신청 준비 기능의 전역 timeout은 변경하지 않습니다. [상태·재시도·백필 실행 방법](../../docs/application-form-availability.md)을 참고하세요.
