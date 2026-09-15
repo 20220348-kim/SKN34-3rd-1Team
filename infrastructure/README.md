@@ -381,6 +381,63 @@ V35와 V37의 `(owner_account_id, demo_seed_key)` 유일 제약은 사용자별 
 개인 seed와 선택 대상 변경은 이를 삭제하거나 덮어쓰지 않습니다. 목업 parent나 하위 데이터가 삭제되면 다음 실행이 누락분만 복구합니다.
 독립 production Compose에는 `demo-seed` 서비스가 없으므로 자동 적재되지 않습니다.
 
+#### 운영 RDS에 포트폴리오 데모 넣기 (수동)
+
+운영에서는 위 개발용 `demo-seed`나 `seed-demo-data.sh`를 실행하지 않습니다. 개발용 SQL은 계정·연결 데이터를
+삭제하므로 `MYSQL_HOST`만 RDS로 바꾸는 것도 금지합니다. 대신 EC2에서
+[`seed-production-demo.py`](scripts/seed-production-demo.py)를 명시적으로 실행합니다.
+이 스크립트는 운영 Compose의 Core API DB 접속 정보를 읽어 RDS에 연결하며, `compose.prod.yaml`, CodeBuild,
+앱 시작 시에는 호출되지 않습니다. 기존 Python 3·Docker Compose·MySQL CLI와 RDS CA **PEM** 파일이 필요합니다.
+MySQL 8.4와 V37까지 적용된 스키마가 전제이며, TLS `VERIFY_IDENTITY`를 강제합니다.
+비밀번호는 잠깐 생성하는 소유자 전용 MySQL 옵션 파일로 전달하고 명령행/로그에는 출력하지 않습니다.
+DB 실행 계정에는 대상 DB의 기존 DML 권한 외에 `CREATE TEMPORARY TABLES` 권한이 필요합니다.
+일반 `CREATE` 권한만으로는 임시 테이블을 만들 수 없습니다. 앱 계정에 해당 권한이 없으면 실행을 중단하고,
+권한을 임의로 추가하지 않습니다. 승인된 수동 작업 계정의 연결 정보를 소유자 전용 환경 파일에 별도로 준비하여
+`--env-file`로 지정할 수 있습니다. 이 경우에도 기존 운영 `.env.production` 파일은 바꾸지 않습니다.
+
+운영 공용 자료는 [`production-public.sql`](seed/production-public.sql)로 분리합니다. 대상은 아래 표의 6개 계정으로
+고정되며, 최대 기업 6개·모집글 5개·제안 4개·관심 공고 20개, 각 계정의 신청 준비 2개·중복 검토 2개를 추가합니다.
+공개 모집글/프로필/제안에는 시연용 표시를 붙이고, 실제로 수행하지 않은 관리자 조치 기록은 만들지 않습니다.
+개인 목업 SQL 두 개는 기존 파일을 재사용하되 운영 실행기가 한 트랜잭션·공유 잠금을 소유합니다.
+오류는 전체 rollback하고 기존 계정 비밀번호·권한·기업·세션·수정 내용은 덮어쓰지 않습니다.
+사업자번호 소유자 충돌, 다른 기업을 가진 계정, 삭제/정지 계정, 예상과 다른 권한은 중단합니다.
+운영 배포와는 기존 호스트 배포 잠금으로 동시에 실행되지 않게 합니다. 유료 API/메일 호출은 하지 않습니다.
+
+1. 아래 명령으로 **읽기 전용 계획**을 생성하고 대상/공고 ID를 확인합니다. 계획 파일에는 접속 비밀번호가 없고
+   선택한 공고 ID와 DB 대상·코드 지문이 저장됩니다. 재실행 때 같은 계획 파일을 써야 공고 선택이 바뀌지 않습니다.
+
+   ```bash
+   sudo python3 infrastructure/scripts/seed-production-demo.py \
+     --plan-file /opt/govbiz/demo-seed-plan.json
+   ```
+
+2. 없는 계정의 비밀번호는 담당자가 별도로 정하고 BCrypt(cost 10–16)로 해시합니다. 실제 비밀번호/해시를 Git,
+   채팅, SSM 명령 본문에 넣지 않습니다. `{ "대상 이메일": "BCrypt 해시" }` 형식 JSON을 EC2의 소유자 전용
+   파일(예: `/opt/govbiz/demo-account-hashes.json`, root 소유, 권한 600)에 준비합니다. 기본 비밀번호는 없습니다.
+   공개된 개발용 비밀번호로 관리자까지 생성하면 외부인의 관리 권한 접근이 가능하므로 별도 승인이 필요합니다.
+
+3. 대상·추가 범위·새 관리자 생성을 승인한 뒤 아래 명령을 실행합니다. 기존 계정만 사용하는 경우
+   `--account-hashes-file`과 `--confirm-new-admin`은 불필요합니다.
+
+   ```bash
+   sudo python3 infrastructure/scripts/seed-production-demo.py \
+     --plan-file /opt/govbiz/demo-seed-plan.json \
+     --account-hashes-file /opt/govbiz/demo-account-hashes.json \
+     --confirm-new-admin --apply
+   ```
+
+`GOVBIZ_PRODUCTION_DEMO_OK` 확인 후 대상 계정별 개수를 조회하고 해시 파일은 제거합니다. 반복 실행은 같은
+계획을 재사용하여 누락분만 추가합니다. 이미 수정한 모집글/제안/개인 목업은 초기화하지 않으며, 다른 공고로
+다시 만들고 싶다면 별도로 범위를 검토합니다. 실행이 끊겼거나 응답이 불명확하면 무작정 재실행하지 말고
+먼저 실제 데이터를 조회합니다. 이미 성공한 자료를 지우는 자동 rollback/reset 명령은 제공하지 않습니다.
+코드가 바뀌면 계획의 지문 검증이 실패하므로, 기존 계획의 공고 ID를 보존해 검토 후 새 계획을 준비해야 합니다.
+
+```bash
+RUN_SEED_MYSQL_TESTS=1 python3 -B -m unittest discover -s infrastructure/scripts -p 'test_*.py'
+```
+
+아래부터는 **로컬 개발 환경**의 실행/초기화 방법입니다.
+
 이미 실행 중인 환경에서 이번 변경을 적용할 때는 Core API를 재빌드해 V37을 적용한 뒤 시드만 실행합니다. 강제 초기화는 필요 없습니다.
 
 ```bash
