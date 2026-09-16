@@ -51,7 +51,10 @@ AI Service는 model < run을 검증하고 discovery configuration에 두 값을 
 
 ## 읽기 전용 입력 dry-run과 일회성 백필
 
-입력 JSON은 Git 비추적 외부 파일이다. resources, jar, Docker build context에 복사하지 않는다.
+배포용 입력 JSON은 `infrastructure/seed/application-form-openai-analysis-20260915-v2.json`에 보관한다.
+서버에서 실행하는 절차는 [신청양식 백필 안내](../infrastructure/seed/application-forms.md)를 따른다.
+`infrastructure/scripts/seed-application-forms.py`가 기존 Kotlin 검증·적재 기능을 호출하며,
+입력은 컨테이너에 읽기 전용으로 마운트한다. resources, jar, Docker 이미지에 포함하지 않는다.
 
 Core 디렉터리에서 JDK 21로 실행한다.
 
