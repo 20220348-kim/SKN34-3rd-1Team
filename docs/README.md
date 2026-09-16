@@ -2,12 +2,14 @@
 
 [메인 README](../README.md)로 돌아가기
 
-메인 README는 프로젝트 소개와 빠른 시작만 안내합니다. 상세 설명은 아래 문서에서 관리합니다.
+메인 README는 팀 소개·프로젝트 개요·주요 기능·화면과 아키텍처를 안내합니다.
+기존 README의 빠른 시작과 기술 문서 안내는 [기술 README](technical-readme.md)로 옮겼습니다.
 
 ## 구조와 구현 범위
 
 | 문서 | 확인할 내용 |
 |---|---|
+| [기술 README](technical-readme.md) | 기존 프로젝트 안내, 빠른 시작과 개발·운영 문서 진입점 |
 | [아키텍처 README](architecture/README.md) | 서비스 경계, Frontend·Core API·AI Service의 계층·DI·디자인 패턴 |
 | [서비스 호출·데이터 흐름](architecture.md) | 검색·상세·RAG·동기화·키워드/벡터 복구와 오류 처리 순서 |
 | [기술 스택과 데이터 구성](technology.md) | 사용 기술·버전, MySQL·Elasticsearch·Qdrant·Redis·RabbitMQ의 역할과 점수 정책 |
