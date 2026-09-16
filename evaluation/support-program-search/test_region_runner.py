@@ -22,7 +22,7 @@ SPEC = importlib.util.spec_from_file_location("region_runner_under_test", RUNNER
 runner = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(runner)
 sys.path.insert(0, str(runner.ROOT / "backend/ai-service"))
-AI_AVAILABLE = all(importlib.util.find_spec(name) is not None for name in ("httpx", "agents", "openai"))
+AI_AVAILABLE = all(importlib.util.find_spec(name) is not None for name in ("httpx2", "langchain_openai", "openai"))
 SECRET = "fake-key-and-error-text-never-persist"
 
 
@@ -60,7 +60,7 @@ class RegionRunnerTest(unittest.TestCase):
 
     def execute(self, *, failure_at=None, status=503, missing_usage=False, quality_failure=False,
                 exception=False, settings=None, destination=None, double_call=False):
-        import httpx
+        import httpx2 as httpx
         import openai
         from app.support_program_ranking.agent import SupportProgramRecommendationAgent
 
@@ -189,8 +189,8 @@ class RegionRunnerTest(unittest.TestCase):
             self.assertEqual(dict.fromkeys(("connect", "read", "write", "pool"), 45), timeouts)
             self.assertEqual(runner.canonical_sha256(wire["input"]), observation["modelInputSha256"])
             self.assertEqual(runner.canonical_sha256(wire["text"]["format"]["schema"]), observation["outputSchemaSha256"])
-            self.assertEqual(hashlib.sha256(wire["instructions"].encode("utf-8")).hexdigest(), observation["promptSha256"])
-            user_data = json.loads(wire["input"][0]["content"])
+            self.assertEqual(hashlib.sha256(next(message["content"] for message in wire["input"] if message["role"] == "system").encode("utf-8")).hexdigest(), observation["promptSha256"])
+            user_data = json.loads(next(message["content"] for message in wire["input"] if message["role"] == "user"))
             self.assertIn("evidenceOptions", user_data["candidates"][0])
             for forbidden in ("expected", "requiredEvidence", "rationale", "labelProvenance"):
                 self.assertNotIn(forbidden, json.dumps(user_data))

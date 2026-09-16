@@ -5,7 +5,7 @@ from pathlib import Path
 
 import httpx2
 import pytest
-from agents import OpenAIResponsesModel
+from tests.langchain_stub import chat_model
 from openai import AsyncOpenAI
 
 from app.support_program_ranking.agent import SupportProgramRecommendationAgent
@@ -76,7 +76,7 @@ async def test_compose_stub_matches_the_production_ranking_contract(
         max_retries=0,
     )
     agent = SupportProgramRecommendationAgent(
-        model=OpenAIResponsesModel(model="gpt-5.6-luna", openai_client=openai_client),
+        model=chat_model(model="gpt-5.6-luna", openai_client=openai_client),
         model_timeout_seconds=4.0,
         run_timeout_seconds=5.0,
     )

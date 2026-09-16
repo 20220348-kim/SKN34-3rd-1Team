@@ -1,5 +1,6 @@
 import copy
 import json
+import math
 import os
 import tempfile
 import unittest
@@ -123,6 +124,40 @@ class KoreanQueryComparisonTest(unittest.TestCase):
         report["variants"]["nori_bm25"]["metrics"]["all"]["targetMrrAt20"] = 1
         with self.assertRaisesRegex(ValueError, "metrics"):
             comparison.verify(FIXTURE, QUESTIONS, report)
+
+    def test_frozen_report_accepts_only_float_rounding_differences_without_network(self):
+        report = json.loads((QUESTIONS.parent / "report.json").read_text(encoding="utf-8"))
+        with patch.object(comparison.lexical, "LocalElasticsearch") as client:
+            comparison.verify(FIXTURE, QUESTIONS, report)
+            rounded = copy.deepcopy(report)
+            for variant in rounded["variants"].values():
+                for summary in (variant["metrics"]["all"], *variant["metrics"]["byForm"].values()):
+                    summary["targetMrrAt20"] = math.nextafter(summary["targetMrrAt20"], math.inf)
+                    for cutoff, value in summary["hitRates"].items():
+                        summary["hitRates"][cutoff] = math.nextafter(value, math.inf)
+            comparison.verify(FIXTURE, QUESTIONS, rounded)
+            client.assert_not_called()
+
+        for kind in ("mrr", "rate", "count", "rank", "nan", "boolean", "question_hash"):
+            with self.subTest(kind=kind):
+                changed = copy.deepcopy(report)
+                metrics = changed["variants"]["nori_bm25"]["metrics"]
+                if kind == "mrr":
+                    metrics["all"]["targetMrrAt20"] += 1e-8
+                elif kind == "rate":
+                    metrics["all"]["hitRates"]["20"] += 1e-8
+                elif kind == "count":
+                    metrics["all"]["hitCounts"]["20"] = float(metrics["all"]["hitCounts"]["20"])
+                elif kind == "rank":
+                    row = next(row for row in metrics["perQuery"] if row["targetRank"] is not None)
+                    row["targetRank"] += 1e-13
+                elif kind == "question_hash":
+                    changed["questionsSha256"] = "0" * 64
+                else:
+                    metrics["all"]["targetMrrAt20"] = float("nan") if kind == "nan" else True
+                error = "source or configuration" if kind == "question_hash" else "metrics cannot be reproduced"
+                with self.assertRaisesRegex(ValueError, error):
+                    comparison.verify(FIXTURE, QUESTIONS, changed)
 
     @unittest.skipUnless(os.environ.get("LOCAL_ES_INTEGRATION_URL"), "Opt-in real Elasticsearch known-item integration")
     def test_live_known_item_capture_and_recheck(self):

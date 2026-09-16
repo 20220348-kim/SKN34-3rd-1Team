@@ -4,7 +4,7 @@ import logging
 import re
 
 import pytest
-from agents.testing import ModelStep, ScriptedModel, assistant_message
+from tests.langchain_stub import ResponsesChatStub, response_message
 from fastapi.testclient import TestClient
 
 from app.config import Settings
@@ -19,8 +19,8 @@ PATH = "/internal/v1/support-program-conversation/interpret"
 
 
 def test_http_to_service_to_agent_to_response(request_data, output_data):
-    model = ScriptedModel([[assistant_message(json.dumps(output_data, ensure_ascii=False))]])
-    agent = SupportProgramConversationAgent(model=model, model_timeout_seconds=1, run_timeout_seconds=2)
+    model = ResponsesChatStub([[response_message(json.dumps(output_data, ensure_ascii=False))]])
+    agent = SupportProgramConversationAgent(model=model.model, model_timeout_seconds=1, run_timeout_seconds=2)
     with TestClient(create_app(settings=SETTINGS, support_program_conversation_agent=agent)) as client:
         response = client.post(PATH, json=request_data)
     assert response.status_code == 200
@@ -32,8 +32,8 @@ def test_http_to_service_to_agent_to_response(request_data, output_data):
 @pytest.mark.parametrize("mutation", [{"message": " "}, {"schemaVersion": "v0"}, {"history": []}, {"referenceDate": "2026-02-30"}])
 def test_invalid_internal_request_keeps_existing_fastapi_422_policy(request_data, mutation):
     request_data.update(mutation)
-    model = ScriptedModel([])
-    agent = SupportProgramConversationAgent(model=model, model_timeout_seconds=1, run_timeout_seconds=2)
+    model = ResponsesChatStub([])
+    agent = SupportProgramConversationAgent(model=model.model, model_timeout_seconds=1, run_timeout_seconds=2)
     with TestClient(create_app(settings=SETTINGS, support_program_conversation_agent=agent)) as client:
         response = client.post(PATH, json=request_data)
     assert response.status_code == 422
@@ -47,8 +47,8 @@ def test_invalid_upstream_output_returns_safe_503_without_search(request_data, o
     if kind == "missing_query":
         request_data["context"]["query"] = None
     output = "private non-json output" if kind == "invalid_json" else json.dumps(output_data)
-    model = ScriptedModel([[assistant_message(output)]])
-    agent = SupportProgramConversationAgent(model=model, model_timeout_seconds=1, run_timeout_seconds=2)
+    model = ResponsesChatStub([[response_message(output)]])
+    agent = SupportProgramConversationAgent(model=model.model, model_timeout_seconds=1, run_timeout_seconds=2)
     with TestClient(create_app(settings=SETTINGS, support_program_conversation_agent=agent)) as client:
         response = client.post(PATH, json=request_data)
     assert response.status_code == 503
@@ -70,9 +70,9 @@ def test_deadline_returns_safe_504_and_sanitized_timing_without_retry(request_da
     async def hang_forever(_):
         await asyncio.Event().wait()
         return []
-    model = ScriptedModel([ModelStep.respond(hang_forever)])
-    agent = SupportProgramConversationAgent(model=model,
-        model_timeout_seconds=0.01 if deadline == "model" else 1,
+    model = ResponsesChatStub([(hang_forever)])
+    agent = SupportProgramConversationAgent(model=model.model,
+        model_timeout_seconds=0.1 if deadline == "model" else 1,
         run_timeout_seconds=1 if deadline == "model" else 0.01)
     with TestClient(create_app(settings=SETTINGS, support_program_conversation_agent=agent)) as client:
         response = client.post(PATH, json=request_data)
@@ -82,7 +82,7 @@ def test_deadline_returns_safe_504_and_sanitized_timing_without_retry(request_da
     records = [record for record in caplog.records if record.name.endswith("support_program_conversation.router")]
     assert len(records) == 1
     record = records[0]
-    cause = "ModelTimeoutError" if deadline == "model" else "TimeoutError"
+    cause = "TimeoutError"
     assert re.fullmatch(rf"support_program_conversation_failed failure_kind=timeout error_type={cause} elapsed_ms=\d+", record.getMessage())
     assert record.exc_info is None
     assert request_data["message"] not in record.getMessage()
@@ -102,8 +102,8 @@ def test_http_answered_keeps_completed_search_distinct_from_pending_proposal(req
         "status": "ANSWERED", "updates": [], "clarificationQuestion": None,
         "answer": "직전 대구 조건으로 반환된 결과는 0건입니다. 정확한 원인은 요약만으로 알 수 없어요.",
     }
-    model = ScriptedModel([[assistant_message(json.dumps(output, ensure_ascii=False))]])
-    agent = SupportProgramConversationAgent(model=model, model_timeout_seconds=1, run_timeout_seconds=2)
+    model = ResponsesChatStub([[response_message(json.dumps(output, ensure_ascii=False))]])
+    agent = SupportProgramConversationAgent(model=model.model, model_timeout_seconds=1, run_timeout_seconds=2)
     with TestClient(create_app(settings=SETTINGS, support_program_conversation_agent=agent)) as client:
         response = client.post(PATH, json=request_data)
     assert response.status_code == 200
@@ -119,8 +119,8 @@ def test_http_answered_keeps_completed_search_distinct_from_pending_proposal(req
 ])
 def test_invalid_new_context_never_calls_model(request_data, mutation):
     request_data.update(mutation)
-    model = ScriptedModel([])
-    agent = SupportProgramConversationAgent(model=model, model_timeout_seconds=1, run_timeout_seconds=2)
+    model = ResponsesChatStub([])
+    agent = SupportProgramConversationAgent(model=model.model, model_timeout_seconds=1, run_timeout_seconds=2)
     with TestClient(create_app(settings=SETTINGS, support_program_conversation_agent=agent)) as client:
         response = client.post(PATH, json=request_data)
     assert response.status_code == 422

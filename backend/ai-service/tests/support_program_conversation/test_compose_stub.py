@@ -5,7 +5,7 @@ from pathlib import Path
 
 import httpx2
 import pytest
-from agents import OpenAIResponsesModel
+from tests.langchain_stub import chat_model
 from openai import AsyncOpenAI
 
 from app.support_program_conversation.agent import SupportProgramConversationAgent
@@ -49,7 +49,7 @@ async def test_actual_compose_stub_through_sdk_and_service(request_data, monkeyp
         return responses[0]
     client = AsyncOpenAI(api_key="test-key", base_url="https://openai.test/v1/", max_retries=0,
                          http_client=httpx2.AsyncClient(transport=httpx2.MockTransport(handle)))
-    agent = SupportProgramConversationAgent(model=OpenAIResponsesModel(model="gpt-5.6-luna", openai_client=client),
+    agent = SupportProgramConversationAgent(model=chat_model(model="gpt-5.6-luna", openai_client=client),
                                              model_timeout_seconds=4, run_timeout_seconds=5)
     try:
         result = await SupportProgramConversationService(agent).interpret(SupportProgramConversationRequest.model_validate(request_data))

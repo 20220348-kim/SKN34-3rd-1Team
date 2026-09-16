@@ -101,8 +101,13 @@ async def execute(args, fixture, *, transport=None):
                 or current.get("caseId") is None or current["caseId"] in called_cases):
             raise RuntimeError("Request destination or execution budget rejected")
         payload = json.loads(await request.aread())
+        messages = payload.get("input") if isinstance(payload, dict) else None
+        if not isinstance(messages, list):
+            raise ValueError("Unexpected Responses messages")
+        system_messages = [message for message in messages if message.get("role") == "system"]
+        instructions = system_messages[0].get("content") if len(system_messages) == 1 else None
         if (not isinstance(payload, dict) or not isinstance(payload.get("input"), (list, str))
-                or not isinstance(payload.get("instructions"), str)
+                or not isinstance(instructions, str)
                 or not isinstance(payload.get("text", {}).get("format", {}).get("schema"), dict)
                 or payload.get("model") != "gpt-5.6-luna"
                 or payload.get("reasoning", {}).get("effort") != "none"
@@ -110,7 +115,7 @@ async def execute(args, fixture, *, transport=None):
             raise ValueError("Unexpected Responses input or model settings")
         hashes = {
             "modelInputSha256": canonical_sha256(payload["input"]),
-            "promptSha256": hashlib.sha256(payload["instructions"].encode("utf-8")).hexdigest(),
+            "promptSha256": hashlib.sha256(instructions.encode("utf-8")).hexdigest(),
             "outputSchemaSha256": canonical_sha256(payload["text"]["format"]["schema"]),
         }
         if hashes["promptSha256"] != capture["provenance"]["promptSha256"]:
@@ -144,8 +149,8 @@ async def execute(args, fixture, *, transport=None):
 
     try:
         sys.path.insert(0, str(ROOT / "backend/ai-service"))
-        import httpx
-        from agents import OpenAIResponsesModel
+        import httpx2 as httpx
+        from langchain_openai import ChatOpenAI
         from openai import AsyncOpenAI
         from app.config import Settings
         from app.support_program_ranking.agent import SupportProgramRecommendationAgent
@@ -169,6 +174,7 @@ async def execute(args, fixture, *, transport=None):
         sources = [
             "backend/ai-service/app/support_program_ranking/prompt.py",
             "backend/ai-service/app/support_program_ranking/agent.py",
+            "backend/ai-service/app/support_program_llm.py",
             "backend/ai-service/app/support_program_ranking/service.py",
             "backend/ai-service/app/support_program_ranking/models.py",
             "backend/ai-service/app/config.py",
@@ -181,11 +187,15 @@ async def execute(args, fixture, *, transport=None):
         client = AsyncOpenAI(api_key=settings.openai_api_key, base_url=OFFICIAL_BASE_URL,
                              max_retries=0, timeout=settings.llm_model_timeout_seconds, http_client=http_client)
         agent = SupportProgramRecommendationAgent(
-            model=OpenAIResponsesModel(model=settings.openai_model, openai_client=client),
+            model=ChatOpenAI(
+                model=settings.openai_model, api_key=settings.openai_api_key,
+                use_responses_api=True, max_retries=0,
+                root_async_client=client, async_client=client.chat.completions,
+            ),
             model_timeout_seconds=45, run_timeout_seconds=50, reasoning_effort="none",
         )
-        configured = agent._agent.model_settings
-        if configured.max_tokens != 10000 or configured.reasoning.effort != "none" or configured.store is not False:
+        configured = agent._model.kwargs
+        if configured["max_tokens"] != 10000 or configured["reasoning"]["effort"] != "none" or configured["store"] is not False:
             raise ValueError("Production ranking settings changed")
 
         class RecordingAgent:

@@ -3,8 +3,7 @@ import json
 
 import httpx2
 import pytest
-from agents import MaxTurnsExceeded, ModelBehaviorError, ModelTracing, OpenAIResponsesModel
-from agents.testing import ModelStep, ScriptedModel, assistant_message
+from tests.langchain_stub import ResponsesChatStub, response_message, chat_model, user_payload
 from openai import AsyncOpenAI
 from pydantic import ValidationError
 
@@ -148,7 +147,7 @@ def test_prompt_requires_explicit_requested_funding_but_preserves_consulting_and
 @pytest.mark.parametrize("value", ["medium", "", None])
 def test_direct_ranking_agent_rejects_unsupported_reasoning(value):
     with pytest.raises(ValueError, match="ranking reasoning effort must be none or low"):
-        SupportProgramRecommendationAgent(model=ScriptedModel([]), model_timeout_seconds=1,
+        SupportProgramRecommendationAgent(model=ResponsesChatStub([]).model, model_timeout_seconds=1,
                                           run_timeout_seconds=2, reasoning_effort=value)
 
 
@@ -218,11 +217,11 @@ def test_region_prompt_does_not_require_every_alternative_or_treat_unconfirmed_r
 
 
 @pytest.mark.anyio
-async def test_runs_typed_ranking_agent_through_the_real_runner() -> None:
+async def test_runs_typed_ranking_agent_through_langchain() -> None:
     expected = valid_output()
-    model = ScriptedModel([[assistant_message(llm_output_json())]])
+    model = ResponsesChatStub([[response_message(llm_output_json())]])
     agent = SupportProgramRecommendationAgent(
-        model=model,
+        model=model.model,
         model_timeout_seconds=3.0,
         run_timeout_seconds=4.0,
     )
@@ -238,14 +237,14 @@ async def test_runs_typed_ranking_agent_through_the_real_runner() -> None:
     assert request_json["originalQuery"] == "서울 AI 창업기업 지원"
     assert request_json["candidates"][0]["id"] == "BIZINFO:program-1"
     assert "companyConditions" not in request_json
-    assert call.output_schema is not None
-    keyed_schema = rankings_schema(call.output_schema.json_schema())
+    assert call.schema is not None
+    keyed_schema = rankings_schema(call.schema)
     assert keyed_schema["type"] == "object"
     assert keyed_schema["required"] == ["BIZINFO:program-1"]
     assert keyed_schema["additionalProperties"] is False
-    assert call.model_settings.timeout == 3.0
-    assert call.model_settings.reasoning.effort == "none"
-    assert call.tracing is ModelTracing.DISABLED
+    assert call.timeout == 3.0
+    assert call.body["reasoning"]["effort"] == "none"
+    assert call.tracing_disabled
     model.assert_complete()
 
 
@@ -257,11 +256,11 @@ async def test_company_conditions_use_one_model_call_and_do_not_change_later_leg
     }
     payload = ranking_request().model_dump(by_alias=True)
     payload.update(originalQuery="부산 기업의 수출 지원", companyConditions=conditions)
-    model = ScriptedModel([
-        [assistant_message(llm_output_json())], [assistant_message(llm_output_json())],
+    model = ResponsesChatStub([
+        [response_message(llm_output_json())], [response_message(llm_output_json())],
     ])
     agent = SupportProgramRecommendationAgent(
-        model=model, model_timeout_seconds=3.0, run_timeout_seconds=4.0,
+        model=model.model, model_timeout_seconds=3.0, run_timeout_seconds=4.0,
     )
 
     await agent.rank(SupportProgramRankingRequest.model_validate(payload))
@@ -275,7 +274,7 @@ async def test_company_conditions_use_one_model_call_and_do_not_change_later_leg
     assert first.system_instructions == f"{SUPPORT_PROGRAM_RANKING_INSTRUCTIONS}\n\n{SUPPORT_PROGRAM_COMPANY_CONDITIONS_INSTRUCTIONS}"
     assert second.system_instructions == SUPPORT_PROGRAM_RANKING_INSTRUCTIONS
     assert "companyConditions" not in json.loads(second.input[0]["content"])
-    assert agent._agent.instructions == SUPPORT_PROGRAM_RANKING_INSTRUCTIONS
+    assert "response_format" not in agent._model.kwargs
     model.assert_complete()
 
 
@@ -304,8 +303,8 @@ async def test_region_instructions_reach_model_without_inventing_a_district_or_r
     selection["rankings"]["BIZINFO:program-1"]["regionAssessment"].update(
         eligibility="UNKNOWN", explanation="서울 정보만으로는 서초구 소재 여부를 확인할 수 없습니다.",
     )
-    model = ScriptedModel([[assistant_message(json.dumps(selection, ensure_ascii=False))]])
-    agent = SupportProgramRecommendationAgent(model=model, model_timeout_seconds=3, run_timeout_seconds=4)
+    model = ResponsesChatStub([[response_message(json.dumps(selection, ensure_ascii=False))]])
+    agent = SupportProgramRecommendationAgent(model=model.model, model_timeout_seconds=3, run_timeout_seconds=4)
 
     result = await agent.rank(SupportProgramRankingRequest.model_validate(payload))
 
@@ -326,12 +325,12 @@ async def test_region_instructions_reach_model_without_inventing_a_district_or_r
 @pytest.mark.anyio
 async def test_output_keys_are_bound_to_each_request_without_changing_the_shared_agent() -> None:
     counts = (1, 20, 1)
-    model = ScriptedModel([
-        [assistant_message(llm_output_json(count))]
+    model = ResponsesChatStub([
+        [response_message(llm_output_json(count))]
         for count in counts
     ])
     agent = SupportProgramRecommendationAgent(
-        model=model,
+        model=model.model,
         model_timeout_seconds=3.0,
         run_timeout_seconds=4.0,
     )
@@ -342,20 +341,20 @@ async def test_output_keys_are_bound_to_each_request_without_changing_the_shared
         assert len(output.rankings) == count
 
     for call, count in zip(model.calls, counts, strict=True):
-        assert call.output_schema is not None
-        schema = rankings_schema(call.output_schema.json_schema())
+        assert call.schema is not None
+        schema = rankings_schema(call.schema)
         expected_ids = [candidate.id for candidate in ranking_request(count).candidates]
         assert list(schema["properties"]) == schema["required"] == expected_ids
         assert schema["additionalProperties"] is False
-    assert agent._agent.output_type is None
+    assert "response_format" not in agent._model.kwargs
     model.assert_complete()
 
 
 @pytest.mark.anyio
 async def test_rejects_nineteen_rankings_for_twenty_candidates_before_service_validation() -> None:
-    model = ScriptedModel([[assistant_message(llm_output_json(19))]])
+    model = ResponsesChatStub([[response_message(llm_output_json(19))]])
     agent = SupportProgramRecommendationAgent(
-        model=model,
+        model=model.model,
         model_timeout_seconds=3.0,
         run_timeout_seconds=4.0,
     )
@@ -363,7 +362,7 @@ async def test_rejects_nineteen_rankings_for_twenty_candidates_before_service_va
     with pytest.raises(AgentExecutionError) as captured:
         await agent.rank(ranking_request(20))
 
-    assert isinstance(captured.value.__cause__, ModelBehaviorError)
+    assert isinstance(captured.value.__cause__, ValidationError)
     assert len(model.calls) == 1
 
 
@@ -371,9 +370,9 @@ async def test_rejects_nineteen_rankings_for_twenty_candidates_before_service_va
 async def test_rejects_a_list_output_with_duplicate_ids() -> None:
     output = valid_output(20).model_dump(by_alias=True)
     output["rankings"][-1]["programId"] = output["rankings"][0]["programId"]
-    model = ScriptedModel([[assistant_message(json.dumps(output, ensure_ascii=False))]])
+    model = ResponsesChatStub([[response_message(json.dumps(output, ensure_ascii=False))]])
     agent = SupportProgramRecommendationAgent(
-        model=model,
+        model=model.model,
         model_timeout_seconds=3.0,
         run_timeout_seconds=4.0,
     )
@@ -381,7 +380,7 @@ async def test_rejects_a_list_output_with_duplicate_ids() -> None:
     with pytest.raises(AgentExecutionError) as captured:
         await agent.rank(ranking_request(20))
 
-    assert isinstance(captured.value.__cause__, ModelBehaviorError)
+    assert isinstance(captured.value.__cause__, ValidationError)
 
 
 @pytest.mark.anyio
@@ -412,18 +411,18 @@ async def test_actual_capture_duplicate_pattern_cannot_satisfy_all_required_keys
         candidate["id"] = program_id
     assessment = llm_output()["rankings"]["BIZINFO:program-1"]
     # 중복을 임의로 제거해도 필수 ID 5개가 없으므로 성공 결과가 될 수 없다.
-    model = ScriptedModel([[assistant_message(json.dumps({
+    model = ResponsesChatStub([[response_message(json.dumps({
         "rankings": {program_id: assessment for program_id in captured_ids},
     }, ensure_ascii=False))]])
     agent = SupportProgramRecommendationAgent(
-        model=model, model_timeout_seconds=3.0, run_timeout_seconds=4.0,
+        model=model.model, model_timeout_seconds=3.0, run_timeout_seconds=4.0,
     )
 
     with pytest.raises(AgentExecutionError) as captured:
         await agent.rank(SupportProgramRankingRequest.model_validate(request))
 
-    assert isinstance(captured.value.__cause__, ModelBehaviorError)
-    schema = rankings_schema(model.first_call.output_schema.json_schema())
+    assert isinstance(captured.value.__cause__, ValidationError)
+    schema = rankings_schema(model.first_call.schema)
     assert schema["required"] == expected_ids
     assert len(model.calls) == 1
 
@@ -433,9 +432,9 @@ async def test_actual_capture_duplicate_pattern_cannot_satisfy_all_required_keys
 async def test_rejects_unrequested_keys_and_internal_field_names(unexpected_id: str) -> None:
     output = llm_output()
     output["rankings"][unexpected_id] = output["rankings"]["BIZINFO:program-1"]
-    model = ScriptedModel([[assistant_message(json.dumps(output, ensure_ascii=False))]])
+    model = ResponsesChatStub([[response_message(json.dumps(output, ensure_ascii=False))]])
     agent = SupportProgramRecommendationAgent(
-        model=model, model_timeout_seconds=3.0, run_timeout_seconds=4.0,
+        model=model.model, model_timeout_seconds=3.0, run_timeout_seconds=4.0,
     )
 
     with pytest.raises(AgentExecutionError):
@@ -452,17 +451,17 @@ async def test_preserves_qualified_ids_and_request_order_for_keyed_output() -> N
     request["candidates"][0]["id"] = first_id
     request["candidates"][1]["id"] = second_id
     assessment = llm_output()["rankings"]["BIZINFO:program-1"]
-    model = ScriptedModel([[assistant_message(json.dumps({
+    model = ResponsesChatStub([[response_message(json.dumps({
         "rankings": {second_id: assessment, first_id: assessment},
     }, ensure_ascii=False))]])
     agent = SupportProgramRecommendationAgent(
-        model=model, model_timeout_seconds=3.0, run_timeout_seconds=4.0,
+        model=model.model, model_timeout_seconds=3.0, run_timeout_seconds=4.0,
     )
 
     result = await agent.rank(SupportProgramRankingRequest.model_validate(request))
 
     assert [item.program_id for item in result.rankings] == [first_id, second_id]
-    assert rankings_schema(model.first_call.output_schema.json_schema())["required"] == [first_id, second_id]
+    assert rankings_schema(model.first_call.schema)["required"] == [first_id, second_id]
 
 
 def test_internal_output_still_rejects_duplicate_ids() -> None:
@@ -497,9 +496,9 @@ def test_internal_output_still_rejects_duplicate_ids() -> None:
 async def test_rejects_invalid_assessments_without_normalizing_judgments_or_retrying(mutation) -> None:
     output = llm_output()
     mutation(output["rankings"]["BIZINFO:program-1"])
-    model = ScriptedModel([[assistant_message(json.dumps(output, ensure_ascii=False))]])
+    model = ResponsesChatStub([[response_message(json.dumps(output, ensure_ascii=False))]])
     agent = SupportProgramRecommendationAgent(
-        model=model,
+        model=model.model,
         model_timeout_seconds=3.0,
         run_timeout_seconds=4.0,
     )
@@ -507,7 +506,7 @@ async def test_rejects_invalid_assessments_without_normalizing_judgments_or_retr
     with pytest.raises(AgentExecutionError) as captured:
         await agent.rank(ranking_request())
 
-    assert isinstance(captured.value.__cause__, ModelBehaviorError)
+    assert isinstance(captured.value.__cause__, ValidationError)
     assert len(model.calls) == 1
 
 
@@ -516,9 +515,9 @@ async def test_rejects_invalid_assessments_without_normalizing_judgments_or_retr
 async def test_preserves_incompatible_judgment_without_eligibility_score(dimension: str) -> None:
     output = llm_output()
     output["rankings"]["BIZINFO:program-1"][dimension].update(eligibility="INCOMPATIBLE")
-    model = ScriptedModel([[assistant_message(json.dumps(output, ensure_ascii=False))]])
+    model = ResponsesChatStub([[response_message(json.dumps(output, ensure_ascii=False))]])
     agent = SupportProgramRecommendationAgent(
-        model=model,
+        model=model.model,
         model_timeout_seconds=3.0,
         run_timeout_seconds=4.0,
     )
@@ -542,9 +541,9 @@ def test_assessment_keeps_existing_reason_normalization() -> None:
 
 @pytest.mark.anyio
 async def test_turns_invalid_structured_output_into_boundary_error() -> None:
-    model = ScriptedModel([[assistant_message("not-json")]])
+    model = ResponsesChatStub([[response_message("not-json")]])
     agent = SupportProgramRecommendationAgent(
-        model=model,
+        model=model.model,
         model_timeout_seconds=1.0,
         run_timeout_seconds=2.0,
     )
@@ -552,7 +551,7 @@ async def test_turns_invalid_structured_output_into_boundary_error() -> None:
     with pytest.raises(AgentExecutionError) as captured:
         await agent.rank(ranking_request())
 
-    assert isinstance(captured.value.__cause__, ModelBehaviorError)
+    assert isinstance(captured.value.__cause__, ValidationError)
     assert captured.value.reason_code is AgentFailureCode.MODEL_OUTPUT_INVALID_JSON
 
 
@@ -562,25 +561,25 @@ async def test_unexpected_final_output_has_a_fixed_diagnostic_code(monkeypatch):
     from unittest.mock import AsyncMock
     import app.support_program_ranking.agent as agent_module
 
-    run = AsyncMock(return_value=SimpleNamespace(final_output="private malformed output"))
-    monkeypatch.setattr(agent_module.Runner, "run", run)
+    run = AsyncMock(return_value=SimpleNamespace())
+    monkeypatch.setattr(agent_module, "invoke_support_program_model", run)
     agent = SupportProgramRecommendationAgent(
-        model=ScriptedModel([]), model_timeout_seconds=1, run_timeout_seconds=2,
+        model=ResponsesChatStub([]).model, model_timeout_seconds=1, run_timeout_seconds=2,
     )
     with pytest.raises(AgentExecutionError) as captured:
         await agent.rank(ranking_request())
-    assert captured.value.reason_code is AgentFailureCode.UNEXPECTED_OUTPUT_TYPE
+    assert captured.value.reason_code is AgentFailureCode.EXECUTION_FAILED
     assert "private" not in str(captured.value)
     run.assert_awaited_once()
 
 
 @pytest.mark.anyio
 async def test_limits_ranking_to_one_model_turn() -> None:
-    model = ScriptedModel(
-        [[], [assistant_message(llm_output_json())]]
+    model = ResponsesChatStub(
+        [[], [response_message(llm_output_json())]]
     )
     agent = SupportProgramRecommendationAgent(
-        model=model,
+        model=model.model,
         model_timeout_seconds=1.0,
         run_timeout_seconds=2.0,
     )
@@ -588,7 +587,7 @@ async def test_limits_ranking_to_one_model_turn() -> None:
     with pytest.raises(AgentExecutionError) as captured:
         await agent.rank(ranking_request())
 
-    assert isinstance(captured.value.__cause__, MaxTurnsExceeded)
+    assert isinstance(captured.value.__cause__, ValueError)
     assert len(model.calls) == 1
 
 
@@ -598,9 +597,9 @@ async def test_enforces_whole_ranking_deadline() -> None:
         await asyncio.Event().wait()
         return []
 
-    model = ScriptedModel([ModelStep.respond(hang_forever)])
+    model = ResponsesChatStub([(hang_forever)])
     agent = SupportProgramRecommendationAgent(
-        model=model,
+        model=model.model,
         model_timeout_seconds=1.0,
         run_timeout_seconds=0.01,
     )
@@ -613,15 +612,14 @@ async def test_enforces_whole_ranking_deadline() -> None:
 
 @pytest.mark.anyio
 async def test_model_deadline_is_classified_as_timeout_without_a_second_call():
-    from agents import ModelTimeoutError
     async def hang_forever(_):
         await asyncio.Event().wait()
         return []
-    model = ScriptedModel([ModelStep.respond(hang_forever)])
-    agent = SupportProgramRecommendationAgent(model=model, model_timeout_seconds=0.01, run_timeout_seconds=1)
+    model = ResponsesChatStub([(hang_forever)])
+    agent = SupportProgramRecommendationAgent(model=model.model, model_timeout_seconds=0.1, run_timeout_seconds=1)
     with pytest.raises(AgentTimeoutError) as captured:
         await agent.rank(ranking_request())
-    assert isinstance(captured.value.__cause__, ModelTimeoutError)
+    assert isinstance(captured.value.__cause__, TimeoutError)
     assert len(model.calls) == 1
 
 
@@ -635,7 +633,7 @@ async def test_http_timeout_is_classified_without_retries():
     client = AsyncOpenAI(api_key="test-key", timeout=25, max_retries=0,
                          http_client=httpx2.AsyncClient(transport=httpx2.MockTransport(handler)))
     agent = SupportProgramRecommendationAgent(
-        model=OpenAIResponsesModel(model="gpt-5.6-luna", openai_client=client),
+        model=chat_model(model="gpt-5.6-luna", openai_client=client),
         model_timeout_seconds=45, run_timeout_seconds=50,
     )
     try:
@@ -662,7 +660,7 @@ async def test_ranking_http_override_does_not_change_shared_client_for_other_age
         return httpx2.Response(200, json=responses_body(outputs.pop(0)))
     client = AsyncOpenAI(api_key="test-key", timeout=25, max_retries=0,
                          http_client=httpx2.AsyncClient(transport=httpx2.MockTransport(handler)))
-    model = OpenAIResponsesModel(model="gpt-5.6-luna", openai_client=client)
+    model = chat_model(model="gpt-5.6-luna", openai_client=client)
     ranking = SupportProgramRecommendationAgent(model=model, model_timeout_seconds=45, run_timeout_seconds=50)
     conversation = SupportProgramConversationAgent(model=model, model_timeout_seconds=25, run_timeout_seconds=30)
     evidence = SupportProgramEvidenceAnswerAgent(model=model, model_timeout_seconds=25, run_timeout_seconds=30)
@@ -738,7 +736,7 @@ async def test_openai_request_uses_non_stored_strict_structured_output(candidate
         timeout=25,
     )
     agent = SupportProgramRecommendationAgent(
-        model=OpenAIResponsesModel(
+        model=chat_model(
             model=model_name,
             openai_client=openai_client,
         ),
@@ -827,7 +825,7 @@ async def test_openai_request_uses_non_stored_strict_structured_output(candidate
         "type": "string", "minLength": 1, "maxLength": 120,
     }
     assert "SupportProgramEligibilityEvidence" not in schema["$defs"]
-    payload = json.loads(request_body["input"][0]["content"])
+    payload = json.loads(user_payload(request_body))
     for candidate in payload["candidates"]:
         assert candidate["evidenceOptions"] == [
             {"index": 0, "field": "SUMMARY", "quote": candidate["summary"]},
@@ -858,7 +856,7 @@ async def test_sdk_serializes_twenty_distinct_candidate_local_selection_schemas(
         http_client=httpx2.AsyncClient(transport=httpx2.MockTransport(handle_http)),
     )
     agent = SupportProgramRecommendationAgent(
-        model=OpenAIResponsesModel(model="gpt-5.6-luna", openai_client=client),
+        model=chat_model(model="gpt-5.6-luna", openai_client=client),
         model_timeout_seconds=45, run_timeout_seconds=50,
     )
     try:
@@ -873,7 +871,7 @@ async def test_sdk_serializes_twenty_distinct_candidate_local_selection_schemas(
     keyed_schema = rankings_schema(schema)
     assert keyed_schema["required"] == [candidate.id for candidate in request.candidates]
     assert keyed_schema["additionalProperties"] is False
-    sent = json.loads(wire["input"][0]["content"])
+    sent = json.loads(user_payload(wire))
     for count, (candidate, restored) in enumerate(zip(sent["candidates"], output.rankings, strict=True)):
         assert len(candidate["evidenceOptions"]) == count
         assert candidate["summary"] == request.candidates[count].summary
@@ -898,12 +896,15 @@ async def test_sdk_serializes_twenty_distinct_candidate_local_selection_schemas(
 
 
 @pytest.mark.anyio
+@pytest.mark.parametrize("service_tier", [None, "default", "priority", "flex"])
 @pytest.mark.parametrize("with_usage", [True, False])
-async def test_logs_actual_sdk_token_usage_without_request_or_evidence_text(caplog, with_usage):
+async def test_logs_actual_sdk_token_usage_without_request_or_evidence_text(caplog, with_usage, service_tier):
     import logging
 
     def handler(request):
         body = responses_body(llm_output_json())
+        if service_tier is not None:
+            body["service_tier"] = service_tier
         if with_usage:
             body["usage"] = {
                 "input_tokens": 1500, "output_tokens": 240, "total_tokens": 1740,
@@ -915,7 +916,7 @@ async def test_logs_actual_sdk_token_usage_without_request_or_evidence_text(capl
     client = AsyncOpenAI(api_key="secret-test-key", max_retries=0,
                          http_client=httpx2.AsyncClient(transport=httpx2.MockTransport(handler)))
     agent = SupportProgramRecommendationAgent(
-        model=OpenAIResponsesModel(model="test-model", openai_client=client),
+        model=chat_model(model="test-model", openai_client=client),
         model_timeout_seconds=3, run_timeout_seconds=4,
     )
     request = ranking_request()
@@ -933,6 +934,7 @@ async def test_logs_actual_sdk_token_usage_without_request_or_evidence_text(capl
     else:
         assert "usage_reported=False" in model_log
         assert "input_tokens=None" in model_log and "output_tokens=None" in model_log
+        assert "cached_input_tokens=None" in model_log and "reasoning_tokens=None" in model_log
     assert "secret-test-key" not in caplog.text
     assert request.original_query not in caplog.text
     assert request.candidates[0].summary not in caplog.text
@@ -943,8 +945,8 @@ async def test_logs_actual_sdk_token_usage_without_request_or_evidence_text(capl
 async def test_failed_ranking_logs_duration_without_raw_model_output(caplog):
     import logging
 
-    model = ScriptedModel([[assistant_message("private malformed output")]])
-    agent = SupportProgramRecommendationAgent(model=model, model_timeout_seconds=3, run_timeout_seconds=4)
+    model = ResponsesChatStub([[response_message("private malformed output")]])
+    agent = SupportProgramRecommendationAgent(model=model.model, model_timeout_seconds=3, run_timeout_seconds=4)
     with caplog.at_level(logging.INFO, logger="app.support_program_ranking.agent"):
         with pytest.raises(AgentExecutionError):
             await agent.rank(ranking_request())
@@ -960,14 +962,14 @@ async def test_failed_ranking_logs_duration_without_raw_model_output(caplog):
     ("UNKNOWN", [], True), ("UNKNOWN", [0], True),
 ])
 def test_model_json_schema_enforces_known_eligibility_evidence_before_runtime_validation(dimension, eligibility, evidence, accepted):
-    from agents import AgentOutputSchema
+    from openai import pydantic_function_tool
     from jsonschema import Draft202012Validator
     from app.support_program_ranking.agent import _assessment_selection_type
 
     selection = llm_output()["rankings"]["BIZINFO:program-1"]
     selection[dimension].update(eligibility=eligibility, evidence=evidence)
     output_type = _assessment_selection_type(2)
-    schema = AgentOutputSchema(output_type).json_schema()
+    schema = pydantic_function_tool(output_type)["function"]["parameters"]
     assert Draft202012Validator(schema).is_valid(selection) is accepted
     if accepted:
         output_type.model_validate_json(json.dumps(selection), strict=True)
@@ -978,14 +980,14 @@ def test_model_json_schema_enforces_known_eligibility_evidence_before_runtime_va
 
 @pytest.mark.parametrize("reason,accepted", [("한", True), ("한" * 120, True), ("한" * 121, False), ("", False)])
 def test_model_json_schema_bounds_each_recommendation_reason(reason, accepted):
-    from agents import AgentOutputSchema
+    from openai import pydantic_function_tool
     from jsonschema import Draft202012Validator
     from app.support_program_ranking.agent import _assessment_selection_type
 
     selection = llm_output()["rankings"]["BIZINFO:program-1"]
     selection["recommendationReasons"] = [reason]
     output_type = _assessment_selection_type(2)
-    assert Draft202012Validator(AgentOutputSchema(output_type).json_schema()).is_valid(selection) is accepted
+    assert Draft202012Validator(pydantic_function_tool(output_type)["function"]["parameters"]).is_valid(selection) is accepted
     if accepted:
         output_type.model_validate_json(json.dumps(selection), strict=True)
     else:
@@ -1018,8 +1020,8 @@ async def test_validation_diagnostics_keep_only_allowlisted_types_and_fields(cap
     elif failure == "control":
         selection["targetAssessment"]["explanation"] = "private-explanation\nprivate-tail"
     output = "private malformed JSON" if failure == "json" else json.dumps({"rankings": {private_id: selection}})
-    model = ScriptedModel([[assistant_message(output)]])
-    agent = SupportProgramRecommendationAgent(model=model, model_timeout_seconds=3, run_timeout_seconds=4)
+    model = ResponsesChatStub([[response_message(output)]])
+    agent = SupportProgramRecommendationAgent(model=model.model, model_timeout_seconds=3, run_timeout_seconds=4)
     request = ranking_request().model_copy(update={
         "original_query": "private-query",
         "candidates": [ranking_request().candidates[0].model_copy(update={"id": private_id})],
@@ -1028,7 +1030,7 @@ async def test_validation_diagnostics_keep_only_allowlisted_types_and_fields(cap
         with pytest.raises(AgentExecutionError) as captured:
             await agent.rank(request)
     assert captured.value.reason_code is expected_code
-    assert isinstance(captured.value.__cause__, ModelBehaviorError)
+    assert isinstance(captured.value.__cause__, ValidationError)
     assert captured.value.__cause__.__cause__ is None
     assert captured.value.__cause__.__context__ is None
     assert len(model.calls) == 1
@@ -1044,7 +1046,6 @@ async def test_validation_diagnostics_keep_only_allowlisted_types_and_fields(cap
 
 @pytest.mark.anyio
 async def test_concurrent_rankings_keep_validation_diagnostics_per_request():
-    from agents.testing import ModelStep
 
     both_entered = asyncio.Event()
     entered = 0
@@ -1057,10 +1058,10 @@ async def test_concurrent_rankings_keep_validation_diagnostics_per_request():
         await both_entered.wait()
         query = json.loads(call.input[0]["content"])["originalQuery"]
         output = "{" if query == "first" else '{"rankings":{}}'
-        return [assistant_message(output)]
+        return [response_message(output)]
 
-    model = ScriptedModel([ModelStep.respond(respond), ModelStep.respond(respond)])
-    agent = SupportProgramRecommendationAgent(model=model, model_timeout_seconds=3, run_timeout_seconds=4)
+    model = ResponsesChatStub([(respond), (respond)])
+    agent = SupportProgramRecommendationAgent(model=model.model, model_timeout_seconds=3, run_timeout_seconds=4)
     results = await asyncio.gather(
         agent.rank(ranking_request().model_copy(update={"original_query": "first"})),
         agent.rank(ranking_request().model_copy(update={"original_query": "second"})),
@@ -1069,15 +1070,15 @@ async def test_concurrent_rankings_keep_validation_diagnostics_per_request():
     assert [result.reason_code for result in results] == [
         AgentFailureCode.MODEL_OUTPUT_INVALID_JSON, AgentFailureCode.MODEL_OUTPUT_SCHEMA_MISMATCH,
     ]
-    assert all(isinstance(result.__cause__, ModelBehaviorError) for result in results)
-    assert agent._agent.output_type is None
+    assert all(isinstance(result.__cause__, ValidationError) for result in results)
+    assert "response_format" not in agent._model.kwargs
     assert len(model.calls) == 2
 
 
 @pytest.mark.anyio
 @pytest.mark.parametrize("founded_year", [2020, 2021])
 async def test_target_guidance_and_registered_conditions_reach_model_without_overriding_unknown(founded_year) -> None:
-    # 전송·응답 계약 검증이다. ScriptedModel의 판정을 실제 모델 품질로 간주하지 않는다.
+    # 전송·응답 계약 검증이다. ResponsesChatStub의 판정을 실제 모델 품질로 간주하지 않는다.
     payload = ranking_request().model_dump(by_alias=True)
     payload["companyConditions"] = {
         "region": "서울특별시", "industry": "정보통신업", "foundedYear": founded_year,
@@ -1091,8 +1092,8 @@ async def test_target_guidance_and_registered_conditions_reach_model_without_ove
     selection["rankings"]["BIZINFO:program-1"]["regionAssessment"].update(
         eligibility="UNKNOWN", evidence=[], explanation="본문에 소재지 제한이 명시되어 있지 않습니다.",
     )
-    model = ScriptedModel([[assistant_message(json.dumps(selection, ensure_ascii=False))]])
-    agent = SupportProgramRecommendationAgent(model=model, model_timeout_seconds=3, run_timeout_seconds=4)
+    model = ResponsesChatStub([[response_message(json.dumps(selection, ensure_ascii=False))]])
+    agent = SupportProgramRecommendationAgent(model=model.model, model_timeout_seconds=3, run_timeout_seconds=4)
 
     result = await agent.rank(SupportProgramRankingRequest.model_validate(payload))
 
@@ -1101,7 +1102,7 @@ async def test_target_guidance_and_registered_conditions_reach_model_without_ove
     assert sent["companyConditions"]["foundedYear"] == founded_year
     assert sent["companyConditions"]["industry"] == "정보통신업"
     assert "지원 대상의 필수 요건·대안:" in call.system_instructions
-    schema = call.output_schema.json_schema()
+    schema = call.schema
     candidate_ref = rankings_schema(schema)["properties"]["BIZINFO:program-1"]["$ref"]
     description = schema["$defs"][candidate_ref.split("/")[-1]]["properties"]["targetAssessment"]["description"]
     assert "우대이지 필수 직원 수가 아니므로" in description

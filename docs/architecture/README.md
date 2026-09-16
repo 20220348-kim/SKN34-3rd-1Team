@@ -321,7 +321,7 @@ Router의 `Depends` 함수는 여기서 해당 Service를 꺼내 endpoint에 전
 ### 점수화 모듈의 책임 분리
 
 ```text
-HTTP API → Router → Ranking Service → Recommendation Agent → OpenAI
+HTTP API → Router → Ranking Service → Recommendation Agent → LangChain → OpenAI
                          ↑                     ↓
                          └── 구조화된 출력 ─────┘
                          ↓
@@ -330,7 +330,7 @@ HTTP API → Router → Ranking Service → Recommendation Agent → OpenAI
 
 `router.py`는 HTTP 요청·응답과 안전한 오류 변환을, `models.py`는 Pydantic 요청·출력 스키마와
 점수 합계 등의 불변식을 담당합니다. `prompt.py`는 LLM에 전달할 평가 지시를 담고, `agent.py`는
-Agents SDK 실행·제한시간·모델 오류 처리를 맡습니다. `service.py`는 모든 후보가 빠짐없이 점수화되었는지
+LangChain 프롬프트 체인 실행·제한시간·모델 오류 처리를 맡습니다. `service.py`는 모든 후보가 빠짐없이 점수화되었는지
 검증하고 `2 × (의미 관련성 + 지원 유형 관련성)`으로 관련도를 계산한 뒤 정렬·의미 최소 기준·자격 필터를 적용합니다.
 v5에서는 자격 `UNKNOWN`을 관련도와 분리해 확인 필요로 표시하며, MATCH를 무조건 앞세우지 않습니다.
 
@@ -343,13 +343,13 @@ v5에서는 자격 `UNKNOWN`을 관련도와 분리해 확인 필요로 표시�
 중복 지원 검토는 `Router → CombinationReviewService → CombinationReviewAgent → LangChain ChatOpenAI → OpenAI Responses API`를 사용합니다.
 LangChain 메시지와 실행 객체는 Agent 내부에 두고 기존 Pydantic 결과를 Service에 반환합니다.
 Service가 인용·사업쌍·단계를 검증하며, `bootstrap.py`가 모델과 제한 시간·재시도 설정을 연결합니다.
-신청 문서 등 다른 기능의 Agents SDK 호출은 유지합니다.
+신청 문서도 LangChain을 사용하며, 도우미 자유 질문 분류는 Agents SDK를 유지합니다.
 
 색인·검색은 `HTTP API → Router → Index Service → OpenAI 임베딩·Qdrant → Response` 흐름입니다.
 `support_program_index/service.py`가 문서 버전 확인·임베딩 생성·Qdrant 저장·검색을 직접 수행합니다.
 기업마당 수집이나 MySQL 조회는 Core가 맡으며 AI Service는 전달받은 문서·ID·해시를 사용합니다.
 
-업무 Agent는 조건 변경 해석·후보 점수화·원문 근거 답변용 세 개입니다. 임베딩과 벡터 검색을 별도 Agent로 구성하지 않았으며,
-tool·handoff·graph 없이 각 Agent를 `max_turns=1`로 실행합니다. 실행 설정은
+검색 관련 Agent는 조건 변경 해석·후보 점수화·원문 근거 답변용 세 개입니다. 임베딩과 벡터 검색을 별도 Agent로 구성하지 않았으며,
+이 세 Agent는 tool·handoff·graph 없이 각 LangChain 체인에서 LLM을 한 번 호출합니다. 실행 설정은
 [AI Service README](../../backend/ai-service/README.md), Agent 추가 기준과 테스트 배치는
 [Agent 모듈 구조](../../backend/ai-service/docs/agent-structure.md)를 참고하세요.

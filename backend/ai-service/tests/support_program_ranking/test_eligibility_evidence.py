@@ -1,7 +1,7 @@
 import json
 
 import pytest
-from agents.testing import ScriptedModel, assistant_message
+from tests.langchain_stub import ResponsesChatStub, response_message
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
@@ -163,9 +163,9 @@ async def test_scripted_funding_type_does_not_override_unrequested_activity_with
     for index, semantic in ((1, 19), (2, 30)):
         value = assessment(index, target="UNKNOWN", region="UNKNOWN", semantic=semantic)
         selections[value.program_id] = value.model_dump(by_alias=True, exclude={"program_id"})
-    model = ScriptedModel([[assistant_message(json.dumps({"rankings": selections}, ensure_ascii=False))]])
+    model = ResponsesChatStub([[response_message(json.dumps({"rankings": selections}, ensure_ascii=False))]])
     result = await SupportProgramRankingService(SupportProgramRecommendationAgent(
-        model=model, model_timeout_seconds=3, run_timeout_seconds=4,
+        model=model.model, model_timeout_seconds=3, run_timeout_seconds=4,
     )).rank(request)
     assert [item.program_id for item in result.rankings] == ["BIZINFO:program-2"]
     assert result.rankings[0].total_score == 80
@@ -193,8 +193,8 @@ async def test_nationwide_tag_does_not_override_gyeongbuk_relocation_uncertainty
         "evidence": [{"field": "SUMMARY", "quote": "경북 소재 중소기업 또는 선정 후 경북 이전 확약 기업"}],
         "explanation": "서울 기업이므로 선정 후 경북 이전 확약 가능 여부를 확인해야 합니다.",
     })
-    model = ScriptedModel([[assistant_message(selection_json(expected, request))]])
-    agent = SupportProgramRecommendationAgent(model=model, model_timeout_seconds=3, run_timeout_seconds=4)
+    model = ResponsesChatStub([[response_message(selection_json(expected, request))]])
+    agent = SupportProgramRecommendationAgent(model=model.model, model_timeout_seconds=3, run_timeout_seconds=4)
     result = await SupportProgramRankingService(agent).rank(request)
     assert len(result.rankings) == 1
     assert result.rankings[0].region_eligibility.value == "UNKNOWN"
@@ -222,7 +222,7 @@ async def test_explicit_regional_conflict_remains_excluded_despite_nationwide_ta
 @pytest.mark.anyio
 @pytest.mark.parametrize("company_conditions", [False, True])
 async def test_actual_conditional_relocation_or_expansion_phrase_preserves_both_unknowns(company_conditions):
-    # 실제 보고 문구의 전달·인용·UNKNOWN 보존 회귀이며, ScriptedModel은 의미 품질을 평가하지 않는다.
+    # 실제 보고 문구의 전달·인용·UNKNOWN 보존 회귀이며, ResponsesChatStub은 의미 품질을 평가하지 않는다.
     industry_clause = "첨단소재부품산업 관련 중소·중견기업"
     conditional_clause = "지원기간 내 경상북도 지역으로 사업장 이전(또는 확장) 확약기업 신청 가능"
     source = f"{industry_clause}. {conditional_clause}"
@@ -237,8 +237,8 @@ async def test_actual_conditional_relocation_or_expansion_phrase_preserves_both_
         "evidence": [{"field": "SUMMARY", "quote": conditional_clause}],
         "explanation": "지원기간 내 경상북도 사업장 이전 또는 확장 확약 가능 여부와 적용 조건을 확인해야 합니다.",
     })
-    model = ScriptedModel([[assistant_message(selection_json(expected, request))]])
-    agent = SupportProgramRecommendationAgent(model=model, model_timeout_seconds=3, run_timeout_seconds=4)
+    model = ResponsesChatStub([[response_message(selection_json(expected, request))]])
+    agent = SupportProgramRecommendationAgent(model=model.model, model_timeout_seconds=3, run_timeout_seconds=4)
     result = await SupportProgramRankingService(agent).rank(request)
     assert len(result.rankings) == 1
     ranking = result.rankings[0]

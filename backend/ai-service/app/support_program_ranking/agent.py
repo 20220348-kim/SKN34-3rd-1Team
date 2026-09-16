@@ -1,26 +1,19 @@
 import asyncio
-import json
 import logging
 from functools import lru_cache
 from time import perf_counter
 from typing import Annotated, Literal
 from unicodedata import category
 
-from agents import (
-    Agent,
-    AgentOutputSchema,
-    MaxTurnsExceeded,
-    Model,
-    ModelBehaviorError,
-    ModelRefusalError,
-    ModelSettings,
-    ModelTimeoutError,
-    RunConfig,
-    Runner,
-)
+from langchain_openai import ChatOpenAI
 from openai import APITimeoutError, OpenAIError
-from openai.types.shared import Reasoning
 from pydantic import ConfigDict, Field, ValidationError, create_model
+
+from app.support_program_llm import (
+    get_support_program_usage_details,
+    invoke_support_program_model,
+    validate_support_program_output,
+)
 
 from app.support_program_ranking.errors import AgentExecutionError, AgentFailureCode, AgentTimeoutError
 
@@ -155,45 +148,31 @@ def _assessment_selection_type(option_count: int) -> type[SupportProgramAssessme
     )
 
 
-class _RankingOutputSchema(AgentOutputSchema):
-    """SDK의 민감 정보 제거를 유지하며 랭킹 출력 검증 실패를 고정된 진단 값으로 분류한다."""
-
-    def __init__(self, output_type: type) -> None:
-        super().__init__(output_type)
-        self.failure_code: AgentFailureCode | None = None
-
-    def validate_json(self, json_str: str):
-        try:
-            return super().validate_json(json_str)
-        except ModelBehaviorError:
-            # SDK가 원래 ValidationError cause를 제거하므로 실패한 경우에만 재검증한다.
-            # 기존 SDK 예외를 그대로 전달하며 원문·검증 메시지·전체 loc는 기록하지 않는다.
-            try:
-                self.output_type.model_validate_json(json_str, strict=True)
-            except ValidationError as error:
-                errors = error.errors(include_input=False, include_context=False, include_url=False)
-                allowed_types = {
-                    "json_invalid", "missing", "extra_forbidden", "literal_error", "int_type",
-                    "greater_than_equal", "less_than_equal", "too_short", "too_long",
-                    "string_too_short", "string_too_long", "string_type", "list_type",
-                    "dict_type", "model_type", "value_error",
-                }
-                allowed_fields = {
-                    "rankings", "semanticRelevance", "targetAssessment", "regionAssessment",
-                    "eligibility", "evidence", "explanation", "supportTypeFit", "recommendationReasons",
-                }
-                types = {item["type"] if item["type"] in allowed_types else "other" for item in errors}
-                fields = {part for item in errors for part in item["loc"]
-                          if isinstance(part, str) and part in allowed_fields}
-                self.failure_code = (
-                    AgentFailureCode.MODEL_OUTPUT_INVALID_JSON if "json_invalid" in types
-                    else AgentFailureCode.MODEL_OUTPUT_SCHEMA_MISMATCH
-                )
-                logger.warning(
-                    "support_program_ranking_output_invalid reason_code=%s validation_types=%s validation_fields=%s",
-                    self.failure_code.value, ",".join(sorted(types)), ",".join(sorted(fields)) or "none",
-                )
-            raise
+def _output_failure_code(error: ValidationError) -> AgentFailureCode:
+    """검증 메시지·공고 ID·원문을 기록하지 않고 고정 진단 코드만 반환한다."""
+    errors = error.errors(include_input=False, include_context=False, include_url=False)
+    allowed_types = {
+        "json_invalid", "missing", "extra_forbidden", "literal_error", "int_type",
+        "greater_than_equal", "less_than_equal", "too_short", "too_long",
+        "string_too_short", "string_too_long", "string_type", "list_type",
+        "dict_type", "model_type", "value_error",
+    }
+    allowed_fields = {
+        "rankings", "semanticRelevance", "targetAssessment", "regionAssessment",
+        "eligibility", "evidence", "explanation", "supportTypeFit", "recommendationReasons",
+    }
+    types = {item["type"] if item["type"] in allowed_types else "other" for item in errors}
+    fields = {part for item in errors for part in item["loc"]
+              if isinstance(part, str) and part in allowed_fields}
+    failure_code = (
+        AgentFailureCode.MODEL_OUTPUT_INVALID_JSON if "json_invalid" in types
+        else AgentFailureCode.MODEL_OUTPUT_SCHEMA_MISMATCH
+    )
+    logger.warning(
+        "support_program_ranking_output_invalid reason_code=%s validation_types=%s validation_fields=%s",
+        failure_code.value, ",".join(sorted(types)), ",".join(sorted(fields)) or "none",
+    )
+    return failure_code
 
 
 class SupportProgramRecommendationAgent:
@@ -202,7 +181,7 @@ class SupportProgramRecommendationAgent:
     def __init__(
         self,
         *,
-        model: Model,
+        model: ChatOpenAI,
         model_timeout_seconds: float,
         run_timeout_seconds: float,
         reasoning_effort: Literal["none", "low"] = "none",
@@ -212,26 +191,14 @@ class SupportProgramRecommendationAgent:
             raise ValueError("ranking reasoning effort must be none or low")
         if service_tier not in (None, "default", "priority"):
             raise ValueError("ranking service tier must be default or priority")
+        self._instructions = SUPPORT_PROGRAM_RANKING_INSTRUCTIONS
         self._run_timeout_seconds = run_timeout_seconds
-        self._agent: Agent[None] = Agent(
-            name="GovBiz Support Program Recommendation Scorer",
-            instructions=SUPPORT_PROGRAM_RANKING_INSTRUCTIONS,
-            model=model,
-            model_settings=ModelSettings(
-                max_tokens=10_000,
-                reasoning=Reasoning(effort=reasoning_effort),
-                store=False,
-                timeout=model_timeout_seconds,
-                # The SDK model deadline and the OpenAI HTTP timeout are separate.
-                # Override only this request; the shared client keeps its 25s default.
-                extra_args={"timeout": model_timeout_seconds,
-                            **({"service_tier": service_tier} if service_tier is not None else {})},
-            ),
-        )
-        self._run_config = RunConfig(
-            workflow_name="GovBiz support program recommendation ranking",
-            tracing_disabled=True,
-            trace_include_sensitive_data=False,
+        self._model_timeout_seconds = model_timeout_seconds
+        self._model = model.bind(
+            max_tokens=10_000, store=False,
+            reasoning={"effort": reasoning_effort},
+            timeout=model_timeout_seconds,
+            **({"service_tier": service_tier} if service_tier is not None else {}),
         )
 
     async def rank(
@@ -257,11 +224,9 @@ class SupportProgramRecommendationAgent:
             rankings=(rankings_type, ...),
         )
         # 모든 후보 ID를 필수 속성 키로 고정해 배열의 ID 누락·중복·추가 생성을 막는다.
-        instructions = self._agent.instructions
+        instructions = self._instructions
         if request.company_conditions is not None:
             instructions = f"{instructions}\n\n{SUPPORT_PROGRAM_COMPANY_CONDITIONS_INSTRUCTIONS}"
-        output_schema = _RankingOutputSchema(output_type)
-        agent = self._agent.clone(output_type=output_schema, instructions=instructions)
         payload = request.model_dump(mode="json", by_alias=True)
         for candidate in payload["candidates"]:
             candidate["evidenceOptions"] = [
@@ -271,32 +236,25 @@ class SupportProgramRecommendationAgent:
         prepared = perf_counter()
         try:
             async with asyncio.timeout(self._run_timeout_seconds):
-                result = await Runner.run(
-                    agent,
-                    json.dumps(payload, ensure_ascii=False),
-                    max_turns=1,
-                    run_config=self._run_config,
+                result = await invoke_support_program_model(
+                    self._model, instructions=instructions, payload=payload,
+                    output_type=output_type, timeout_seconds=self._model_timeout_seconds,
                 )
-        except (ModelTimeoutError, APITimeoutError, TimeoutError) as error:
+                output = validate_support_program_output(result, output_type)
+        except (APITimeoutError, TimeoutError) as error:
             logger.info(
                 "support_program_ranking_model_failed outcome=timeout candidate_count=%d model_ms=%d",
                 candidate_count, round((perf_counter() - prepared) * 1000),
             )
             raise AgentTimeoutError("Support program recommendation agent timed out") from error
-        except (
-            MaxTurnsExceeded,
-            ModelBehaviorError,
-            ModelRefusalError,
-            OpenAIError,
-            ValidationError,
-        ) as error:
+        except (OpenAIError, ValueError) as error:
             logger.info(
                 "support_program_ranking_model_failed outcome=failed candidate_count=%d model_ms=%d",
                 candidate_count, round((perf_counter() - prepared) * 1000),
             )
             raise AgentExecutionError(
                 "Support program recommendation agent did not produce a usable result",
-                reason_code=output_schema.failure_code or AgentFailureCode.EXECUTION_FAILED,
+                reason_code=_output_failure_code(error) if isinstance(error, ValidationError) else AgentFailureCode.EXECUTION_FAILED,
             ) from error
         except asyncio.CancelledError:
             logger.info(
@@ -306,24 +264,19 @@ class SupportProgramRecommendationAgent:
             raise
 
         model_finished = perf_counter()
-        # SDK가 수집한 사용량만 기록한다. 사용량 없는 응답은 0 토큰으로 오인하지 않는다.
-        usage = getattr(getattr(result, "context_wrapper", None), "usage", None)
-        usage_reported = usage is not None and bool(usage.request_usage_entries)
+        # LangChain 응답에 포함된 실제 사용량만 기록한다. 사용량 없는 응답은 0 토큰으로 오인하지 않는다.
+        usage = result.usage_metadata
+        usage_reported = usage is not None
+        cached_input_tokens, reasoning_tokens = get_support_program_usage_details(usage)
         logger.info(
             "support_program_ranking_model_completed candidate_count=%d model_ms=%d usage_reported=%s "
             "input_tokens=%s output_tokens=%s cached_input_tokens=%s reasoning_tokens=%s",
             candidate_count, round((model_finished - prepared) * 1000), usage_reported,
-            usage.input_tokens if usage_reported else None,
-            usage.output_tokens if usage_reported else None,
-            usage.input_tokens_details.cached_tokens if usage_reported else None,
-            usage.output_tokens_details.reasoning_tokens if usage_reported else None,
+            usage.get("input_tokens") if usage_reported else None,
+            usage.get("output_tokens") if usage_reported else None,
+            cached_input_tokens,
+            reasoning_tokens,
         )
-        output = result.final_output
-        if not isinstance(output, output_type):
-            raise AgentExecutionError(
-                "Support program recommendation agent returned an unexpected output type",
-                reason_code=AgentFailureCode.UNEXPECTED_OUTPUT_TYPE,
-            )
         assessments: list[AssessedSupportProgram] = []
         for candidate in request.candidates:
             selection = getattr(output.rankings, candidate.id).model_dump()

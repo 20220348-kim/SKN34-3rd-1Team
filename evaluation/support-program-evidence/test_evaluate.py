@@ -183,7 +183,7 @@ def test_execute_uses_production_agent_with_mock_http_only(loaded, tmp_path, mon
         assert body["store"] is False
         assert body["model"] == evaluate.DEFAULT_OPENAI_MODEL
         assert body["max_output_tokens"] == 2000
-        assert body["tools"] == []
+        assert not body.get("tools")
         output = fake_capture["cases"][len(requests)]["response"]
         output.pop("citationChunkIds")
         output["citationChunkIndexes"] = loaded[1][len(requests)][0]["expectedCitationOrders"]
@@ -278,6 +278,10 @@ def test_capture_write_failure_preserves_previous_record_and_closes_client(loade
 
     class FakeClient:
         closed = False
+
+        def __init__(self):
+            from types import SimpleNamespace
+            self.chat = SimpleNamespace(completions=object())
 
         async def close(self):
             self.closed = True

@@ -1,15 +1,15 @@
 import asyncio
-import json
 import logging
 from time import perf_counter
 
-from agents import (
-    Agent, MaxTurnsExceeded, Model, ModelBehaviorError, ModelRefusalError,
-    ModelSettings, ModelTimeoutError, RunConfig, Runner,
-)
+from langchain_openai import ChatOpenAI
 from openai import APITimeoutError, OpenAIError
-from openai.types.shared import Reasoning
-from pydantic import ValidationError
+
+from app.support_program_llm import (
+    get_support_program_usage_details,
+    invoke_support_program_model,
+    validate_support_program_output,
+)
 
 from app.support_program_conversation.errors import (
     SupportProgramConversationError, SupportProgramConversationTimeoutError,
@@ -26,23 +26,13 @@ logger = logging.getLogger(__name__)
 class SupportProgramConversationAgent:
     """한 번의 structured LLM 호출로 조건 변경을 제안하거나 검색 대화에 답한다."""
 
-    def __init__(self, *, model: Model, model_timeout_seconds: float, run_timeout_seconds: float) -> None:
+    def __init__(self, *, model: ChatOpenAI, model_timeout_seconds: float, run_timeout_seconds: float) -> None:
         self._run_timeout_seconds = run_timeout_seconds
-        self._agent: Agent[None] = Agent(
-            name="GovBiz Support Program Conversation Interpreter",
-            instructions=SUPPORT_PROGRAM_CONVERSATION_INSTRUCTIONS,
-            model=model,
-            output_type=SupportProgramConversationOutput,
-            model_settings=ModelSettings(
-                max_tokens=2_000, reasoning=Reasoning(effort="none"), store=False,
-                timeout=model_timeout_seconds,
-                # Keep the per-request HTTP deadline aligned without mutating the shared client.
-                extra_args={"timeout": model_timeout_seconds},
-            ),
-        )
-        self._run_config = RunConfig(
-            workflow_name="GovBiz support program conversation interpretation",
-            tracing_disabled=True, trace_include_sensitive_data=False,
+        self._model_timeout_seconds = model_timeout_seconds
+        self._model = model.bind(
+            max_tokens=2_000, store=False,
+            reasoning={"effort": "none"},
+            timeout=model_timeout_seconds,
         )
 
     async def interpret(self, request: SupportProgramConversationRequest) -> SupportProgramConversationOutput:
@@ -52,38 +42,34 @@ class SupportProgramConversationAgent:
         outcome = "failed"
         try:
             async with asyncio.timeout(self._run_timeout_seconds):
-                result = await Runner.run(
-                    self._agent, json.dumps(request.model_dump(by_alias=True), ensure_ascii=False),
-                    max_turns=1, run_config=self._run_config,
+                result = await invoke_support_program_model(
+                    self._model, instructions=SUPPORT_PROGRAM_CONVERSATION_INSTRUCTIONS, payload=request.model_dump(by_alias=True),
+                    output_type=SupportProgramConversationOutput, timeout_seconds=self._model_timeout_seconds,
                 )
             model_finished_at = perf_counter()
-            usage = getattr(getattr(result, "context_wrapper", None), "usage", None)
-            if not isinstance(result.final_output, SupportProgramConversationOutput):
-                raise SupportProgramConversationError()
-            output = SupportProgramConversationOutput.model_validate(result.final_output.model_dump(by_alias=True))
+            usage = result.usage_metadata
+            output = validate_support_program_output(result, SupportProgramConversationOutput)
             outcome = "completed"
             return output
-        except (ModelTimeoutError, APITimeoutError, TimeoutError) as error:
+        except (APITimeoutError, TimeoutError) as error:
             raise SupportProgramConversationTimeoutError() from error
-        except (
-            MaxTurnsExceeded, ModelBehaviorError, ModelRefusalError,
-            OpenAIError, ValidationError,
-        ) as error:
+        except (OpenAIError, ValueError) as error:
             raise SupportProgramConversationError() from error
         except asyncio.CancelledError:
             outcome = "cancelled"
             raise
         finally:
             finished_at = perf_counter()
-            usage_reported = usage is not None and bool(usage.request_usage_entries)
+            usage_reported = usage is not None
+            cached_input_tokens, reasoning_tokens = get_support_program_usage_details(usage)
             logger.info(
                 "support_program_conversation_run outcome=%s model_ms=%d validation_ms=%d elapsed_ms=%d "
                 "usage_reported=%s input_tokens=%s output_tokens=%s cached_input_tokens=%s reasoning_tokens=%s",
                 outcome, round(((model_finished_at or finished_at) - started_at) * 1000),
                 round((finished_at - model_finished_at) * 1000) if model_finished_at is not None else 0,
                 round((finished_at - started_at) * 1000), usage_reported,
-                usage.input_tokens if usage_reported else None,
-                usage.output_tokens if usage_reported else None,
-                usage.input_tokens_details.cached_tokens if usage_reported else None,
-                usage.output_tokens_details.reasoning_tokens if usage_reported else None,
+                usage.get("input_tokens") if usage_reported else None,
+                usage.get("output_tokens") if usage_reported else None,
+                cached_input_tokens,
+                reasoning_tokens,
             )

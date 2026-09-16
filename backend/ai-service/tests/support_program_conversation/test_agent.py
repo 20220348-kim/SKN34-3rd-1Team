@@ -4,8 +4,8 @@ from copy import deepcopy
 
 import httpx2
 import pytest
-from agents import MaxTurnsExceeded, ModelTimeoutError, ModelTracing, OpenAIResponsesModel
-from agents.testing import ModelStep, ScriptedModel, assistant_message
+from pydantic import ValidationError
+from tests.langchain_stub import ResponsesChatStub, response_message, chat_model, user_payload
 from openai import APITimeoutError, AsyncOpenAI
 
 from app.support_program_conversation.agent import SupportProgramConversationAgent
@@ -26,23 +26,23 @@ def responses_body(output):
 
 
 @pytest.mark.anyio
-async def test_real_runner_receives_only_small_request_and_strict_typed_output(request_data, output_data):
-    model = ScriptedModel([[assistant_message(json.dumps(output_data, ensure_ascii=False))]])
-    agent = SupportProgramConversationAgent(model=model, model_timeout_seconds=3, run_timeout_seconds=4)
+async def test_langchain_receives_only_small_request_and_strict_typed_output(request_data, output_data):
+    model = ResponsesChatStub([[response_message(json.dumps(output_data, ensure_ascii=False))]])
+    agent = SupportProgramConversationAgent(model=model.model, model_timeout_seconds=3, run_timeout_seconds=4)
     request = SupportProgramConversationRequest.model_validate(request_data)
     assert await agent.interpret(request) == SupportProgramConversationOutput.model_validate(output_data)
     call = model.first_call
     assert json.loads(call.input[0]["content"]) == request_data
     assert call.system_instructions == SUPPORT_PROGRAM_CONVERSATION_INSTRUCTIONS
-    assert call.model_settings.store is False
-    assert call.model_settings.timeout == 3
-    assert call.tracing is ModelTracing.DISABLED
-    assert call.output_schema.output_type is SupportProgramConversationOutput
+    assert call.body["store"] is False
+    assert call.timeout == 3
+    assert call.tracing_disabled
+    assert call.schema["title"] == "SupportProgramConversationOutput"
     model.assert_complete()
 
 
 def test_prompt_preserves_conditions_and_removes_stale_region_without_history_concatenation():
-    # Instruction assertions and ScriptedModel outputs do not measure live semantic accuracy.
+    # Instruction assertions and ResponsesChatStub outputs do not measure live semantic accuracy.
     instructions = SUPPORT_PROGRAM_CONVERSATION_INSTRUCTIONS
     for clause in ("부재 필드 보존", "draftContext", "명시적 삭제·초기화", "설립 2년", "계산·창작하지",
                    "정확히 복사한 연속 부분 문자열", "옛 지역이 남지 않게", "중복되는 조건은 가급적 제외",
@@ -82,9 +82,9 @@ async def test_scripted_refinement_transition_and_reset_preserve_distinct_intent
         ]
     scripted = {"status": status, "updates": updates,
                 "clarificationQuestion": "어떤 지원사업을 찾으시나요?" if query is None else None}
-    model = ScriptedModel([[assistant_message(json.dumps(scripted, ensure_ascii=False))]])
+    model = ResponsesChatStub([[response_message(json.dumps(scripted, ensure_ascii=False))]])
     service = SupportProgramConversationService(SupportProgramConversationAgent(
-        model=model, model_timeout_seconds=1, run_timeout_seconds=2,
+        model=model.model, model_timeout_seconds=1, run_timeout_seconds=2,
     ))
     request = SupportProgramConversationRequest.model_validate(request_data)
     result = await service.interpret(request)
@@ -106,8 +106,8 @@ async def test_scripted_region_change_also_removes_old_region_from_query(request
         {"field": "REGION", "operation": "SET", "value": "부산", "evidence": "부산"},
         {"field": "QUERY", "operation": "SET", "value": "사업화 지원", "evidence": "부산으로 변경"},
     ], "clarificationQuestion": None}
-    model = ScriptedModel([[assistant_message(json.dumps(scripted, ensure_ascii=False))]])
-    service = SupportProgramConversationService(SupportProgramConversationAgent(model=model, model_timeout_seconds=1, run_timeout_seconds=2))
+    model = ResponsesChatStub([[response_message(json.dumps(scripted, ensure_ascii=False))]])
+    service = SupportProgramConversationService(SupportProgramConversationAgent(model=model.model, model_timeout_seconds=1, run_timeout_seconds=2))
     result = await service.interpret(SupportProgramConversationRequest.model_validate(request_data))
     assert result.updates[1].value == "사업화 지원"
     assert "서울" not in result.updates[1].value
@@ -117,8 +117,8 @@ async def test_scripted_region_change_also_removes_old_region_from_query(request
 async def test_scripted_relative_age_asks_and_does_not_create_date(request_data):
     request_data["message"] = "설립 2년"
     scripted = {"status": "CLARIFICATION_REQUIRED", "updates": [], "clarificationQuestion": "정확한 설립일을 알려주세요."}
-    model = ScriptedModel([[assistant_message(json.dumps(scripted, ensure_ascii=False))]])
-    service = SupportProgramConversationService(SupportProgramConversationAgent(model=model, model_timeout_seconds=1, run_timeout_seconds=2))
+    model = ResponsesChatStub([[response_message(json.dumps(scripted, ensure_ascii=False))]])
+    service = SupportProgramConversationService(SupportProgramConversationAgent(model=model.model, model_timeout_seconds=1, run_timeout_seconds=2))
     result = await service.interpret(SupportProgramConversationRequest.model_validate(request_data))
     assert result.status == "CLARIFICATION_REQUIRED" and result.updates == []
 
@@ -126,8 +126,8 @@ async def test_scripted_relative_age_asks_and_does_not_create_date(request_data)
 @pytest.mark.anyio
 @pytest.mark.parametrize("bad_output", ["not-json", '{}', '{"status":"READY","updates":[]}'])
 async def test_invalid_structured_output_is_an_error_without_retry(request_data, bad_output):
-    model = ScriptedModel([[assistant_message(bad_output)]])
-    agent = SupportProgramConversationAgent(model=model, model_timeout_seconds=1, run_timeout_seconds=2)
+    model = ResponsesChatStub([[response_message(bad_output)]])
+    agent = SupportProgramConversationAgent(model=model.model, model_timeout_seconds=1, run_timeout_seconds=2)
     with pytest.raises(SupportProgramConversationError):
         await agent.interpret(SupportProgramConversationRequest.model_validate(request_data))
     assert len(model.calls) == 1
@@ -135,11 +135,11 @@ async def test_invalid_structured_output_is_an_error_without_retry(request_data,
 
 @pytest.mark.anyio
 async def test_one_model_turn_limit(request_data, output_data):
-    model = ScriptedModel([[], [assistant_message(json.dumps(output_data))]])
-    agent = SupportProgramConversationAgent(model=model, model_timeout_seconds=1, run_timeout_seconds=2)
+    model = ResponsesChatStub([[], [response_message(json.dumps(output_data))]])
+    agent = SupportProgramConversationAgent(model=model.model, model_timeout_seconds=1, run_timeout_seconds=2)
     with pytest.raises(SupportProgramConversationError) as captured:
         await agent.interpret(SupportProgramConversationRequest.model_validate(request_data))
-    assert isinstance(captured.value.__cause__, MaxTurnsExceeded)
+    assert isinstance(captured.value.__cause__, ValueError)
     assert len(model.calls) == 1
 
 
@@ -148,12 +148,12 @@ async def test_run_deadline(request_data):
     async def hang_forever(_):
         await asyncio.Event().wait()
         return []
-    model = ScriptedModel([ModelStep.respond(hang_forever)])
-    agent = SupportProgramConversationAgent(model=model, model_timeout_seconds=1, run_timeout_seconds=0.01)
+    model = ResponsesChatStub([(hang_forever)])
+    agent = SupportProgramConversationAgent(model=model.model, model_timeout_seconds=1, run_timeout_seconds=0.01)
     with pytest.raises(SupportProgramConversationTimeoutError) as captured:
         await agent.interpret(SupportProgramConversationRequest.model_validate(request_data))
     assert isinstance(captured.value.__cause__, TimeoutError)
-    # The whole-run deadline can expire during SDK setup, before a model call starts.
+    # The whole-run deadline can expire during LangChain setup, before a model call starts.
     assert len(model.calls) <= 1
 
 
@@ -162,11 +162,11 @@ async def test_model_deadline_is_classified_as_timeout_without_retry(request_dat
     async def hang_forever(_):
         await asyncio.Event().wait()
         return []
-    model = ScriptedModel([ModelStep.respond(hang_forever)])
-    agent = SupportProgramConversationAgent(model=model, model_timeout_seconds=0.01, run_timeout_seconds=1)
+    model = ResponsesChatStub([(hang_forever)])
+    agent = SupportProgramConversationAgent(model=model.model, model_timeout_seconds=0.1, run_timeout_seconds=1)
     with pytest.raises(SupportProgramConversationTimeoutError) as captured:
         await agent.interpret(SupportProgramConversationRequest.model_validate(request_data))
-    assert isinstance(captured.value.__cause__, ModelTimeoutError)
+    assert isinstance(captured.value.__cause__, TimeoutError)
     assert len(model.calls) == 1
 
 
@@ -178,7 +178,7 @@ async def test_http_timeout_is_classified_and_uses_interpretation_deadline_witho
         raise httpx2.ReadTimeout("private transport details", request=request)
     client = AsyncOpenAI(api_key="test-key", timeout=25, max_retries=0,
                          http_client=httpx2.AsyncClient(transport=httpx2.MockTransport(handle)))
-    agent = SupportProgramConversationAgent(model=OpenAIResponsesModel(model="test-model", openai_client=client),
+    agent = SupportProgramConversationAgent(model=chat_model(model="test-model", openai_client=client),
                                            model_timeout_seconds=4, run_timeout_seconds=5)
     try:
         with pytest.raises(SupportProgramConversationTimeoutError) as captured:
@@ -199,7 +199,7 @@ async def test_actual_openai_sdk_strict_schema_and_no_persisted_conversation(req
         return httpx2.Response(200, json=responses_body(output_data))
     client = AsyncOpenAI(api_key="test-key-never-sent", base_url="https://openai.test/v1/", max_retries=0,
                          http_client=httpx2.AsyncClient(transport=httpx2.MockTransport(handle)))
-    agent = SupportProgramConversationAgent(model=OpenAIResponsesModel(model="gpt-5.6-luna", openai_client=client),
+    agent = SupportProgramConversationAgent(model=chat_model(model="gpt-5.6-luna", openai_client=client),
                                              model_timeout_seconds=4, run_timeout_seconds=5)
     try:
         await agent.interpret(SupportProgramConversationRequest.model_validate(request_data))
@@ -240,7 +240,7 @@ async def test_upstream_and_refusal_are_errors_not_missing_information(request_d
         return httpx2.Response(200, json=body)
     client = AsyncOpenAI(api_key="test-key", max_retries=0,
                          http_client=httpx2.AsyncClient(transport=httpx2.MockTransport(handle)))
-    agent = SupportProgramConversationAgent(model=OpenAIResponsesModel(model="gpt-5.6-luna", openai_client=client),
+    agent = SupportProgramConversationAgent(model=chat_model(model="gpt-5.6-luna", openai_client=client),
                                              model_timeout_seconds=4, run_timeout_seconds=5)
     try:
         with pytest.raises(SupportProgramConversationError):
@@ -260,9 +260,9 @@ async def test_concurrent_requests_do_not_share_context_or_history(request_data,
         if arrived == 2:
             both.set()
         await both.wait()
-        return [assistant_message(json.dumps(output_data, ensure_ascii=False))]
-    model = ScriptedModel([ModelStep.respond(output_after_both), ModelStep.respond(output_after_both)])
-    agent = SupportProgramConversationAgent(model=model, model_timeout_seconds=1, run_timeout_seconds=2)
+        return [response_message(json.dumps(output_data, ensure_ascii=False))]
+    model = ResponsesChatStub([(output_after_both), (output_after_both)])
+    agent = SupportProgramConversationAgent(model=model.model, model_timeout_seconds=1, run_timeout_seconds=2)
     second = deepcopy(request_data)
     second["context"]["query"] = "수출 지원"
     await asyncio.gather(*(agent.interpret(SupportProgramConversationRequest.model_validate(data)) for data in (request_data, second)))
@@ -308,9 +308,9 @@ async def test_scripted_trade_region_explanation_and_assent_flow_carries_small_c
     messages = ["서울 AI 창업지원 사업 찾아줘", "무역 관련 찾아봐", "서울", "대구", "왜 못 찾아?", "대구", "설정해"]
     request_data["context"]["query"] = None
     request_data["context"]["companyConditions"] = dict.fromkeys(request_data["context"]["companyConditions"])
-    model = ScriptedModel([[assistant_message(json.dumps(output, ensure_ascii=False))] for output in outputs])
+    model = ResponsesChatStub([[response_message(json.dumps(output, ensure_ascii=False))] for output in outputs])
     service = SupportProgramConversationService(SupportProgramConversationAgent(
-        model=model, model_timeout_seconds=1, run_timeout_seconds=2,
+        model=model.model, model_timeout_seconds=1, run_timeout_seconds=2,
     ))
     for index, message in enumerate(messages):
         request_data["message"] = message
@@ -345,8 +345,8 @@ async def test_interpretation_logs_stage_duration_without_conversation_content(r
     import logging
 
     text = "private invalid output" if failure else json.dumps(output_data, ensure_ascii=False)
-    model = ScriptedModel([[assistant_message(text)]])
-    agent = SupportProgramConversationAgent(model=model, model_timeout_seconds=3, run_timeout_seconds=4)
+    model = ResponsesChatStub([[response_message(text)]])
+    agent = SupportProgramConversationAgent(model=model.model, model_timeout_seconds=3, run_timeout_seconds=4)
     with caplog.at_level(logging.INFO, logger="app.support_program_conversation.agent"):
         if failure:
             with pytest.raises(SupportProgramConversationError):
@@ -363,12 +363,15 @@ async def test_interpretation_logs_stage_duration_without_conversation_content(r
 
 
 @pytest.mark.anyio
+@pytest.mark.parametrize("service_tier", [None, "default", "priority", "flex"])
 @pytest.mark.parametrize("with_usage", [True, False])
-async def test_actual_sdk_usage_is_logged_and_missing_usage_stays_unknown(request_data, output_data, caplog, with_usage):
+async def test_actual_sdk_usage_is_logged_and_missing_usage_stays_unknown(request_data, output_data, caplog, with_usage, service_tier):
     import logging
 
     def handler(request):
         body = responses_body(output_data)
+        if service_tier is not None:
+            body["service_tier"] = service_tier
         if with_usage:
             body["usage"] = {
                 "input_tokens": 800, "output_tokens": 120, "total_tokens": 920,
@@ -380,7 +383,7 @@ async def test_actual_sdk_usage_is_logged_and_missing_usage_stays_unknown(reques
     client = AsyncOpenAI(api_key="secret-test-key", max_retries=0,
                          http_client=httpx2.AsyncClient(transport=httpx2.MockTransport(handler)))
     agent = SupportProgramConversationAgent(
-        model=OpenAIResponsesModel(model="test-model", openai_client=client),
+        model=chat_model(model="test-model", openai_client=client),
         model_timeout_seconds=3, run_timeout_seconds=4,
     )
     try:
@@ -396,4 +399,5 @@ async def test_actual_sdk_usage_is_logged_and_missing_usage_stays_unknown(reques
     else:
         assert "usage_reported=False" in messages[0]
         assert "input_tokens=None" in messages[0] and "output_tokens=None" in messages[0]
+        assert "cached_input_tokens=None" in messages[0] and "reasoning_tokens=None" in messages[0]
     assert "secret-test-key" not in caplog.text

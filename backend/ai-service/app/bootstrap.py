@@ -80,15 +80,17 @@ def build_application_container(
     if (
         evidence_answer_agent is None or conversation_agent is None
     ):
-        general_model = OpenAIResponsesModel(
-            model=settings.openai_model,
-            openai_client=openai_client,
+        general_model = ChatOpenAI(
+            model=settings.openai_model, api_key=settings.openai_api_key,
+            use_responses_api=True, max_retries=0,
+            root_async_client=openai_client, async_client=openai_client.chat.completions,
         )
     if ranking_agent is None:
         ranking_agent = SupportProgramRecommendationAgent(
-            model=OpenAIResponsesModel(
+            model=ChatOpenAI(
                 model=settings.openai_ranking_model or settings.openai_model,
-                openai_client=openai_client,
+                api_key=settings.openai_api_key, use_responses_api=True, max_retries=0,
+                root_async_client=openai_client, async_client=openai_client.chat.completions,
             ),
             model_timeout_seconds=settings.llm_ranking_model_timeout_seconds,
             run_timeout_seconds=settings.llm_ranking_run_timeout_seconds,

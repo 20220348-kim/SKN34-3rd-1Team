@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import compare_elasticsearch as lexical
+from metric_comparison import metrics_match
 
 
 SCHEMA = "support-program-known-item-comparison-v1"
@@ -128,7 +129,8 @@ def run(fixture_path, questions_path, endpoint):
             variants[name]["observations"].append({"queryId": case["id"], **timing})
     for variant in variants.values():
         variant["metrics"] = evaluate_known_items(cases, variant["candidateIds"], fixture["docs"])
-    sources = [Path(__file__).resolve(), lexical.ROOT / "compare_elasticsearch.py", lexical.ROOT / "evaluate.py",
+    sources = [Path(__file__).resolve(), lexical.ROOT / "metric_comparison.py",
+               lexical.ROOT / "compare_elasticsearch.py", lexical.ROOT / "evaluate.py",
                lexical.CONFIG, lexical.ROOT / "elasticsearch/Dockerfile", lexical.ROOT / "elasticsearch/compose.yaml"]
     return {
         "schemaVersion": SCHEMA, "status": "complete", "createdAt": datetime.now(timezone.utc).isoformat(),
@@ -155,7 +157,7 @@ def verify(fixture_path, questions_path, report):
     if report["variants"]["keyword"]["candidateIds"] != keyword:
         raise ValueError("Saved keyword results cannot be reproduced")
     for variant in report["variants"].values():
-        if evaluate_known_items(cases, variant["candidateIds"], fixture["docs"]) != variant["metrics"]:
+        if not metrics_match(variant["metrics"], evaluate_known_items(cases, variant["candidateIds"], fixture["docs"])):
             raise ValueError("Saved known-item metrics cannot be reproduced")
 
 
