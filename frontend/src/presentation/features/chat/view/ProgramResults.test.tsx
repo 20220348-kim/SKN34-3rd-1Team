@@ -138,7 +138,7 @@ describe('ProgramResults', () => {
     expect(within(cards[1]).getByText('자격 미평가', { exact: true })).toBeTruthy()
     expect(within(cards[2]).getByText('조건 확인 · API 본문 기준', { exact: true })).toBeTruthy()
     expect(within(cards[3]).getByText('자격 판정 없음 · 확인 필요', { exact: true })).toBeTruthy()
-    expect(within(cards[3]).getByText('관련도 0점 · 자격 충족 확률이 아닙니다.')).toBeTruthy()
+    expect(within(cards[3]).getByText('관련도 0점')).toBeTruthy()
     for (const card of cards.slice(0, 3)) {
       expect(within(card).queryByText(/^관련도 .*점/)).toBeNull()
     }

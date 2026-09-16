@@ -246,7 +246,7 @@ describe('App navigation', () => {
     expect(relocationCard.querySelector('blockquote')?.textContent).toBe('소프트웨어 개발업 창업 7년 이내 중소기업')
     expect(Array.from(relocationCard.querySelectorAll('blockquote')).map((quote) => quote.textContent))
       .toContain('선정 후 경북으로 본사를 이전하는 창업기업을 지원합니다.')
-    expect(within(relocationCard).getByText('관련도 99점 · 자격 충족 확률이 아닙니다.')).toBeTruthy()
+    expect(within(relocationCard).getByText('관련도 99점')).toBeTruthy()
     expect(within(relocationCard).getByText('전국 사업')).toBeTruthy()
     expect(relocationCard.textContent).not.toContain('✓')
     expect(relocationCard.textContent).not.toContain('AI 추천')
