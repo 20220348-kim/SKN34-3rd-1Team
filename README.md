@@ -122,7 +122,6 @@ GovBiz는 여러 정부기관과 공공 플랫폼에 분산된 지원사업 공�
 ![Amazon RDS](https://img.shields.io/badge/Amazon_RDS-527FFF?style=for-the-badge)
 ![Amazon CloudFront](https://img.shields.io/badge/Amazon_CloudFront-8C4FFF?style=for-the-badge)
 ![Amazon VPC](https://img.shields.io/badge/Amazon_VPC-8C4FFF?style=for-the-badge)
-![AWS CodeConnections](https://img.shields.io/badge/AWS_CodeConnections-3B48CC?style=for-the-badge)
 ![Amazon ECR](https://img.shields.io/badge/Amazon_ECR-FF9900?style=for-the-badge)
 ![AWS Systems Manager](https://img.shields.io/badge/AWS_Systems_Manager-FF4F8B?style=for-the-badge)
 ![Nginx](https://img.shields.io/badge/Nginx-009639?style=for-the-badge&logo=nginx&logoColor=white)
@@ -130,6 +129,7 @@ GovBiz는 여러 정부기관과 공공 플랫폼에 분산된 지원사업 공�
 ### CI/CD
 
 ![GitHub Actions](https://img.shields.io/badge/GitHub_Actions-2088FF?style=for-the-badge&logo=githubactions&logoColor=white)
+![AWS CodeConnections](https://img.shields.io/badge/AWS_CodeConnections-3B48CC?style=for-the-badge)
 ![AWS CodeBuild](https://img.shields.io/badge/AWS_CodeBuild-3B48CC?style=for-the-badge)
 
 ## 4. 주요 기능
