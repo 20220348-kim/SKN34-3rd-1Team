@@ -2,8 +2,6 @@
 
 **LLM 기반 정부지원사업 탐색·신청 관리 플랫폼**
 
-[기술 README · 실행 안내](docs/technical-readme.md) · [전체 문서 목록](docs/README.md) · [시스템 아키텍처](docs/architecture/README.md)
-
 <!-- 팀 소개와 프로젝트 구성은 https://github.com/lsm15111/GovBiz-docs 의 README를 바탕으로 작성했습니다. -->
 
 ## 1. 팀 소개
@@ -60,26 +58,17 @@ GovBiz는 여러 정부기관과 공공 플랫폼에 분산된 지원사업 공�
 
 검색한 공고는 관심 공고함에 저장해 달력·목록으로 일정을 확인하고, 준비 중·지원 완료·서류 심사·발표 심사·선정·탈락 단계로 진행 상황을 관리할 수 있습니다. 또한 신청 문서 작성, 중복 지원·수혜 가능성 검토, 협업 파트너 모집과 제안 등의 기능을 통해 지원사업의 전 과정을 하나의 서비스에서 관리할 수 있도록 구성했습니다.
 
-### 🏢 프로젝트 필요성
+### 🎯 프로젝트 필요성과 목표
 
-- 정부지원사업의 정보 분산으로 인하여 많은 시간이 소모됩니다.
-- 공고마다 문서 형식과 표현 방식이 달라 정보 비교에 어려움이 있습니다.
-- 단순 키워드 중심의 검색은 구체적인 상황을 충분히 반영하기 어렵습니다.
-- AI 제공 추천 결과의 정확성과 신뢰성의 검증이 어렵습니다.
-- 공고 탐색 후 별도로 공고를 관리하는데 어려움이 있습니다.
-- 이력 존재 시 중복 지원 제한 여부를 개별적으로 확인하기 어렵습니다.
-- 공동 참여 공고를 탐색하여도, 협업을 제안할 연결 수단이 부족합니다.
-
-### 🎯 프로젝트 목표
-
-1. 여러 공식 제공처의 지원사업 공고를 수집·정규화하여 하나의 서비스에서 검색할 수 있는 통합 환경을 제공합니다.
-2. 키워드 검색과 의미 기반 검색을 결합하여 사용자의 기업 상황과 지원 목적에 적합한 공고 탐색을 제공합니다.
-3. AI 대화 검색을 통해 모호한 요청은 추가 질문으로 구체화하고, 확인된 조건을 바탕으로 관련 공고를 추천합니다.
-4. 추천 이유와 신청 조건을 공식 공고 원문에 기반해 제공하고, 검색 관련도와 실제 신청 자격을 구분하여 안내합니다.
-5. 관심 공고를 달력과 목록으로 확인하고, 지원 완료부터 심사·선정·탈락까지 신청 진행 단계를 체계적으로 관리합니다.
-6. 공식 첨부 양식을 분석하여 필요한 항목을 정리하고, 사용자가 확인한 정보를 반영해 지원 형식의 신청 문서를 생성합니다.
-7. 사용자의 지원·수혜 이력과 공고 자료를 비교하여 중복 지원 제한 및 추가 확인이 필요한 사항을 검토합니다.
-8. 지원사업별 협업 파트너 모집과 참여 제안 기능을 제공하여 공고 탐색을 실제 기업 간 협업으로 연결합니다.
+| 해결할 문제 | 프로젝트 목표 |
+|---|---|
+| 여러 기관에 분산된 지원사업 정보를 찾는 데 많은 시간 소요 | 공식 제공처의 공고를 수집·정규화하여 하나의 서비스에서 통합 검색 |
+| 공고마다 문서 형식과 표현이 달라 정보 비교와 신청 준비가 어려움 | 공고 정보를 공통 구조로 정리하고, 공식 첨부 양식 분석과 사용자 확인 정보를 바탕으로 지원 형식의 신청 문서 생성 |
+| 키워드 검색만으로 기업 상황과 지원 목적을 반영하기 어려움 | 키워드·의미 기반 검색을 결합하고, AI 대화의 추가 질문으로 조건을 구체화해 맞춤 공고 추천 |
+| AI 추천 결과의 정확성과 신뢰성을 검증하기 어려움 | 공식 원문을 근거로 추천 이유와 신청 조건을 제시하고, 검색 관련도와 실제 신청 자격을 구분해 안내 |
+| 공고 탐색 이후 일정과 신청 진행 상황을 별도로 관리해야 함 | 관심 공고를 달력·목록으로 확인하고, 준비·지원 완료·심사·선정·탈락까지 진행 단계 관리 |
+| 기존 지원·수혜 이력에 따른 중복 지원 제한을 확인하기 어려움 | 지원·수혜 이력과 공식 공고 자료를 비교해 중복 제한과 추가 확인 사항 검토 |
+| 공동 참여에 필요한 협업 기업을 찾고 제안할 수단이 부족함 | 지원사업별 파트너 모집과 참여 제안 기능으로 기업 간 협업 연결 |
 
 ### ✨ 차별화 전략
 
@@ -184,9 +173,6 @@ AI가 생성한 답변만 제공하지 않고, 추천 이유와 신청 조건을
 ![Agents SDK](https://img.shields.io/badge/Agents_SDK-412991?style=for-the-badge)
 ![tiktoken](https://img.shields.io/badge/tiktoken-412991?style=for-the-badge)
 
-AI 대화 검색의 조건 해석·공고 추천과 상세 근거 답변은 LangChain을 사용합니다. Qdrant 검색 결과를 프롬프트의 근거로 전달하며, 도구형 도우미에는 LangGraph, 자유 질문 분류에는 Agents SDK를 사용합니다.
-Python은 3.11 이상을 지원하며 Docker 런타임은 3.12, CI는 3.11을 사용합니다.
-
 ### Data · Infrastructure
 
 ![MySQL 8.4](https://img.shields.io/badge/MySQL_8.4-4479A1?style=for-the-badge&logo=mysql&logoColor=white)
@@ -195,6 +181,23 @@ Python은 3.11 이상을 지원하며 Docker 런타임은 3.12, CI는 3.11을 �
 ![Redis 8](https://img.shields.io/badge/Redis_8-DC382D?style=for-the-badge&logo=redis&logoColor=white)
 ![RabbitMQ 4](https://img.shields.io/badge/RabbitMQ_4-FF6600?style=for-the-badge&logo=rabbitmq&logoColor=white)
 ![Docker Compose](https://img.shields.io/badge/Docker_Compose-2496ED?style=for-the-badge&logo=docker&logoColor=white)
+
+### Cloud · Deployment
+
+![Vercel](https://img.shields.io/badge/Vercel-000000?style=for-the-badge&logo=vercel&logoColor=white)
+![Amazon EC2](https://img.shields.io/badge/Amazon_EC2-FF9900?style=for-the-badge)
+![Amazon RDS](https://img.shields.io/badge/Amazon_RDS-527FFF?style=for-the-badge)
+![Amazon CloudFront](https://img.shields.io/badge/Amazon_CloudFront-8C4FFF?style=for-the-badge)
+![Amazon VPC](https://img.shields.io/badge/Amazon_VPC-8C4FFF?style=for-the-badge)
+![AWS CodeConnections](https://img.shields.io/badge/AWS_CodeConnections-3B48CC?style=for-the-badge)
+![Amazon ECR](https://img.shields.io/badge/Amazon_ECR-FF9900?style=for-the-badge)
+![AWS Systems Manager](https://img.shields.io/badge/AWS_Systems_Manager-FF4F8B?style=for-the-badge)
+![Nginx](https://img.shields.io/badge/Nginx-009639?style=for-the-badge&logo=nginx&logoColor=white)
+
+### CI/CD
+
+![GitHub Actions](https://img.shields.io/badge/GitHub_Actions-2088FF?style=for-the-badge&logo=githubactions&logoColor=white)
+![AWS CodeBuild](https://img.shields.io/badge/AWS_CodeBuild-3B48CC?style=for-the-badge)
 
 ## 4. 주요 기능
 
@@ -239,8 +242,9 @@ GovBiz는 Vercel과 AWS 환경에 배포할 수 있도록 프론트엔드, Core 
 
 ### 📌 배포 흐름
 
-- GitHub Actions가 프론트엔드, Core API, AI Service의 테스트와 빌드를 검증합니다.
-- 배포 대상 저장소의 `main`에 코드가 반영되면 CodeConnections를 통해 CodeBuild가 백엔드를 검증하고 Docker 이미지를 Amazon ECR에 게시합니다.
+- GitHub Actions는 push와 PR 발생 시 프론트엔드, Core API, AI Service의 테스트와 빌드를 검증합니다.
+- 배포 대상 저장소의 `main`에 push 또는 PR 병합이 발생하면 CodeBuild의 GitHub webhook이 빌드를 시작합니다. GitHub Actions와 CodeBuild는 각각 별도로 실행됩니다.
+- CodeBuild는 CodeConnections를 통한 연결·인증으로 GitHub 소스를 가져와 백엔드를 검증하고 Docker 이미지를 Amazon ECR에 게시합니다.
 - CodeBuild가 Systems Manager(SSM)에 배포 명령을 전달하면 EC2에서 해당 커밋의 이미지를 내려받아 Core API·AI Service를 교체합니다.
 - 프론트엔드는 GitHub와 연동된 Vercel에서 별도로 빌드·배포합니다.
 - 외부 API 요청은 CloudFront VPC origin과 Nginx를 거치며, EC2와 RDS는 VPC 내부 네트워크에 배치합니다.
@@ -325,7 +329,7 @@ Elasticsearch의 키워드 검색 결과와 Qdrant의 의미 기반 검색 결�
 
 ## 9. 화면설계 | **UI 시안/UX Flow**
 
-<img width="1970" height="1464" alt="화면흐름도(HOME)" src="https://github.com/user-attachments/assets/8d68144f-b4dc-4906-8e7c-6832f707f824" />
+<img width="1970" height="1464" alt="GovBiz 서비스 전체 화면 흐름" src="docs/assets/readme/service-screen-flow.png" />
 
 ## 10. 폴더 구조
 
@@ -366,6 +370,7 @@ GovBiz/
 
 | 분류 | 문서 | 내용 |
 |---|---|---|
+| 문서 안내 | [전체 문서 목록](docs/README.md) | 기능·설계·API·개발·운영 문서 전체 목록 |
 | 기술·실행 | [기술 README](docs/technical-readme.md) | 기존 README의 기능 안내·빠른 시작·개발 및 운영 문서 |
 | 시스템 | [시스템 아키텍처](docs/architecture/README.md) | 전체 시스템 구성과 서비스 간 연결 구조 |
 | 기술 | [기술 구성](docs/technology.md) | 기술 스택과 주요 구현 방식 |
