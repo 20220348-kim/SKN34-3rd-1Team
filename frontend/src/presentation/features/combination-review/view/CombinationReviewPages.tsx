@@ -9,6 +9,7 @@ import { useReviewEditorViewModel } from '../viewmodel/useReviewEditorViewModel'
 import { ReviewParticipation } from './ReviewParticipation'
 import { ReviewRunResult } from './ReviewRunResult'
 import { SavedSupportProgramPickerDialog } from '../../../shared/support-program/SavedSupportProgramPickerDialog'
+import { SupportProgramSearchFilters } from '../../../shared/support-program/SupportProgramSearchFilters'
 import { formatReviewDateTime, runLabels } from './reviewLabels'
 import { reviewStyles as s } from './CombinationReview.styles'
 import { workspacePageStyles } from '../../../shared/workspace/WorkspacePage.styles'
@@ -170,9 +171,11 @@ function ReviewEditor({ id, account }: { id: number | null; account: string }) {
             <button ref={savedProgramsButtonRef} type="button" className="mt-4 flex w-full cursor-pointer items-center justify-between rounded-xl border border-slate-300 bg-white px-4 py-3 text-left text-sm font-semibold hover:border-brand-primary hover:bg-brand-accent focus-visible:outline-2 focus-visible:outline-brand-primary" aria-label="관심 공고함에서 선택" aria-haspopup="dialog" aria-expanded={savedProgramsOpen} onClick={() => setSavedProgramsOpen(true)}><span>관심 공고함에서 선택</span><span className="text-brand-primary">열기 ›</span></button>
             <SavedSupportProgramPickerDialog open={savedProgramsOpen} phase={vm.savedProgramChoices.phase} programs={vm.savedProgramChoices.programs} selectedProgramKeys={vm.draft.programs.map((program) => `${program.sourceCode}:${program.sourceProgramId}`)} selectionLimit={2} description="비교할 공고를 최대 2개까지 선택할 수 있습니다." listLabel="중복 지원 검토 관심 공고 목록" onToggle={vm.toggle} onRetry={vm.savedProgramChoices.retry} onClose={closeSavedPrograms} />
             <h3 className="mt-5 font-semibold">전체 공고 검색</h3>
-            <div className="mt-3 flex flex-wrap items-end gap-2"><label className="min-w-0 flex-1 text-sm">공고명·기관명<input className={s.input} maxLength={100} value={vm.keyword} onChange={(e) => vm.setKeyword(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); void vm.search() } }} /></label><button type="button" className={s.button} disabled={vm.busy.includes('catalog')} onClick={() => void vm.search()}>공고 검색</button></div>
+            <div className="mt-3"><SupportProgramSearchFilters filters={vm.catalogFilters} appliedFilters={vm.appliedCatalogFilters} catalog={vm.catalog}
+              disabled={inputBusy} loading={vm.busy.includes('catalog')} onChange={vm.setCatalogFilters}
+              onSearch={(filters) => { void vm.search(1, filters) }} /></div>
             {vm.busy.includes('catalog') && <p className="mt-3" role="status">공고를 불러오는 중입니다.</p>}
-            {vm.catalog?.programs.length === 0 && <p className="mt-3">검색 결과가 없습니다.</p>}
+            {vm.catalog?.programs.length === 0 && <p className="mt-3">검색 결과가 없습니다. 검색어나 필터를 바꿔 다시 검색해 주세요.</p>}
             <ul className="mt-4 divide-y divide-slate-200">{vm.catalog?.programs.map((program) => {
               const identity = { sourceCode: program.sourceCode, sourceProgramId: program.id, subProgramId: null }
               const selected = vm.draft.programs.some((p) => reviewProgramKey(p) === reviewProgramKey(identity))
@@ -181,7 +184,7 @@ function ReviewEditor({ id, account }: { id: number | null; account: string }) {
                 <Link className="text-sm text-brand-primary underline" to={supportProgramDetailPath({ sourceCode: identity.sourceCode, sourceProgramId: identity.sourceProgramId }, true)} target="_blank">공고 상세 확인</Link>
               </li>
             })}</ul>
-            {vm.catalog && <div className="mt-3 flex items-center gap-3"><button type="button" className={s.button} disabled={vm.catalog.page <= 1 || vm.busy.includes('catalog')} onClick={() => void vm.search(vm.catalog!.page - 1, vm.appliedKeyword)}>이전 공고</button><span className="text-sm">{vm.catalog.page} / {Math.max(1, vm.catalog.totalPages)}</span><button type="button" className={s.button} disabled={vm.catalog.page >= vm.catalog.totalPages || vm.busy.includes('catalog')} onClick={() => void vm.search(vm.catalog!.page + 1, vm.appliedKeyword)}>다음 공고</button></div>}
+            {vm.catalog && <div className="mt-3 flex items-center gap-3"><button type="button" className={s.button} disabled={vm.catalog.page <= 1 || vm.busy.includes('catalog')} onClick={() => void vm.search(vm.catalog!.page - 1, vm.appliedCatalogFilters)}>이전 공고</button><span className="text-sm">{vm.catalog.page} / {Math.max(1, vm.catalog.totalPages)}</span><button type="button" className={s.button} disabled={vm.catalog.page >= vm.catalog.totalPages || vm.busy.includes('catalog')} onClick={() => void vm.search(vm.catalog!.page + 1, vm.appliedCatalogFilters)}>다음 공고</button></div>}
           </section>
           {unsupported && <p className={s.warning}>선택한 공고는 현재 자동 분석을 지원하지 않습니다. 기업마당의 숫자형 PBLN_ 공고와 K-Startup·과기정통부·충남 수출지원의 숫자형 공고를 지원하며, 세부사업은 지정하지 않아야 합니다.</p>}
           <div className="flex justify-end"><button className={s.primary} type="button" onClick={goToParticipation} disabled={vm.draft.programs.length !== 2}>다음: 참여 상태 설정</button></div>

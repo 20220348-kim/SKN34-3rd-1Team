@@ -304,11 +304,19 @@ it('reads active snapshots through the availability HTTP contract without postin
   expect(fetcher.mock.calls[0][1].credentials).toBe('include')
 })
 
-it('rejects available states without snapshots and snapshots from another notice', async () => {
+it.each(['PENDING', 'STALE', 'NO_FORM', 'DOCUMENT_UNAVAILABLE', 'TOO_LARGE', 'RETRY_WAITING', 'REVIEW_REQUIRED'])('preserves the reason for %s with no active forms', async (status) => {
+  const response = { state: { sourceCode: 'BIZINFO', sourceProgramId: 'PBLN_1', status,
+    reasonCode: 'SOURCE_CHECK_REQUIRED', nextRetryAt: null, attemptCount: 1 }, forms: { items: [] } }
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValue(Response.json(response)))
+  await expect(new ApplicationPreparationRepositoryImpl().availability('BIZINFO', 'PBLN_1')).resolves.toEqual(response)
+})
+
+it('rejects inconsistent availability states, duplicate snapshots, and snapshots from another notice', async () => {
   const state = { sourceCode: 'BIZINFO', sourceProgramId: 'PBLN_1', status: 'AVAILABLE', reasonCode: 'FORM_FOUND', nextRetryAt: null, attemptCount: 1 }
   vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce(Response.json({ state, forms: { items: [] } }))
     .mockResolvedValueOnce(Response.json({ state, forms: { items: [{ ...form, sourceProgramId: 'PBLN_2' }] } }))
-    .mockResolvedValueOnce(Response.json({ state: { ...state, status: 'PENDING' }, forms: { items: [form] } })))
+    .mockResolvedValueOnce(Response.json({ state: { ...state, status: 'PENDING' }, forms: { items: [form] } }))
+    .mockResolvedValueOnce(Response.json({ state, forms: { items: [form, form] } })))
   const repository = new ApplicationPreparationRepositoryImpl()
-  for (let index = 0; index < 3; index++) await expect(repository.availability('BIZINFO', 'PBLN_1')).rejects.toMatchObject({ code: 'INVALID_RESPONSE' })
+  for (let index = 0; index < 4; index++) await expect(repository.availability('BIZINFO', 'PBLN_1')).rejects.toMatchObject({ code: 'INVALID_RESPONSE' })
 })
