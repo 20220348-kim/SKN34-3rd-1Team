@@ -14,11 +14,13 @@ import {
 import { useSupportProgramSearchReadiness } from '../hooks/useSupportProgramSearchReadiness'
 import { formatSupportProgramEligibilityCounts } from '../supportProgramEligibility'
 import { createChatConversationProposal } from './chatConversationProposal'
+import { useSearchResultInterests } from './useSearchResultInterests'
 
 /** 내부 훅을 조합해 ChatPage에 제공할 최종 화면 상태와 사용자 동작을 관리합니다. */
 export function useChatPageViewModel() {
   const readiness = useSupportProgramSearchReadiness()
   const chat = useSupportProgramChat()
+  const interests = useSearchResultInterests(chat.messages.some((message) => Boolean(message.programs?.length)))
   const displayProposal = createChatConversationProposal({
     isBusy: chat.isBusy,
     confirmedContext: chat.confirmedContext,
@@ -178,6 +180,7 @@ export function useChatPageViewModel() {
     messages: chat.messages,
     searchError: chat.searchError,
     inputError: chat.inputError,
+    interests,
     cancelSearch: handleCancelSearch,
     readiness,
     suggestions: supportProgramChatSuggestions,

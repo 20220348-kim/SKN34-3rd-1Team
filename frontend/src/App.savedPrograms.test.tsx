@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { Provider } from 'react-redux'
 import { MemoryRouter } from 'react-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -14,6 +14,7 @@ import type { SavedSupportProgram } from './domain/entities/SavedSupportProgram'
 import { savedSupportProgramMessages } from './presentation/features/saved-support-program/viewmodel/useSavedSupportProgramsViewModel'
 import { supportProgramSaveMessages } from './presentation/shared/support-program/useSupportProgramSaveViewModel'
 import { sessionRestored } from './presentation/shared/auth/state/authSlice'
+import { searchStarted, searchSucceeded } from './presentation/features/chat/state/chatSlice'
 
 vi.mock('./presentation/shared/core-api-status/CoreApiConnectionStatus', () => ({
   CoreApiConnectionStatus: () => null,
@@ -42,6 +43,55 @@ afterEach(() => {
 })
 
 describe('관심 공고함', () => {
+  it('AI 검색의 반복 공고에서 관심을 함께 반영하고 상세·관심 공고함에서도 유지한다', async () => {
+    let stored = false
+    const browse = vi.spyOn(appContainer.resolve('browseSavedSupportProgramsUseCase'), 'execute')
+      .mockImplementation(async () => stored ? [saved[0]!] : [])
+    vi.spyOn(appContainer.resolve('getSupportProgramDetailUseCase'), 'execute').mockResolvedValue(program)
+    vi.spyOn(appContainer.resolve('checkSavedSupportProgramUseCase'), 'execute').mockImplementation(async () => stored)
+    const save = vi.spyOn(appContainer.resolve('saveSupportProgramUseCase'), 'execute').mockImplementation(async () => {
+      stored = true
+      return { outcome: 'saved', saved: saved[0]! }
+    })
+    const remove = vi.spyOn(appContainer.resolve('removeSavedSupportProgramUseCase'), 'execute').mockImplementation(async () => { stored = false })
+    const store = createAppStore()
+    renderApp('/app/chat', memberAccount, null, store)
+    // AI 호출 없이 서버 검색 결과가 Redux에 도착한 다음부터 검증합니다.
+    act(() => {
+      for (const query of ['서울 지원', '창업 지원']) {
+        const started = searchStarted(query)
+        store.dispatch(started)
+        store.dispatch(searchSucceeded({ requestId: started.payload.requestId, programs: [program], totalCount: 1,
+          resultToken: null, expiresAt: null }))
+      }
+    })
+    const resultButtons = () => screen.getAllByRole('button', { name: /관심 공고 저장/ })
+    await waitFor(() => expect(resultButtons().every((button) => !button.hasAttribute('disabled'))).toBe(true))
+    expect(browse).toHaveBeenCalledOnce()
+    expect(resultButtons()).toHaveLength(2)
+    fireEvent.click(resultButtons()[0]!)
+    await waitFor(() => expect(resultButtons().every((button) => button.getAttribute('aria-pressed') === 'true')).toBe(true))
+    expect(save).toHaveBeenCalledOnce()
+    fireEvent.click(resultButtons()[1]!)
+    await waitFor(() => expect(resultButtons().every((button) => button.getAttribute('aria-pressed') === 'false')).toBe(true))
+    expect(remove).toHaveBeenCalledOnce()
+    fireEvent.click(resultButtons()[0]!)
+    await waitFor(() => expect(resultButtons()[0]!.getAttribute('aria-pressed')).toBe('true'))
+
+    fireEvent.click(screen.getAllByRole('link', { name: '상세 조건 보기' })[0]!)
+    const detailToggle = await screen.findByRole('button', { name: '관심 공고 저장됨' })
+    expect(detailToggle.getAttribute('aria-pressed')).toBe('true')
+    fireEvent.click(detailToggle)
+    await screen.findByText(supportProgramSaveMessages.removed)
+    fireEvent.click(screen.getByRole('link', { name: '← 검색 결과로 돌아가기' }))
+    await waitFor(() => expect(resultButtons().every((button) => !button.hasAttribute('disabled'))).toBe(true))
+    expect(resultButtons().every((button) => button.getAttribute('aria-pressed') === 'false')).toBe(true)
+    fireEvent.click(resultButtons()[0]!)
+    await waitFor(() => expect(resultButtons()[0]!.getAttribute('aria-pressed')).toBe('true'))
+    fireEvent.click(within(screen.getByRole('complementary', { name: '작업 사이드바' })).getByRole('link', { name: '관심 공고함' }))
+    expect(await screen.findByRole('link', { name: program.title })).toBeTruthy()
+  })
+
   it('사이드바 메뉴가 관심 공고함을 열고 담은 공고를 최근 순서로 보여 준다', async () => {
     vi.spyOn(appContainer.resolve('browseSavedSupportProgramsUseCase'), 'execute').mockResolvedValue(saved)
     renderApp('/app/chat', memberAccount)
@@ -121,8 +171,7 @@ describe('관심 공고함', () => {
   })
 })
 
-function renderApp(initialEntry: string, account: Account | null, state: unknown = null) {
-  const store = createAppStore()
+function renderApp(initialEntry: string, account: Account | null, state: unknown = null, store = createAppStore()) {
   store.dispatch(sessionRestored(account))
   return render(
     <Provider store={store}>

@@ -18,6 +18,18 @@ const identity = { sourceCode: 'BIZINFO', sourceProgramId: 'PBLN 1/2' }
 const savedDto = { savedAt: '2026-09-12T10:00:00', program: { ...supportPrograms[0]! } }
 
 describe('savedSupportProgramApi', () => {
+  it('관심 공고가 0개인 정상 응답은 빈 목록으로 반환한다', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({ programs: [] })))
+
+    await expect(listSavedSupportProgramsApi()).resolves.toEqual([])
+  })
+
+  it('관심 API 자체가 없는 404를 관심 공고 0개로 처리하지 않는다', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(problemResponse(404, null)))
+
+    await expect(listSavedSupportProgramsApi()).rejects.toMatchObject({ status: 404 })
+  })
+
   it('reads the list and status with the session cookie and no cache', async () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(jsonResponse({ programs: [savedDto] }))

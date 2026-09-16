@@ -78,9 +78,8 @@ export const chatPageStyles = {
     'disabled:cursor-not-allowed disabled:opacity-50',
   ),
   programList: 'mt-[0.9rem] grid gap-[0.8rem]',
-  resultSectionTitle: 'mt-3 mb-1 text-sm font-bold text-app-ink',
   eligibilityReview: 'mt-3 grid gap-2 rounded-lg border border-sample-border bg-[#f6f7f8] p-3',
-  eligibilityAxisTitle: 'm-0 text-xs font-bold text-app-ink',
+  eligibilityAxisTitle: 'm-0 text-sm font-bold text-app-ink',
   eligibilityQuote: 'mx-0 my-2 break-words border-l-2 border-sample-border pl-3 text-xs leading-relaxed text-sample-muted',
   reviewRequiredTag: 'rounded-[0.35rem] bg-[#fff4df] px-[0.48rem] py-1 text-[0.68rem] font-extrabold text-[#805a20]',
   searchingBubble: classes(
@@ -158,6 +157,13 @@ export const chatPageStyles = {
   programCard:
     'rounded-2xl border border-sample-border bg-white p-5 shadow-[0_8px_24px_rgb(32_33_36_/_4%)]',
   programCardHeader: 'flex flex-wrap items-center justify-between gap-3',
+  programBadges: 'flex flex-wrap items-center gap-2',
+  interestButton: classes(
+    'inline-flex min-h-9 cursor-pointer items-center gap-1 rounded-lg border border-sample-border bg-white px-2 text-xs font-bold text-sample-muted',
+    'hover:bg-brand-accent aria-pressed:border-brand-primary aria-pressed:bg-brand-accent aria-pressed:text-brand-primary',
+    'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-primary disabled:cursor-not-allowed disabled:opacity-50',
+  ),
+  interestError: 'my-2 text-xs leading-relaxed text-red-700',
   programTag:
     'rounded-[0.35rem] bg-[#f0f9e9] px-[0.48rem] py-1 text-[0.68rem] font-extrabold text-[#536d37]',
   programDeadline: 'text-[0.74rem] font-extrabold text-[#b75561]',

@@ -44,6 +44,7 @@ export function ChatPage({ layout = 'landing' }: { layout?: ChatPageLayout }) {
     refetchReadiness,
     searchError,
     inputError,
+    interests,
     searchOptions,
     searchStatusAnnouncement,
     suggestions,
@@ -232,7 +233,7 @@ export function ChatPage({ layout = 'landing' }: { layout?: ChatPageLayout }) {
                 </div>
               ) : null}
               {message.programs?.length ? (
-                <ProgramResults programs={message.programs} totalCount={message.totalCount} resultToken={message.resultToken} />
+                <ProgramResults programs={message.programs} totalCount={message.totalCount} resultToken={message.resultToken} interests={interests} />
               ) : null}
             </div>
           </article>

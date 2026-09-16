@@ -29,6 +29,9 @@ vi.mock('../hooks/useSupportProgramSearchReadiness', () => ({
   useSupportProgramSearchReadiness: hookMocks.readiness,
 }))
 
+// 관심 저장은 전용 훅·화면 통합 테스트에서 검증하고, 이 파일은 대화 페이지의 상태 조합만 검증합니다.
+vi.mock('./useSearchResultInterests', () => ({ useSearchResultInterests: () => null }))
+
 type ChatHook = ReturnType<typeof useSupportProgramChat>
 type ReadinessHook = ReturnType<typeof useSupportProgramSearchReadiness>
 
