@@ -4,9 +4,10 @@ import { appContainer } from '../../../../app/appContainer'
 import { appPaths } from '../../../shared/routes/appPaths'
 import { reviewProgramKey, supportsAutomaticReview, unknownParticipation, validateReviewDraft, type CombinationReview, type ReviewDraft, type ReviewPage, type ReviewRun, type RunRequest, type RunSummary } from '../../../../domain/entities/CombinationReview'
 import type { SupportProgram } from '../../../../domain/entities/SupportProgram'
-import type { SupportProgramCatalog } from '../../../../domain/entities/SupportProgramCatalog'
+import type { SupportProgramCatalog, SupportProgramCatalogFilters } from '../../../../domain/entities/SupportProgramCatalog'
 import { useReviewScope } from './useReviewScope'
 import { useSavedSupportProgramChoices } from '../../../shared/support-program/useSavedSupportProgramChoices'
+import { defaultProgramSelectionFilters } from '../../../shared/support-program/catalogSearchParams'
 
 // 자동 조회보다 늦게 도착한 과거 응답이 완료 상태를 대기/분석 중으로 되돌리지 않게 한다.
 function isEarlierState(current: RunSummary, next: RunSummary) {
@@ -27,8 +28,8 @@ export function useReviewEditorViewModel(id: number | null, account: string, aut
   const [review, setReview] = useState<CombinationReview | null>(null)
   const [draft, setDraft] = useState<ReviewDraft>({ title: '', programs: [] })
   const [catalog, setCatalog] = useState<SupportProgramCatalog | null>(null)
-  const [keyword, setKeyword] = useState('')
-  const [appliedKeyword, setAppliedKeyword] = useState('')
+  const [catalogFilters, setCatalogFilters] = useState(defaultProgramSelectionFilters)
+  const [appliedCatalogFilters, setAppliedCatalogFilters] = useState(defaultProgramSelectionFilters)
   const [names, setNames] = useState<Record<string, string>>({})
   const [runs, setRuns] = useState<ReviewPage<RunSummary> | null>(null)
   const [run, setRun] = useState<ReviewRun | null>(null)
@@ -59,7 +60,13 @@ export function useReviewEditorViewModel(id: number | null, account: string, aut
     }, ({ saved, detail, history, labels }) => { setReview(detail); setDraft({ title: detail.title, programs: detail.programs }); setNames(labels); setRuns(history); setPending(saved); setJournalReady(true) })
   }, [id, account, journal, useCase, detailUseCase, perform])
   useEffect(() => { load() }, [load])
-  const search = (page = 1, term = keyword) => perform('catalog', (signal) => catalogUseCase.execute({ keyword: term, region: '', category: '', sourceCode: '', startupStage: '', applicantType: '', founderAge: '', status: 'ALL', sort: 'RECENT', page, pageSize: 10 }, signal), (result) => { setCatalog(result); setAppliedKeyword(term) })
+  const search = (page = 1, filters: SupportProgramCatalogFilters = catalogFilters) => {
+    if (busy.includes('catalog')) return
+    const query = { ...filters, keyword: filters.keyword.trim(), page }
+    setAppliedCatalogFilters(query)
+    setCatalog(null)
+    return perform('catalog', (signal) => catalogUseCase.execute(query, signal), setCatalog)
+  }
   const toggle = (program: SupportProgram) => {
     const selected = { sourceCode: program.sourceCode, sourceProgramId: program.id, subProgramId: null, participation: unknownParticipation() }
     const selectedIndex = draft.programs.findIndex((p) => reviewProgramKey(p) === reviewProgramKey(selected))
@@ -182,6 +189,6 @@ export function useReviewEditorViewModel(id: number | null, account: string, aut
       anchor.click(); setTimeout(() => URL.revokeObjectURL(url), 1000)
     })
   }
-  return { ...scope, review, draft, setDraft, catalog, savedProgramChoices, keyword, setKeyword, appliedKeyword, names, runs, run, facts, setFacts,
+  return { ...scope, review, draft, setDraft, catalog, savedProgramChoices, catalogFilters, setCatalogFilters, appliedCatalogFilters, names, runs, run, facts, setFacts,
     pending, notice, dirty, pollingPaused, rejectedRevision, clearRejectedRequest, load, search, toggle, saveAndStart, history, selectRun, start, download }
 }

@@ -9,9 +9,10 @@ import type {
   ApplicationServiceField,
 } from '../../../../domain/entities/ApplicationPreparation'
 import type { SupportProgram } from '../../../../domain/entities/SupportProgram'
-import type { SupportProgramCatalog } from '../../../../domain/entities/SupportProgramCatalog'
+import type { SupportProgramCatalog, SupportProgramCatalogFilters } from '../../../../domain/entities/SupportProgramCatalog'
 import { appPaths } from '../../../shared/routes/appPaths'
 import { useSavedSupportProgramChoices } from '../../../shared/support-program/useSavedSupportProgramChoices'
+import { defaultProgramSelectionFilters } from '../../../shared/support-program/catalogSearchParams'
 
 function asError(value: unknown): Error {
   return value instanceof Error ? value : new Error('신청 문서 정보를 처리하지 못했습니다.')
@@ -25,7 +26,14 @@ const availabilityMessages = {
 }
 
 function availabilityReason(code: string): string {
-  if (code.startsWith('RETRY_EXHAUSTED:')) return '자동 재시도 한도에 도달하여 관리자 확인이 필요합니다.'
+  if (code.startsWith('RETRY_EXHAUSTED:')) return `${availabilityReason(code.slice('RETRY_EXHAUSTED:'.length))} 자동 재시도 한도에 도달하여 관리자 확인이 필요합니다.`
+  if (code === 'NOT_ANALYZED') return '이 공고의 신청 양식이 아직 분석되지 않았습니다.'
+  if (code === 'WORKER_RETRY_EXHAUSTED') return '분석 작업이 완료되지 않은 채 재시도 한도에 도달했습니다. 관리자 확인이 필요합니다.'
+  if (code === 'DISCOVERY_CONFIGURATION_INVALID') return '신청 양식 분석 설정이 올바르지 않아 분석을 시작하지 못했습니다.'
+  if (code === 'SOURCE_UNAVAILABLE') return '공식 사이트에서 공고나 첨부 파일을 불러오지 못했습니다.'
+  if (code === 'AI_UNAVAILABLE') return 'AI 분석 서비스에 연결하지 못했습니다.'
+  if (code === 'SOURCE_INVALID') return '공식 첨부의 형식이나 출처를 검증하지 못했습니다.'
+  if (code === 'AI_INVALID_RESPONSE') return 'AI 분석 응답이 올바르지 않거나 추출한 문항의 근거를 검증하지 못했습니다.'
   if (code.includes('TIMEOUT')) return '정해진 시간 안에 분석을 마치지 못했습니다.'
   if (code.includes('TOO_LARGE')) return '첨부 파일의 크기나 문서 분량이 분석 제한을 초과했습니다.'
   if (code.includes('NOT_FOUND') || code.includes('MISSING')) return '공식 공고 또는 첨부가 없어졌거나 변경되었습니다.'
@@ -52,9 +60,10 @@ export function useApplicationPreparationEditorViewModel(id: number | null, init
   const [discoveryInput, setDiscoveryInput] = useState(initialSourceProgramId)
   const [discovering, setDiscovering] = useState(false)
   const [discoveryWarnings, setDiscoveryWarnings] = useState<string[]>([])
+  const [availabilityStatus, setAvailabilityStatus] = useState<string | null>(null)
   const [catalog, setCatalog] = useState<SupportProgramCatalog | null>(null)
-  const [catalogKeyword, setCatalogKeyword] = useState('')
-  const [appliedCatalogKeyword, setAppliedCatalogKeyword] = useState('')
+  const [catalogFilters, setCatalogFilters] = useState(defaultProgramSelectionFilters)
+  const [appliedCatalogFilters, setAppliedCatalogFilters] = useState(defaultProgramSelectionFilters)
   const [catalogLoading, setCatalogLoading] = useState(false)
   const [catalogError, setCatalogError] = useState<Error | null>(null)
   const [selectedProgram, setSelectedProgram] = useState<SupportProgram | null>(null)
@@ -120,29 +129,19 @@ export function useApplicationPreparationEditorViewModel(id: number | null, init
     submittingGuard.current = false
   }, [])
 
-  const searchPrograms = useCallback(async (page = 1, keyword = catalogKeyword) => {
+  const searchPrograms = useCallback(async (page = 1, filters: SupportProgramCatalogFilters = catalogFilters) => {
     catalogController.current?.abort()
     const controller = new AbortController()
     catalogController.current = controller
     setCatalogLoading(true)
     setCatalogError(null)
+    const query = { ...filters, keyword: filters.keyword.trim(), page }
+    setAppliedCatalogFilters(query)
+    setCatalog(null)
     try {
-      const result = await catalogUseCase.execute({
-        keyword: keyword.trim(),
-        region: '',
-        category: '',
-        sourceCode: '',
-        startupStage: '',
-        applicantType: '',
-        founderAge: '',
-        status: 'ALL',
-        sort: 'RECENT',
-        page,
-        pageSize: 10,
-      }, controller.signal)
+      const result = await catalogUseCase.execute(query, controller.signal)
       if (controller.signal.aborted || catalogController.current !== controller) return
       setCatalog(result)
-      setAppliedCatalogKeyword(keyword)
     } catch (caught) {
       if (!controller.signal.aborted && catalogController.current === controller) setCatalogError(asError(caught))
     } finally {
@@ -151,7 +150,7 @@ export function useApplicationPreparationEditorViewModel(id: number | null, init
         setCatalogLoading(false)
       }
     }
-  }, [catalogKeyword, catalogUseCase])
+  }, [catalogFilters, catalogUseCase])
 
   const applyProgramSelection = useCallback((program: SupportProgram) => {
     setSelectedProgram(program)
@@ -161,6 +160,7 @@ export function useApplicationPreparationEditorViewModel(id: number | null, init
     setForms([])
     setSelectedFormVersionId('')
     setDiscoveryWarnings([])
+    setAvailabilityStatus(null)
     setError(null)
   }, [])
 
@@ -169,25 +169,20 @@ export function useApplicationPreparationEditorViewModel(id: number | null, init
     applyProgramSelection(program)
   }, [applyProgramSelection])
 
-  const setManualDiscoveryInput = useCallback((value: string) => {
-    if (discoveryController.current) return
+  const clearProgramSelection = useCallback(() => {
+    if (submittingGuard.current || discoveryController.current) return
     setSelectedProgram(null)
-    setDiscoveryInput(value)
+    setDiscoveryInput('')
+    setDiscoverySourceCode('')
+    setServiceField('GENERAL')
     setCreationStep('PROGRAM')
     setForms([])
     setSelectedFormVersionId('')
     setDiscoveryWarnings([])
+    setAvailabilityStatus(null)
+    setError(null)
   }, [])
 
-  const clearProgramSelection = useCallback(() => {
-    if (submittingGuard.current || discoveryController.current) return
-    setManualDiscoveryInput('')
-    setDiscoverySourceCode('')
-    setServiceField('GENERAL')
-    setError(null)
-  }, [setManualDiscoveryInput])
-
-  const [availabilityStatus, setAvailabilityStatus] = useState<string | null>(null)
   const discoverForms = useCallback(async () => {
     if (discoveryController.current || !discoveryInput.trim()) return
     const controller = new AbortController()
@@ -196,6 +191,8 @@ export function useApplicationPreparationEditorViewModel(id: number | null, init
     setError(null)
     setForms([])
     setSelectedFormVersionId('')
+    setDiscoveryWarnings([])
+    setAvailabilityStatus(null)
     try {
       const result = await useCase.availability(discoverySourceCode, discoveryInput, controller.signal)
       if (controller.signal.aborted) return
@@ -224,10 +221,6 @@ export function useApplicationPreparationEditorViewModel(id: number | null, init
       .catch((caught: unknown) => { if (!controller.signal.aborted) setError(asError(caught)) })
     return () => controller.abort()
   }, [id, initialSourceCode, initialSourceProgramId, programDetailUseCase, applyProgramSelection])
-
-  useEffect(() => {
-    if (id === null && selectedProgram) void discoverForms()
-  }, [id, selectedProgram, discoverForms])
 
   const backToProgramSelection = useCallback(() => {
     setCreationStep('PROGRAM')
@@ -331,8 +324,8 @@ export function useApplicationPreparationEditorViewModel(id: number | null, init
     discovering,
     discoveryWarnings,
     catalog,
-    catalogKeyword,
-    appliedCatalogKeyword,
+    catalogFilters,
+    appliedCatalogFilters,
     catalogLoading,
     catalogError,
     savedProgramChoices,
@@ -343,11 +336,10 @@ export function useApplicationPreparationEditorViewModel(id: number | null, init
     submitting,
     error,
     setServiceField,
-    setCatalogKeyword,
+    setCatalogFilters,
     searchPrograms,
     selectProgram,
     clearProgramSelection,
-    setManualDiscoveryInput,
     discoverForms,
     availabilityStatus,
     backToProgramSelection,

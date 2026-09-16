@@ -28,9 +28,12 @@ DB transaction 밖에서 해석합니다. 요청 키와 당시 입력을 먼저 
 별도 transaction으로 저장합니다. 사용자가 제안을 확인한 PUT만 문항 사실을 전체 교체하고 입력 revision을 증가시킵니다.
 본인 준비 건의 DELETE는 `ApplicationPreparationRepository → MyBatis → MySQL`에서 소유자 조건으로 한 행을 지우고,
 확인 사실·AI 실행 기록은 FK cascade로 삭제하지만 공용 `application_form_snapshot`은 유지합니다.
-Frontend는 `/app/application-preparations`의 목록·삭제, `/new`의 지연 조회 관심 공고 팝업과 전체 카탈로그 공고 검색·선택, 보조 기업마당 URL·ID 입력을 첫 단계로,
-공고별 availability API의 활성 snapshot 확인을 별도 두 번째 단계로 표시하고, `/:preparationId`의 공식 문항
+Frontend는 `/app/application-preparations`의 목록·삭제, `/new`의 지연 조회 관심 공고 팝업과 전체 카탈로그 공고 검색·선택을 첫 단계로,
+저장된 신청 양식 확인 버튼으로 공고별 availability API를 조회한 뒤 활성 snapshot을 별도 두 번째 단계로 표시하고, `/:preparationId`의 공식 문항
 상세와 질문·사실 확인을 연결합니다. AI 제안은 저장하지 않고 사용자가 선택·수정한 전체 문항 입력만 revision을 올려 저장합니다.
+신청 문서와 중복 지원 검토의 공고 검색은 공용 `SupportProgramSearchFilters`에서 검색어·지역·지원 분야·출처·접수 상태를 입력받고,
+각 ViewModel → `BrowseSupportProgramsUseCase` → 기존 catalog HTTP API로 전달합니다. 검색 버튼은 1페이지부터 조회하고,
+페이지 이동은 마지막으로 적용한 조건을 유지합니다. 조건 해제·전체 초기화는 공고 선택을 유지한 채 다시 조회합니다.
 문서 생성은 `ApplicationDocumentController → ApplicationDocumentService → 공식 첨부 Client →
 ApplicationDocumentEditor → AiApplicationPreparationClient → AI Service Router → Service → 위치 선택 Agent → OpenAI`로 이어집니다.
 공식 첨부 SHA-256이 선택한 양식 버전과 일치할 때 원본의 문단·표 셀 또는 PDF 페이지를 분석합니다.

@@ -14,6 +14,7 @@ import { appPaths } from '../../../shared/routes/appPaths'
 import { WorkspacePageHeader } from '../../../shared/workspace/WorkspacePageHeader'
 import { workspacePageStyles } from '../../../shared/workspace/WorkspacePage.styles'
 import { SavedSupportProgramPickerDialog } from '../../../shared/support-program/SavedSupportProgramPickerDialog'
+import { SupportProgramSearchFilters } from '../../../shared/support-program/SupportProgramSearchFilters'
 import { useApplicationPreparationEditorViewModel } from '../viewmodel/useApplicationPreparationEditorViewModel'
 import { useApplicationPreparationListViewModel } from '../viewmodel/useApplicationPreparationListViewModel'
 import { applicationPreparationStyles as s } from './ApplicationPreparation.styles'
@@ -31,13 +32,6 @@ const programStatusLabels = {
   CLOSED: '접수 종료',
   UNKNOWN: '접수 상태 미확인',
 } as const
-const directInputLabels: Record<string, string> = {
-  BIZINFO: '기업마당 공식 공고 URL 또는 공고 ID',
-  KSTARTUP: 'K-Startup 공식 공고 ID',
-  MSIT: '과학기술정보통신부 공식 공고 ID',
-  CNTRADE_NOTICE: '충남 온라인수출지원시스템 공식 공고 ID',
-}
-
 function readableTime(value: string) {
   return new Intl.DateTimeFormat('ko-KR', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value))
 }
@@ -326,7 +320,7 @@ function ApplicationPreparationEditor({ id, initialSourceCode, initialSourceProg
         event.preventDefault()
         if (vm.selectedForm) void vm.create()
       }}>
-        {vm.discoveryWarnings.length > 0 && <section className={s.notice} aria-label="공고 분석 안내">
+        {vm.discoveryWarnings.length > 0 && <section className={s.notice} aria-label="신청 양식 확인 결과" role="status" aria-live="polite">
           <ul className="list-disc space-y-1 pl-5">{vm.discoveryWarnings.map((warning) => <li key={warning}>{warning}</li>)}</ul>
         </section>}
 
@@ -376,32 +370,13 @@ function ApplicationPreparationEditor({ id, initialSourceCode, initialSourceProg
             onRetry={vm.savedProgramChoices.retry}
             onClose={closeSavedPrograms}
           />
-          <div className="flex flex-wrap items-end gap-2">
-            <label className="min-w-0 flex-1 text-sm font-bold text-app-ink" htmlFor="application-program-search">
-              공고명·기관명
-              <input
-                className={`${s.input} mt-2`}
-                disabled={vm.catalogLoading || vm.discovering || vm.submitting}
-                id="application-program-search"
-                maxLength={100}
-                value={vm.catalogKeyword}
-                onChange={(event) => vm.setCatalogKeyword(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter') {
-                    event.preventDefault()
-                    void vm.searchPrograms()
-                  }
-                }}
-              />
-            </label>
-            <button className={s.button} disabled={vm.catalogLoading || vm.discovering || vm.submitting} type="button" onClick={() => { void vm.searchPrograms() }}>
-              {vm.catalogLoading ? '공고 검색 중…' : '공고 검색'}
-            </button>
-          </div>
-          <p className={s.muted}>공고명이나 기관명으로 검색하고 공고별 양식 준비 상태를 확인할 수 있습니다.</p>
+          <SupportProgramSearchFilters filters={vm.catalogFilters} appliedFilters={vm.appliedCatalogFilters} catalog={vm.catalog}
+            disabled={vm.discovering || vm.submitting} loading={vm.catalogLoading} onChange={vm.setCatalogFilters}
+            onSearch={(filters) => { void vm.searchPrograms(1, filters) }} />
+          <p className={s.muted}>공고명·기관명과 필터로 공고를 검색하고 공고별 양식 준비 상태를 확인할 수 있습니다.</p>
           {vm.catalogLoading && <p className={s.status} role="status" aria-live="polite">전체 제공처의 공고를 검색하고 있습니다.</p>}
-          {vm.catalogError && <ErrorNotice message={vm.catalogError.message} retryLabel="공고 다시 검색" onRetry={() => { void vm.searchPrograms(vm.catalog?.page ?? 1, vm.appliedCatalogKeyword || vm.catalogKeyword) }} />}
-          {vm.catalog?.programs.length === 0 && <p className={s.notice}>검색 결과가 없습니다. 다른 검색어를 입력하거나 아래에서 공식 URL·공고 ID를 직접 입력해 주세요.</p>}
+          {vm.catalogError && <ErrorNotice message={vm.catalogError.message} retryLabel="공고 다시 검색" onRetry={() => { void vm.searchPrograms(vm.appliedCatalogFilters.page, vm.appliedCatalogFilters) }} />}
+          {vm.catalog?.programs.length === 0 && <p className={s.notice}>검색 결과가 없습니다. 검색어나 필터를 바꿔 다시 검색해 주세요.</p>}
           {vm.catalog && vm.catalog.programs.length > 0 && <>
             <p className={s.muted}>검색 결과 {vm.catalog.total}건 · {vm.catalog.page}/{vm.catalog.totalPages}페이지</p>
             {/* 8건(한 건 약 7rem)까지 보이고 그 이상은 목록 안에서 스크롤합니다. */}
@@ -423,34 +398,12 @@ function ApplicationPreparationEditor({ id, initialSourceCode, initialSourceProg
               })}
             </ul>
             {vm.catalog.totalPages > 1 && <div className={s.moreActions}>
-              <button className={s.button} disabled={vm.catalogLoading || vm.catalog.page <= 1} type="button" onClick={() => { void vm.searchPrograms(vm.catalog!.page - 1, vm.appliedCatalogKeyword) }}>이전</button>
-              <button className={s.button} disabled={vm.catalogLoading || vm.catalog.page >= vm.catalog.totalPages} type="button" onClick={() => { void vm.searchPrograms(vm.catalog!.page + 1, vm.appliedCatalogKeyword) }}>다음</button>
+              <button className={s.button} disabled={vm.catalogLoading || vm.catalog.page <= 1} type="button" onClick={() => { void vm.searchPrograms(vm.catalog!.page - 1, vm.appliedCatalogFilters) }}>이전</button>
+              <button className={s.button} disabled={vm.catalogLoading || vm.catalog.page >= vm.catalog.totalPages} type="button" onClick={() => { void vm.searchPrograms(vm.catalog!.page + 1, vm.appliedCatalogFilters) }}>다음</button>
             </div>}
           </>}
         </section>
 
-        <details className={s.card}>
-          <summary className="cursor-pointer text-sm font-bold text-app-ink">검색에서 공고를 찾지 못했나요?</summary>
-          <label className={s.label} htmlFor="application-program">
-            {directInputLabels[vm.discoverySourceCode] ?? directInputLabels.BIZINFO}
-          </label>
-          <input
-            className={s.input}
-            disabled={vm.discovering || vm.submitting}
-            id="application-program"
-            value={vm.discoveryInput}
-            onChange={(event) => vm.setManualDiscoveryInput(event.target.value)}
-            placeholder={vm.discoverySourceCode && vm.discoverySourceCode !== 'BIZINFO' ? '예: 177911' : 'https://www.bizinfo.go.kr/…?pblancId=PBLN_… 또는 PBLN_…'}
-          />
-        </details>
-
-        {!vm.selectedProgram && vm.discoveryInput.trim() && <section className={s.card} aria-label="입력한 공고 분석">
-          <button className={s.primary} disabled={vm.discovering || vm.submitting || !vm.discoveryInput.trim()} type="button" onClick={() => { void vm.discoverForms() }}>
-            {vm.discovering ? '양식 상태 조회 중…' : '저장된 신청 양식 확인'}
-          </button>
-          {vm.discovering && <p className={s.status} role="status" aria-live="polite">저장된 분석 상태와 활성 신청 양식을 확인하고 있습니다.</p>}
-          <p className={s.muted}>공식 페이지가 직접 연결한 PDF/HWP/HWPX만 분석합니다. 분석 결과는 확인 전 AI 제안이며 자동 제출되지 않습니다.</p>
-        </section>}
         </>}
 
         {vm.creationStep === 'FORM' && <>

@@ -14,6 +14,7 @@ import { applicationPreparationRequest as request, downloadApplicationDocument }
 import {
   applicationPreparationPageSchema,
   applicationPreparationSchema,
+  applicationFormSchema,
   supportedApplicationFormsSchema,
   applicationInterpretationSchema,
   applicationFormDiscoveryJobSchema,
@@ -33,11 +34,12 @@ export class ApplicationPreparationRepositoryImpl implements ApplicationPreparat
       state: z.object({ sourceCode: z.string(), sourceProgramId: z.string(),
         status: z.enum(['PENDING', 'AVAILABLE', 'NO_FORM', 'DOCUMENT_UNAVAILABLE', 'TOO_LARGE', 'RETRY_WAITING', 'STALE', 'REVIEW_REQUIRED']),
         reasonCode: z.string(), nextRetryAt: z.string().nullable(), attemptCount: z.number().int().nonnegative(),
-      }), forms: supportedApplicationFormsSchema,
+      }), forms: z.object({ items: z.array(applicationFormSchema) }),
     })
     const result = await request(`/forms/availability?${new URLSearchParams({ sourceCode, sourceProgramId })}`, schema, 'GET', undefined, signal)
     if (result.state.sourceCode !== sourceCode || result.state.sourceProgramId !== sourceProgramId ||
         (result.state.status === 'AVAILABLE') !== (result.forms.items.length > 0) ||
+        new Set(result.forms.items.map((form) => form.formVersionId)).size !== result.forms.items.length ||
         result.forms.items.some((form) => form.sourceCode !== sourceCode || form.sourceProgramId !== sourceProgramId)) throw new ApplicationPreparationError(502, 'INVALID_RESPONSE')
     return result
   }

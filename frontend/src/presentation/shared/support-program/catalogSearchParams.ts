@@ -5,6 +5,11 @@ export const defaultCatalogFilters: SupportProgramCatalogFilters = {
   sourceCode: '', startupStage: '', applicantType: '', founderAge: '',
 }
 
+/** 문서 작성·중복 지원 검토는 접수 종료 공고도 선택할 수 있습니다. */
+export const defaultProgramSelectionFilters: SupportProgramCatalogFilters = {
+  ...defaultCatalogFilters, status: 'ALL', pageSize: 10,
+}
+
 /** URL을 검색 상태로 복원할 때 알려진 필터만 받아들입니다. */
 export function readCatalogFilters(params: URLSearchParams): SupportProgramCatalogFilters {
   const text = (key: string) => {
