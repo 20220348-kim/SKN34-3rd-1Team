@@ -243,7 +243,11 @@ GovBiz는 기업마당·K-Startup·과학기술정보통신부·충청남도 온
 
 Elasticsearch의 키워드 검색 결과와 Qdrant의 의미 기반 검색 결과를 결합하여 후보 공고를 찾고, AI가 사용자의 기업 상황 및 요청과의 관련성을 분석합니다.
 
-### 4) 데이터 활용
+### 4) 공고 인덱싱 과정
+
+<img width="1200" height="393" alt="260915_인덱싱단계" src="docs/assets/readme/indexing.png" />
+
+### 5) 데이터 활용
 
 수집·정규화된 공고 데이터는 다음 기능에 공통으로 활용됩니다.
 
@@ -256,11 +260,33 @@ Elasticsearch의 키워드 검색 결과와 Qdrant의 의미 기반 검색 결�
 - 중복 지원·수혜 제한 가능성 검토
 - 지원사업별 협업 파트너 모집 및 제안
 
-## 8. 공고 인덱싱 과정
+## 8. RAG 기반 LLM·벡터 데이터베이스 연동
 
-### 공고 인덱싱 단계
+GovBiz는 공식 공고에서 검색한 정보를 LLM 답변의 근거로 제공하는 RAG(Retrieval-Augmented Generation)를 구현했습니다. OpenAI 임베딩으로 문서와 질문을 벡터로 변환하고, Qdrant에서 관련 근거를 검색한 뒤 LangChain으로 프롬프트와 OpenAI 모델을 연결합니다.
 
-<img width="1200" height="393" alt="260915_인덱싱단계" src="docs/assets/readme/indexing.png" />
+### 공고 상세 질의응답 흐름
+
+1. **원문 준비**: Core API가 기업마당 공식 HTML 본문을 정규화하고 청크로 나눕니다. 원문과 내용 해시는 MySQL에서 관리합니다.
+2. **벡터 색인**: AI Service가 청크를 OpenAI로 임베딩하고, 벡터와 청크 식별자·해시 등 메타데이터를 별도 Qdrant 컬렉션에 저장합니다.
+3. **근거 검색**: 사용자 질문을 임베딩하여 선택한 공고의 현재 청크에서 관련 근거를 최대 5개 검색합니다.
+4. **답변 생성**: Core API가 검색 결과의 식별자·해시를 검증하고 원문을 복원하면, LangChain의 `ChatPromptTemplate → ChatOpenAI` 체인이 질문과 근거를 함께 전달해 답변을 생성합니다.
+5. **인용 검증**: 모델이 선택한 인용 번호를 원래 청크 ID로 복원·검증하고, 답변과 출처를 화면에 표시합니다. 근거가 부족하면 확인할 수 없는 내용으로 안내하며, 외부 서비스 장애는 오류로 반환합니다.
+
+> 질문 → 임베딩 → Qdrant 근거 검색 → Core 원문 복원·검증 → LangChain·OpenAI 답변 생성 → 인용 검증
+
+AI 대화 검색은 **Qdrant 의미 검색과 Elasticsearch 키워드 검색의 후보를 RRF로 결합**한 뒤, 검증된 공고 본문과 기업 조건을 LangChain에 전달해 추천 이유와 자격 확인 정보를 생성합니다. 검색 전 조건 해석과 검색 후 공고 추천을 구분하며, 검색 관련도를 신청 자격 충족 확률로 사용하지 않습니다.
+
+### 핵심 구현 코드
+
+| 구성 요소 | 구현 역할 | 코드 |
+|---|---|---|
+| 공식 원문·청크 준비 | 원문 수집·캐시와 내용 해시 관리, 검색용 청크 생성 | [Core 원문 Service](backend/core-api/src/main/kotlin/ai/govbiz/core/supportprogram/service/evidence/SupportProgramEvidenceService.kt) · [Chunker](backend/core-api/src/main/kotlin/ai/govbiz/core/supportprogram/service/evidence/SupportProgramEvidenceChunker.kt) |
+| Qdrant 색인·검색 | 공고·근거 청크 임베딩, 벡터 저장 및 현재 버전의 유사도 검색 | [공고 검색 Service](backend/ai-service/app/support_program_index/service.py) · [근거 검색 Service](backend/ai-service/app/support_program_evidence/service.py) |
+| LangChain 프롬프트 체인 | 프롬프트와 모델 연결, 구조화 응답 스키마·완료 상태 검증 | [공통 LLM 실행](backend/ai-service/app/support_program_llm.py) |
+| 근거 답변 Agent | 질문·검색 청크로 답변 생성, 인용 번호를 청크 ID로 복원 | [근거 답변 Agent](backend/ai-service/app/support_program_evidence/agent.py) |
+| 공고 추천 Agent | 검색 후보와 기업 조건으로 관련도·추천 이유·자격 확인 정보 생성 | [추천 Agent](backend/ai-service/app/support_program_ranking/agent.py) |
+
+상세 실행 경로와 API 계약은 [AI Service 구현 문서](backend/ai-service/README.md)와 [서비스 호출·데이터 흐름](docs/architecture.md)에서 확인할 수 있습니다.
 
 ## 9. 화면설계 | **UI 시안/UX Flow**
 
@@ -301,7 +327,37 @@ GovBiz/
 
 각 폴더는 서비스 운영에 필요한 핵심 영역을 기준으로 구성되어 있습니다. 로컬 캐시, 가상환경, 임시 파일과 같은 개발 환경 전용 항목은 구조에서 제외했습니다.
 
-## 11. 주요 문서
+## 11. 테스트 계획 및 결과 보고
+
+### 테스트 계획
+
+자동화 테스트는 기능·데이터 무결성·서비스 연결을 확인하고, 검색 및 RAG 평가는 실제 검색 결과와 답변의 근거를 별도로 확인합니다.
+
+| 검증 영역 | 검증 내용과 확인 기준 | 실행·평가 기준 |
+|---|---|---|
+| Frontend | 화면·상태 전환·오류 처리 회귀, 타입·정적 검사와 빌드 성공 | `frontend`에서 `pnpm test`, `pnpm lint`, `pnpm build` |
+| Core API·DB | API 계약·업무 규칙, 실제 MySQL 8.4의 저장·조회·트랜잭션 검증 | JDK 21, Testcontainers를 사용하는 `./gradlew clean build --no-daemon` |
+| AI Service | LangChain 실행·구조화 응답·인용 검증·오류 처리, 잠금 의존성·패키지 빌드 | `uv run --locked --extra dev python -m pytest`, `uv lock --check`, `uv build` |
+| 서비스 통합 | 실제 DB·검색 저장소·큐와 서비스 간 HTTP 연결, 장애 시 명시적 오류·복구 | [Compose 검증](infrastructure/scripts/verify-compose.sh) · [운영 프록시 검증](infrastructure/scripts/verify-production-proxy.py), 공고 API·OpenAI는 로컬 스텁 사용 |
+| 검색 품질 | 고정 공고·질문의 후보 누락과 추천 순위, 한국어 표현 변화에 따른 검색 결과 비교 | [검색 평가 계획·도구](evaluation/support-program-search/README.md), 실험별 Recall·MRR 또는 목표 공고 Hit 지표 |
+| RAG 답변 | 기대 답변 상태, 인용 ID·본문 일치, 근거 부족 처리와 원문에 없는 주장 여부 | [RAG 검증 계획·도구](evaluation/support-program-evidence/README.md), 고정 근거 회귀와 공식 원문 경로 평가 구분 |
+
+실행 환경과 자동화 단계는 [GitHub Actions CI](.github/workflows/ci.yml)와 [통합 검증 안내](infrastructure/README.md)를 기준으로 관리합니다. 자동화·스텁 검증과 실제 모델 품질 평가는 구분하며, 새 유료 평가는 전송 데이터와 호출 예산을 정한 뒤 별도로 실행합니다.
+
+### 기록된 테스트·평가 결과
+
+아래는 저장소에 보존된 **각 실행 시점의 결과**입니다. 현재 코드의 전체 테스트 수나 LangChain 전환 이후 새로 측정한 모델 품질을 뜻하지 않습니다.
+
+| 실행 시점 | 대상 | 기록된 결과 | 결과 보고서·해석 범위 |
+|---|---|---|---|
+| 2026-09-07~08 | 서비스 회귀·통합 검증 | Core 519건, AI 616건, Frontend 299건 통과. 실제 MySQL 통합 테스트와 스텁 기반 Compose 검증 포함 | [회귀 검증 기록](docs/search-relevance-v5-fix.md#회귀-검증). 당시 코드의 동작 검증이며 실제 모델 정확도 측정과 구분 |
+| 2026-09-06 | 고정 공고 검색 기준선 | 공고 1,422건·질문 16개, 실제 검색 캡처 16건. 평가 가능한 양성 질문 2개에서 후보 Recall@20 0.50, 최종 MRR@5 0.50 | [검색 기준선 보고서](evaluation/support-program-search/runs/support-program-catalog-20260906-v1/README.md). AI-only 판정이며 미확정 질문과 표본 한계 보존 |
+| 2026-09-07 | 근거 답변 보완 평가 | 가상 질문 6개·공식 공고 질문 6개 모두 정상 반환 및 기대 상태 일치, 별도 AI 의미 검토 12건 일치 | [RAG 결과 보고서](evaluation/support-program-evidence/runs/official-flow-20260907-v2/README.md). 소규모 단회 AI-only 평가이며 사람 검수 정답·전체 정확도를 의미하지 않음 |
+| 2026-09-12 | 한국어 표현별 키워드 검색 | 16개 목표 공고·48개 질문에서 Hit@20이 기존 키워드 39/48 → Nori BM25 48/48 | [한국어 검색 비교 보고서](evaluation/support-program-search/runs/elasticsearch-korean-queries-20260912-v1/README.md). AI 작성 질문의 목표 공고 찾기 진단이며 Qdrant·LLM 최종 추천 평가는 제외 |
+
+각 보고서에는 평가 입력·실행 방법·실패 및 퇴보 사례·미검증 범위를 함께 보존합니다. 최신 변경의 검증 상태는 해당 커밋의 CI 실행 결과와 [구현 현황](docs/implementation-status.md)을 함께 확인합니다.
+
+## 12. 주요 문서
 
 | 분류 | 문서 | 내용 |
 |---|---|---|
@@ -310,13 +366,16 @@ GovBiz/
 | 시스템 | [시스템 아키텍처](docs/architecture/README.md) | 전체 시스템 구성과 서비스 간 연결 구조 |
 | 기술 | [기술 구성](docs/technology.md) | 기술 스택과 주요 구현 방식 |
 | 구현 | [구현 현황](docs/implementation-status.md) | 기능별 구현·검증 상태 |
+| RAG 구현 | [AI Service 구현 문서](backend/ai-service/README.md) | LangChain·OpenAI·Qdrant 연동 흐름과 핵심 구현 코드 |
+| 테스트 계획 | [CI 정의](.github/workflows/ci.yml) · [통합 검증 안내](infrastructure/README.md) | 서비스별 자동화 검증과 Compose 통합 테스트 |
+| 테스트 결과 | [테스트·평가 결과 요약](#11-테스트-계획-및-결과-보고) | 실행 시점별 회귀·검색·RAG 결과와 원본 보고서 |
 | 검색 | [지원사업 검색 설계](docs/support-program-search-contract.md) | AI 검색 흐름과 공고 데이터 계약 |
 | 신청 | [신청 준비 설계](docs/application-preparation-design.md) | 신청 양식 분석과 문서 작성 과정 |
 | 검토 | [중복 지원·수혜 검토](docs/duplicate-support-review-design.md) | 복수 사업 비교 및 제한 검토 구조 |
 | 배포 | [AWS·Vercel 배포](docs/assets/architecture/README-aws-deployed.md) · [CodeBuild](docs/deployment-codebuild.md) | 배포 구성과 백엔드 자동 배포 절차 |
 | 기획 | [프로젝트 사업계획서](docs/govbiz-business-plan-v3.pdf) | 서비스 기획과 비즈니스 모델 |
 
-## 12. 한 줄 회고
+## 13. 한 줄 회고
 
 **김건우**
 > 작성 예정
