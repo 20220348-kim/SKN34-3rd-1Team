@@ -15,6 +15,7 @@ const displayReviewText = (text: string) => text.replace(
 )
 export function ReviewRunResult({ run, currentRevision, download, downloading }: { run: ReviewRun; currentRevision: number; download: (index: number) => void; downloading: boolean }) {
   const [selectedStage, setSelectedStage] = useState<string | null>(null)
+  const [expandedCitations, setExpandedCitations] = useState<string | null>(null)
   // This prompt used internal (zero-based) indices in prose. Only adapt an
   // explicitly zero-based legacy summary; preserve stored data and source quotes.
   const summary = run.analysis?.summary ?? ''
@@ -40,6 +41,7 @@ export function ReviewRunResult({ run, currentRevision, download, downloading }:
         const pairKey = `${run.id}:${pair.firstProgramIndex}:${pair.secondProgramIndex}`
         const activeStage = pair.stages.find((stage) => selectedStage === `${pairKey}:${stage.stage}`) ?? pair.stages.find((stage) => stage.stage === reviewStages[0])!
         const activeKey = `${pairKey}:${activeStage.stage}`
+        const citationsExpanded = expandedCitations === activeKey
         return <section className="space-y-4" key={pairKey}>
           <div><h3 className="font-bold">두 사업의 단계별 비교</h3><p className={s.muted}>신청부터 교부까지 여섯 단계의 판단을 비교합니다.</p></div>
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3" role="tablist" aria-label="중복 지원 분석 단계">
@@ -50,7 +52,7 @@ export function ReviewRunResult({ run, currentRevision, download, downloading }:
               const judgmentTone = stage.judgment === 'RESTRICTION_APPLIES' ? 'bg-red-100 text-red-800'
                 : stage.judgment === 'PERMISSION_IN_SCOPE' ? 'bg-emerald-100 text-emerald-800'
                   : stage.judgment === 'NEEDS_FACTS' ? 'bg-blue-100 text-blue-800' : 'bg-amber-100 text-amber-900'
-              return <button type="button" role="tab" aria-label={`${index + 1}단계 · ${stages[stage.stage]} · ${judgments[stage.judgment]}`} aria-selected={active} aria-controls={`review-stage-${pairKey}`} className={`rounded-xl border p-4 text-left transition-colors focus-visible:outline-2 focus-visible:outline-emerald-700 ${active ? 'border-emerald-600 bg-emerald-50 shadow-sm' : 'border-slate-200 bg-white hover:border-emerald-300'}`} key={stageName} onClick={() => setSelectedStage(stageKey)}>
+              return <button type="button" role="tab" aria-label={`${index + 1}단계 · ${stages[stage.stage]} · ${judgments[stage.judgment]}`} aria-selected={active} aria-controls={`review-stage-${pairKey}`} className={`rounded-xl border p-4 text-left transition-colors focus-visible:outline-2 focus-visible:outline-emerald-700 ${active ? 'border-emerald-600 bg-emerald-50 shadow-sm' : 'border-slate-200 bg-white hover:border-emerald-300'}`} key={stageName} onClick={() => { setSelectedStage(stageKey); if (!active) setExpandedCitations(null) }}>
                 <span className="block text-xs font-bold text-slate-500">{index + 1}단계</span>
                 <span className="mt-1 block text-base font-bold">{stages[stage.stage]}</span>
                 <span className={`mt-2 inline-flex rounded-full px-2.5 py-1 text-xs font-bold ${judgmentTone}`}>{judgments[stage.judgment]}</span>
@@ -63,15 +65,22 @@ export function ReviewRunResult({ run, currentRevision, download, downloading }:
             <p className="whitespace-pre-wrap text-sm"><strong>판단 범위:</strong> {displayReviewText(activeStage.scope)}</p>
             <p className="whitespace-pre-wrap text-sm leading-6">{displayReviewText(activeStage.explanation)}</p>
             {activeStage.questions.length > 0 && <div className="text-sm"><strong>확인 질문</strong><ul className="mt-2 list-disc space-y-1 pl-5">{activeStage.questions.map((q, i) => <li key={i}>{displayReviewText(q)}</li>)}</ul></div>}
-            {activeStage.citations.map((citation, i) => {
-              const block = run.evidence?.blocks.find((b) => b.id === citation.evidenceId)
-              const documentIndex = run.evidence?.documents.findIndex((d) => d.rawHash === block?.documentHash && d.programIndex === block?.programIndex) ?? -1
-              return <blockquote className="border-l-4 border-emerald-700 bg-emerald-50 p-3 text-sm" key={i}>
-                <p className="whitespace-pre-wrap">{citation.quote}</p>
-                <p className="mt-2 break-all text-xs">{citation.evidenceId} · 사업 {(block?.programIndex ?? 0) + 1} · {block?.locator}</p>
-                {documentIndex >= 0 && <button type="button" className={`${s.button} mt-2`} disabled={downloading} onClick={() => download(documentIndex)}>인용 원본 다운로드</button>}
-              </blockquote>
-            })}
+            {activeStage.citations.length > 0 && <div className="mt-4">
+              <button type="button" className={s.button} aria-expanded={citationsExpanded} aria-controls={`review-citations-${activeKey}`} onClick={() => setExpandedCitations(citationsExpanded ? null : activeKey)}>
+                {citationsExpanded ? '원문인용 접기' : '원문인용 확인하기'}
+              </button>
+              <div id={`review-citations-${activeKey}`} hidden={!citationsExpanded} className="mt-3 space-y-3">
+                {activeStage.citations.map((citation, i) => {
+                  const block = run.evidence?.blocks.find((b) => b.id === citation.evidenceId)
+                  const documentIndex = run.evidence?.documents.findIndex((d) => d.rawHash === block?.documentHash && d.programIndex === block?.programIndex) ?? -1
+                  return <blockquote className="border-l-4 border-emerald-700 bg-emerald-50 p-3 text-sm" key={i}>
+                    <p className="whitespace-pre-wrap">{citation.quote}</p>
+                    <p className="mt-2 break-all text-xs">{citation.evidenceId} · 사업 {(block?.programIndex ?? 0) + 1} · {block?.locator}</p>
+                    {documentIndex >= 0 && <button type="button" className={`${s.button} mt-2`} disabled={downloading} onClick={() => download(documentIndex)}>인용 원본 다운로드</button>}
+                  </blockquote>
+                })}
+              </div>
+            </div>}
           </article>
         </section>
       })}
