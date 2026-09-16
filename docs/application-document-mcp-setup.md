@@ -23,6 +23,17 @@ AI Service는 MCP SDK 2.1.0을 직접 선언하고, 편집 프로세스는 SDK 1
 
 로컬은 Python 3.12와 uv 0.12.5에서 `uv sync --locked --extra dev` 후 도구별 venv를 만들고 `uv pip sync --python <도구 Python> document-tools/<형식>.lock`을 실행한다. DOCUMENT_HWPX_COMMAND에는 HWPX 환경의 Python, DOCUMENT_HWPX_ARGS에는 ["<AI Service 절대 경로>/app/application_preparation/hwpx_mcp_extension.py"]를 넣는다. DOCUMENT_PDF_COMMAND에는 PDF 환경의 Python, DOCUMENT_PDF_ARGS에는 ["<AI Service 절대 경로>/app/application_preparation/pdf_mcp_extension.py"]를 넣는다. 인수는 JSON 배열이며 사용자 입력을 연결하지 않는다. kordoc은 위 commit을 checkout하여 `npm ci --ignore-scripts && npm run build` 후 node 절대경로와 dist/mcp.js 인수를 설정한다.
 
+## AWS 운영 토큰 설정
+
+- 운영에서는 개발용 Compose와 합치지 않고 `infrastructure/compose.prod.yaml`을 사용한다.
+- `DOCUMENT_INTERNAL_TOKEN`은 EC2의 `/opt/govbiz/.env.production`(권한 600)에 설정한다.
+  운영 Compose가 같은 값을 Core API와 AI Service에 전달한다. Git 또는 Vercel 환경변수에는 넣지 않는다.
+- 두 서비스가 시작할 때 읽으므로 환경 파일만 수정하거나 `docker compose restart`만 실행해서는
+  반영되지 않는다. 운영 Compose의 전달 설정도 확인한 뒤 AI Service, Core API 순으로 컨테이너를
+  재생성하고 건강 상태를 확인한다. 호스트의 고정 IP 등 기존 설정은 덮어쓰지 않는다.
+- 자동 배포는 이미지 참조만 갱신하므로 기존 운영 호스트에는 Compose 전달 설정을 별도로 반영해야 한다.
+- 토큰 등록은 내부 인증 설정이며, 문서 도구 설치나 HWP Windows 브리지 준비를 대신하지 않는다.
+
 ## Windows 작업 서버
 
 필수 사용자 조치: 서버용 Windows 계정, 설치·활성화된 정식 한컴 한글과 자동화에 맞는 사용권, TLS/사설망 경로, 토큰 공급. 고객 PC나 Mac 사용자에게 한글/MCP 설치를 요구하지 않는다. 현재 개발 PC에서는 HWPFrame.HwpObject 등록이 발견되지 않았다.

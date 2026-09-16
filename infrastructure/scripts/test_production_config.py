@@ -74,6 +74,36 @@ class ProductionConfigTest(unittest.TestCase):
                     "ACCOUNT_OAUTH_UNLINK_QUEUE_ENABLED", "ACCOUNT_OAUTH_UNLINK_ENABLED"]:
             self.assertEqual(env[key], "false", key)
 
+    def test_document_token_is_empty_by_default(self):
+        for name in ("core-api", "ai-service"):
+            self.assertEqual(self.config["services"][name]["environment"]["DOCUMENT_INTERNAL_TOKEN"], "")
+
+    def test_document_token_is_forwarded_to_core_and_ai_only(self):
+        token = "dummy-document-token-for-config-test-" * 2
+        result = subprocess.run(["docker", "compose", "--env-file", os.devnull, "-f", str(checker.COMPOSE),
+                                 "config", "--format", "json"],
+                                env={**self.env, "DOCUMENT_INTERNAL_TOKEN": token},
+                                capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0)
+        config = json.loads(result.stdout)
+        self.assertEqual(checker.validate(config), [])
+        for name, service in config["services"].items():
+            if name in {"core-api", "ai-service"}:
+                self.assertEqual(service["environment"]["DOCUMENT_INTERNAL_TOKEN"], token)
+            else:
+                self.assertNotIn("DOCUMENT_INTERNAL_TOKEN", service.get("environment", {}))
+        for name, value in [("core-api", ""), ("ai-service", ""),
+                            ("core-api", "short"), ("ai-service", "different-token-" * 3)]:
+            with self.subTest(service=name):
+                invalid = copy.deepcopy(config)
+                invalid["services"][name]["environment"]["DOCUMENT_INTERNAL_TOKEN"] = value
+                self.assertTrue(checker.validate(invalid))
+        for value in ("short", " " * 64):
+            invalid = copy.deepcopy(config)
+            for name in ("core-api", "ai-service"):
+                invalid["services"][name]["environment"]["DOCUMENT_INTERNAL_TOKEN"] = value
+            self.assertTrue(checker.validate(invalid))
+
     def mail_config(self):
         environment = {**self.env,
                        "ACCOUNT_EMAIL_VERIFICATION_MAIL_ENABLED": "true",
