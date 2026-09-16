@@ -196,7 +196,7 @@ describe('대화 조건 해석·확인 검색 HTTP E2E', () => {
     await submitMessage('서울 SW 사업화, 마감 공고도 포함해 줘')
     expect(screen.queryByText(/적용 중인 조건:/)).toBeNull()
     await act(async () => fireEvent.click(screen.getByRole('button', { name: '이 조건으로 검색' })))
-    expect(screen.getByText('적용 중인 조건: 접수 상태 전체 · 현재 소재지 서울 · 업종 SW · 설립일 2024-01-01 · 지원 목적 사업화')).toBeTruthy()
+    expect(screen.getByText('적용 중인 조건: 접수 상태: 전체 · 현재 소재지: 서울 · 업종: SW · 설립일: 2024-01-01 · 지원 목적: 사업화')).toBeTruthy()
     const input = screen.getByRole('textbox', { name: '지원사업 검색어' })
     expect(input.getAttribute('aria-describedby')).toContain('support-program-current-conditions')
     fireEvent.click(screen.getByRole('button', { name: path === '/' ? '새 AI 대화 검색' : '지원사업 새검색' }))
@@ -311,7 +311,7 @@ describe('대화 조건 해석·확인 검색 HTTP E2E', () => {
     await submitMessage('서울 SW 사업화')
     await act(async () => fireEvent.click(screen.getByRole('button', { name: '이 조건으로 검색' })))
     await submitMessage('수출 지원도 찾아줘')
-    expect(screen.getByText(/적용 중인 조건: 접수 중만 · 현재 소재지 서울 · 업종 SW/)).toBeTruthy()
+    expect(screen.getByText(/적용 중인 조건: 접수 중만 · 현재 소재지: 서울 · 업종: SW/)).toBeTruthy()
 
     const proposal = screen.getByRole('region', { name: '조건 변경 제안' })
     const card = within(proposal)
@@ -362,7 +362,7 @@ describe('대화 조건 해석·확인 검색 HTTP E2E', () => {
       searchQuery: seoulConversationContext.query, searchOptions: { acceptingOnly: true,
         companyConditions: seoulConversationContext.companyConditions },
     })
-    expect(screen.getByText(/검색 당시 조건: 접수 중만 · 현재 소재지 서울/)).toBeTruthy()
+    expect(screen.getByText(/검색 당시 조건: 접수 중만 · 현재 소재지: 서울/)).toBeTruthy()
   })
 
   it('기업 조건이 없어도 유지되는 전체 접수 상태는 한 줄로 안내하고 검색에 그대로 적용한다', async () => {
@@ -519,8 +519,8 @@ describe('대화 조건 해석·확인 검색 HTTP E2E', () => {
     ])
     expect(network.searchRequests[2]).toEqual({ query: '지원금', acceptingOnly: false,
       companyConditions: { region: '부산', industry: 'SW', establishedOn: '2024-01-01', supportPurpose: '지원금' } })
-    expect(screen.getByText(/검색 당시 조건: 접수 중만 · 현재 소재지 서울/)).toBeTruthy()
-    expect(screen.getByText(/검색 당시 조건: 접수 상태 전체 · 현재 소재지 부산/)).toBeTruthy()
+    expect(screen.getByText(/검색 당시 조건: 접수 중만 · 현재 소재지: 서울/)).toBeTruthy()
+    expect(screen.getByText(/검색 당시 조건: 접수 상태: 전체 · 현재 소재지: 부산/)).toBeTruthy()
     expect(network.fetch).toHaveBeenCalledTimes(6)
     fireEvent.click(screen.getByRole('button', { name: '새 AI 대화 검색' }))
     expect(store.getState().chat.conversationQuery).toBeNull()
@@ -627,7 +627,7 @@ describe('대화 조건 해석·확인 검색 HTTP E2E', () => {
 
     expect(network.searchRequests[1]).toEqual({ query: '지원금', acceptingOnly: true })
     expect(store.getState().chat.searchOptions).toEqual({ acceptingOnly: true })
-    expect(screen.getByText(/검색 당시 조건: 접수 중만 · 현재 소재지 서울/)).toBeTruthy()
+    expect(screen.getByText(/검색 당시 조건: 접수 중만 · 현재 소재지: 서울/)).toBeTruthy()
     expect(store.getState().chat.messages.at(-1)).toMatchObject({ searchQuery: '지원금', searchOptions: { acceptingOnly: true } })
     expect(network.fetch).toHaveBeenCalledTimes(4)
   })

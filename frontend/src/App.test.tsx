@@ -262,7 +262,7 @@ describe('App navigation', () => {
 
     fireEvent.change(input, { target: { value: '현재 소재지를 부산으로 변경' } })
     await submitConfirmedSearch(input)
-    expect(screen.getByText(/검색 당시 조건: 접수 중만 · 현재 소재지 서울/)).toBeTruthy()
+    expect(screen.getByText(/검색 당시 조건: 접수 중만 · 현재 소재지: 서울/)).toBeTruthy()
     expect(fetchMock).toHaveBeenCalledTimes(2)
     fireEvent.click(within(getProgramCard(conditionMatchedProgram.title)).getByRole('link', { name: '상세 조건 보기' }))
     await screen.findByText('자격 미평가 · 공고 상세 정보')
@@ -272,7 +272,7 @@ describe('App navigation', () => {
     expect(within(getProgramCard(conditionMatchedProgram.title)).getByText('조건 확인 · API 본문 기준')).toBeTruthy()
     expect(within(screen.getByRole('region', { name: '지원사업 검색 결과' })).getAllByRole('article')
       .map((card) => within(card).getByRole('heading', { level: 2 }).textContent)).toEqual(programs.map((program) => program.title))
-    expect(screen.getByText(/검색 당시 조건: 접수 중만 · 현재 소재지 서울/)).toBeTruthy()
+    expect(screen.getByText(/검색 당시 조건: 접수 중만 · 현재 소재지: 서울/)).toBeTruthy()
     expect(store.getState().chat.searchOptions.companyConditions?.region).toBe('부산')
     expect(store.getState().chat.messages.find((message) => message.programs?.length === 4)?.programs?.[1]?.eligibilityReview)
       .toEqual(conditionMatchedProgram.eligibilityReview)
@@ -342,8 +342,8 @@ describe('App navigation', () => {
       query: '서울 지원금', acceptingOnly: false,
       companyConditions: { region: '부산', establishedOn: '2024-02-29', supportPurpose: '사업화' },
     })
-    expect(screen.getByText(/검색 당시 조건: 접수 중만 · 현재 소재지 서울/)).toBeTruthy()
-    expect(screen.getByText(/검색 당시 조건: 접수 상태 전체 · 현재 소재지 부산/)).toBeTruthy()
+    expect(screen.getByText(/검색 당시 조건: 접수 중만 · 현재 소재지: 서울/)).toBeTruthy()
+    expect(screen.getByText(/검색 당시 조건: 접수 상태: 전체 · 현재 소재지: 부산/)).toBeTruthy()
 
     fireEvent.change(searchInput, { target: { value: '기업 조건 모두 지우고 접수 중인 지원금만 찾아줘' } })
     await act(async () => fireEvent.submit(searchInput.closest('form')!))
@@ -356,7 +356,7 @@ describe('App navigation', () => {
       .toEqual({ query: '지원금', acceptingOnly: true })
     expect(store.getState().chat.searchStatus).toBe('idle')
     expect(store.getState().chat.searchOptions).toEqual({ acceptingOnly: true })
-    expect(screen.getByText(/검색 당시 조건: 접수 상태 전체 · 현재 소재지 부산/)).toBeTruthy()
+    expect(screen.getByText(/검색 당시 조건: 접수 상태: 전체 · 현재 소재지: 부산/)).toBeTruthy()
 
     fireEvent.change(searchInput, { target: { value: '제주 소프트웨어 개발업 2024-02-29 설립 사업화 지원금' } })
     await submitConfirmedSearch(searchInput)

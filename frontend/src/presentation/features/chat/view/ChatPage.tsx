@@ -419,8 +419,8 @@ function getReadinessNoticeMessage(readiness: SupportProgramSearchReadiness) {
 function formatSearchOptions(options: ChatSearchOptions) {
   const conditions = companyConditionFields.flatMap((field) => {
     const value = options.companyConditions?.[field.key]
-    return value ? [`${field.label} ${value}`] : []
+    return value ? [`${field.label}: ${value}`] : []
   })
-  return [options.acceptingOnly ? '접수 중만' : '접수 상태 전체', ...conditions,
+  return [options.acceptingOnly ? '접수 중만' : '접수 상태: 전체', ...conditions,
     ...(conditions.length ? [] : ['기업 조건 미입력'])].join(' · ')
 }
