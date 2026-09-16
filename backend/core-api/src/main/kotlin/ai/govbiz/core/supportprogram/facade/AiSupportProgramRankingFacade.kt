@@ -57,6 +57,7 @@ class AiSupportProgramRankingFacade(
                     industry = it.industry,
                     establishedOn = it.establishedOn?.toString(),
                     supportPurpose = it.supportPurpose,
+                    foundedYear = it.foundedYear,
                     referenceDate = requireNotNull(referenceDate) { "company conditions require a reference date" }.toString(),
                 )
             },

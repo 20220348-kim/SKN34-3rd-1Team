@@ -136,6 +136,7 @@ class SupportProgramCompanyConditions(BaseModel):
     established_on: date | None = Field(default=None, alias="establishedOn")
     support_purpose: str | None = Field(default=None, alias="supportPurpose", max_length=100)
     reference_date: date = Field(alias="referenceDate")
+    founded_year: int | None = Field(default=None, alias="foundedYear", strict=True, ge=1900, le=9999, exclude_if=lambda value: value is None)
 
     @field_validator("region", "industry", "support_purpose", mode="before")
     @classmethod
@@ -161,6 +162,10 @@ class SupportProgramCompanyConditions(BaseModel):
 
     @model_validator(mode="after")
     def require_establishment_within_reference_date(self) -> "SupportProgramCompanyConditions":
+        if self.founded_year is not None and self.founded_year > self.reference_date.year:
+            raise ValueError("foundedYear must not be in the future")
+        if self.founded_year is not None and self.established_on is not None:
+            raise ValueError("provide either foundedYear or establishedOn")
         if self.established_on is not None and not date(1900, 1, 1) <= self.established_on <= self.reference_date:
             raise ValueError("establishedOn must be between 1900-01-01 and referenceDate")
         return self

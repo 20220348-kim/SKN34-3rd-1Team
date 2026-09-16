@@ -1,7 +1,10 @@
 package ai.govbiz.core.supportprogram.controller.dto
 
+import ai.govbiz.core.supportprogram.controller.validation.CompanyFoundedYear
 import ai.govbiz.core.supportprogram.controller.validation.CompanyEstablishedOn
 import ai.govbiz.core.supportprogram.domain.SupportProgramCompanyConditions
+import com.fasterxml.jackson.annotation.JsonIgnore
+import jakarta.validation.constraints.AssertTrue
 import com.fasterxml.jackson.annotation.JsonSetter
 import com.fasterxml.jackson.annotation.Nulls
 import jakarta.validation.Valid
@@ -34,16 +37,24 @@ data class SupportProgramCompanyConditionsRequest(
     @field:Size(max = 100)
     @field:Pattern(regexp = "(?s)^(?!.*\\p{C}).*$")
     val supportPurpose: String? = null,
+    @field:CompanyFoundedYear
+    val foundedYear: Int? = null,
 ) {
+    @get:AssertTrue
+    @get:JsonIgnore
+    val foundationPrecisionValid: Boolean
+        get() = establishedOn.isNullOrBlank() || foundedYear == null
+
     fun toDomain(): SupportProgramCompanyConditions? {
         val conditions = SupportProgramCompanyConditions(
             region = region?.trim()?.takeIf(String::isNotEmpty),
             industry = industry?.trim()?.takeIf(String::isNotEmpty),
             establishedOn = establishedOn?.takeIf(String::isNotBlank)?.let(LocalDate::parse),
             supportPurpose = supportPurpose?.trim()?.takeIf(String::isNotEmpty),
+            foundedYear = foundedYear,
         )
         return conditions.takeUnless {
-            it.region == null && it.industry == null && it.establishedOn == null && it.supportPurpose == null
+            it.region == null && it.industry == null && it.establishedOn == null && it.supportPurpose == null && it.foundedYear == null
         }
     }
 }

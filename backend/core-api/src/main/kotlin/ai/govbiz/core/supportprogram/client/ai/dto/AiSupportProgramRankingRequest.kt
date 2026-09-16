@@ -35,4 +35,6 @@ data class AiSupportProgramCompanyConditionsRequest(
     val establishedOn: String?,
     val supportPurpose: String?,
     val referenceDate: String,
+    @get:JsonInclude(JsonInclude.Include.NON_NULL)
+    val foundedYear: Int? = null,
 )

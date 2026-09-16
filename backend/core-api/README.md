@@ -434,7 +434,7 @@ v1을 사용하던 환경은 **새 v2 인덱스 이름으로 전환하고 재색
 - POST 검색: JSON의 `query`는 비어 있지 않은 최대 500 UTF-16 코드 단위 문자열이고,
   `acceptingOnly`는 생략 시 `true`입니다. 명시한 값은 JSON 부울만 허용하며 `null`·문자열·숫자는 거부합니다.
   선택 객체 `companyConditions`에는 `region`(50), `industry`(100), `supportPurpose`(100),
-  `establishedOn`(10)을 넣을 수 있습니다. 상한은 앞뒤 공백을 포함한 입력의 UTF-16 코드 단위입니다.
+  `establishedOn`(10) 또는 `foundedYear`(정수)를 넣을 수 있습니다. 설립연도는 1900부터 서울 기준 올해까지이며 정확한 설립일과 동시에 지정할 수 없습니다. 상한은 앞뒤 공백을 포함한 입력의 UTF-16 코드 단위입니다.
   조건 텍스트는 제어·제로폭 문자 등 Unicode C 범주를 거부한 뒤 trim하고 빈 값은 미입력으로 처리합니다.
   설립일은 실제 달력의 `YYYY-MM-DD`로 `1900-01-01`부터 서울 기준 오늘까지이며, 빈 문자열·ASCII 공백만
   있는 값은 미입력입니다. 공백이 붙은 날짜·timestamp·존재하지 않는 날짜는 400입니다.
@@ -445,6 +445,10 @@ v1을 사용하던 환경은 **새 v2 인덱스 이름으로 전환하고 재색
   지역 정보가 없거나 다르다는 이유만으로 Core에서 후보를 제외하지 않습니다.
   조건은 계정·기업 DB에 저장하지 않으며, 공개 `query`는 trim한 원질의 그대로입니다. 로그인 복원을 위한
   임시 결과 스냅샷에는 이번 검색 조건을 함께 보관합니다.
+  Web은 등록 기업이 있는 계정의 새 대화에서 기존 회사 조회 API로 소재지·업종·설립연도를 읽고 요청 조건에 포함합니다.
+  Core 검색에서 계정 정보로 조건을 다시 덮어쓰지 않으므로 대화에서 명시적으로 수정·해제한 조건이 유지됩니다.
+  대화 계약의 선택 foundedYear와 FOUNDED_YEAR 변경 필드를 지원하며 설립일/연도 변경·해제는 기존 반대 정밀도 값을 지웁니다.
+  설립연도는 Ranking Facade가 AI에 그대로 전달하며 특정 월·일로 변환하지 않습니다.
   GET 검색·POST 검색·대화 조건 해석·원문 근거 질문은 같은 요청 제한을 공유합니다.
 - 공개 검색 노출: GET·POST 모두 `Controller → SupportProgramSearchPreviewService → SupportProgramSearchService`로
   검색하며, 응답은 `{query, programs, totalCount, resultToken, expiresAt}`입니다. `totalCount`는 이번에 선정된

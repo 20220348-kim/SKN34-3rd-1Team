@@ -804,3 +804,59 @@ def test_v5_score_schema_rejects_removed_eligibility_score_fields(legacy_field: 
             recommendationReasons=["공고 원문 근거"],
             **{legacy_field: 1},
         )
+
+
+def test_registered_year_is_preserved_without_an_assumed_date():
+    conditions = SupportProgramCompanyConditions(foundedYear=2021, referenceDate="2026-09-16")
+    assert conditions.model_dump(by_alias=True)["foundedYear"] == 2021
+    assert conditions.established_on is None
+
+
+@pytest.mark.parametrize("invalid", [
+    {"foundedYear": 2027}, {"foundedYear": 1899}, {"foundedYear": "2021"},
+    {"foundedYear": True}, {"foundedYear": 2021.5},
+    {"foundedYear": 2021, "establishedOn": "2021-01-01"},
+])
+def test_rejects_invalid_or_conflicting_registered_year(invalid):
+    with pytest.raises(ValidationError):
+        SupportProgramCompanyConditions(referenceDate="2026-09-16", **invalid)
+
+
+def test_selection_logs_count_exclusion_reasons_once_and_keep_unknown_without_private_data(caplog) -> None:
+    body = request_body()
+    body["candidates"] = [
+        {**body["candidates"][0], "id": f"BIZINFO:diagnostic-{index}"}
+        for index in range(6)
+    ]
+    body["resultLimit"] = 2
+    unknown, incompatible = SupportProgramEligibility.UNKNOWN, SupportProgramEligibility.INCOMPATIBLE
+    agent = FixedOutputAgent([
+        score("BIZINFO:diagnostic-0", 19, target_eligibility=incompatible, region_eligibility=incompatible),
+        score("BIZINFO:diagnostic-1", 40, target_eligibility=incompatible, region_eligibility=incompatible),
+        score("BIZINFO:diagnostic-2", 40, region_eligibility=incompatible),
+        score("BIZINFO:diagnostic-3", 40, target_eligibility=unknown, region_eligibility=unknown),
+        score("BIZINFO:diagnostic-4", 40),
+        score("BIZINFO:diagnostic-5", 40),
+    ])
+    client = TestClient(create_app(settings=TEST_SETTINGS, support_program_recommendation_agent=agent))
+
+    with caplog.at_level("INFO", logger="app.support_program_ranking.service"):
+        first = client.post("/internal/v1/support-program-rankings/rank", json=body)
+        cached = client.post("/internal/v1/support-program-rankings/rank", json=body)
+
+    assert first.status_code == cached.status_code == 200
+    assert first.json() == cached.json()
+    assert [item["programId"] for item in first.json()["rankings"]] == [
+        "BIZINFO:diagnostic-3", "BIZINFO:diagnostic-4",
+    ]
+    assert first.json()["rankings"][0]["targetEligibility"] == "UNKNOWN"
+    messages = [record.getMessage() for record in caplog.records
+                if record.getMessage().startswith("support_program_ranking_selection ")]
+    assert messages == [
+        "support_program_ranking_selection candidate_count=6 eligible_count=3 selected_count=2 "
+        "excluded_low_relevance=1 excluded_target=1 excluded_region=1 "
+        "selected_target_unknown=1 selected_region_unknown=1"
+    ]
+    assert body["originalQuery"] not in caplog.text
+    assert "BIZINFO:diagnostic-" not in caplog.text
+    assert "기업 유형 확인 필요" not in caplog.text

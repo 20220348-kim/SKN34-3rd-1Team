@@ -219,7 +219,7 @@ async def test_actual_openai_sdk_strict_schema_and_no_persisted_conversation(req
     update_schema = schema["$defs"]["ConversationUpdate"]
     assert update_schema["additionalProperties"] is False
     assert update_schema["required"] == ["field", "operation", "value", "evidence"]
-    assert schema["properties"]["updates"]["maxItems"] == 6
+    assert schema["properties"]["updates"]["maxItems"] == 7
     assert schema["properties"]["status"]["enum"] == ["READY", "CLARIFICATION_REQUIRED", "ANSWERED"]
     answer_schema = schema["properties"]["answer"]["anyOf"]
     assert {item["type"] for item in answer_schema} == {"string", "null"}

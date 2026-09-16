@@ -47,7 +47,7 @@ class SupportProgramConversationService(
         )
         if (payload.schemaVersion != SCHEMA_VERSION) invalidResponse()
         val status = SupportProgramConversationStatus.entries.firstOrNull { it.name == payload.status } ?: invalidResponse()
-        val updates = payload.updates?.takeIf { it.size <= 6 } ?: invalidResponse()
+        val updates = payload.updates?.takeIf { it.size <= 7 } ?: invalidResponse()
         val fields = HashSet<SupportProgramConversationField>()
         var proposed = pendingClarification?.draftContext ?: pendingProposal ?: context
         for (update in updates) {
@@ -66,6 +66,10 @@ class SupportProgramConversationService(
             if (field == SupportProgramConversationField.ESTABLISHED_ON && value != null) {
                 val establishedOn = parseIsoDate(value) ?: invalidResponse()
                 if (establishedOn < EARLIEST_DATE || establishedOn > referenceDate || parseEvidenceDate(evidence) != establishedOn) invalidResponse()
+            }
+            if (field == SupportProgramConversationField.FOUNDED_YEAR && value != null) {
+                val year = value.takeIf { it.matches(Regex("[0-9]{4}")) }?.toIntOrNull() ?: invalidResponse()
+                if (year !in 1900..referenceDate.year || evidence.removeSuffix("년") != value) invalidResponse()
             }
             proposed = applyUpdate(proposed, field, value)
         }
@@ -92,7 +96,8 @@ class SupportProgramConversationService(
         SupportProgramConversationField.QUERY -> context.copy(query = value)
         SupportProgramConversationField.REGION -> context.copy(companyConditions = context.companyConditions.copy(region = value))
         SupportProgramConversationField.INDUSTRY -> context.copy(companyConditions = context.companyConditions.copy(industry = value))
-        SupportProgramConversationField.ESTABLISHED_ON -> context.copy(companyConditions = context.companyConditions.copy(establishedOn = value?.let { parseIsoDate(it) ?: invalidResponse() }))
+        SupportProgramConversationField.ESTABLISHED_ON -> context.copy(companyConditions = context.companyConditions.copy(establishedOn = value?.let { parseIsoDate(it) ?: invalidResponse() }, foundedYear = null))
+        SupportProgramConversationField.FOUNDED_YEAR -> context.copy(companyConditions = context.companyConditions.copy(foundedYear = value?.toIntOrNull(), establishedOn = null))
         SupportProgramConversationField.SUPPORT_PURPOSE -> context.copy(companyConditions = context.companyConditions.copy(supportPurpose = value))
         SupportProgramConversationField.ACCEPTING_ONLY -> context.copy(acceptingOnly = when (value) {
             null, "true" -> true
@@ -107,7 +112,9 @@ class SupportProgramConversationService(
                 (it.region == null || validText(it.region, 50)) &&
                     (it.industry == null || validText(it.industry, 100)) &&
                     (it.supportPurpose == null || validText(it.supportPurpose, 100)) &&
-                    (it.establishedOn == null || it.establishedOn in EARLIEST_DATE..referenceDate)
+                    (it.establishedOn == null || it.establishedOn in EARLIEST_DATE..referenceDate) &&
+                    (it.foundedYear == null || it.foundedYear in 1900..referenceDate.year) &&
+                    (it.establishedOn == null || it.foundedYear == null)
             }
 
     private fun valueOf(context: SupportProgramConversationContext, field: SupportProgramConversationField): Any? = when (field) {
@@ -115,6 +122,7 @@ class SupportProgramConversationService(
         SupportProgramConversationField.REGION -> context.companyConditions.region
         SupportProgramConversationField.INDUSTRY -> context.companyConditions.industry
         SupportProgramConversationField.ESTABLISHED_ON -> context.companyConditions.establishedOn
+        SupportProgramConversationField.FOUNDED_YEAR -> context.companyConditions.foundedYear
         SupportProgramConversationField.SUPPORT_PURPOSE -> context.companyConditions.supportPurpose
         SupportProgramConversationField.ACCEPTING_ONLY -> context.acceptingOnly
     }
@@ -122,7 +130,7 @@ class SupportProgramConversationService(
     private fun SupportProgramConversationContext.toRequest() = AiSupportProgramConversationContextRequest(
         query,
         acceptingOnly,
-        companyConditions.let { AiSupportProgramConversationCompanyConditionsRequest(it.region, it.industry, it.establishedOn?.toString(), it.supportPurpose) },
+        companyConditions.let { AiSupportProgramConversationCompanyConditionsRequest(it.region, it.industry, it.establishedOn?.toString(), it.supportPurpose, it.foundedYear) },
     )
 
     private fun validText(value: String, maximum: Int, multiline: Boolean = false): Boolean =

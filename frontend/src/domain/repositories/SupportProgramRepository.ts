@@ -16,6 +16,7 @@ export type SupportProgramCompanyConditions = {
   region?: string
   industry?: string
   establishedOn?: string
+  foundedYear?: number
   supportPurpose?: string
 }
 

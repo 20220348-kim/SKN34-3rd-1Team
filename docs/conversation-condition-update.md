@@ -6,6 +6,14 @@
 사용자 흐름은 후속 UI 간소화를 반영한 현재 계약이며, 아래 검증 기록은 C02 최초 구현 당시의
 자동 테스트·가상 브라우저·실제 모델 검증을 구분해 보존한다.
 
+## 등록 기업 기본 조건과 설립연도
+
+새 대화에서 등록 기업의 소재지·업종·설립연도를 기본 조건으로 읽습니다. 이후 대화에서 바꾸거나 지운 값은 유지하며,
+대화 기록 복원 시 현재 프로필을 다시 합치지 않습니다. 회사 조회 실패는 조건 없는 검색으로 대체하지 않습니다.
+companyConditions의 선택 정수 foundedYear는 설립연도만 알 때 사용하며 정확한 establishedOn과 동시에 지정하지 않습니다.
+FOUNDED_YEAR SET은 현재 발화의 네 자리 연도(또는 연도+년) 인용이 필요합니다. 둘 중 하나를 변경·해제하면
+기존의 다른 정밀도 값은 제거합니다. updates 상한은 7개입니다. 이전 네 조건만 담은 기록·요청도 계속 지원합니다.
+
 ## 사용자 흐름과 범위
 
 새 메시지를 확정 검색 의도·조건, 직전 미확정 제안 또는 질문, 최근 완료 검색 요약과 함께 해석한다.
@@ -106,7 +114,7 @@ pendingClarification은 생략/null 또는 다음 객체다.
   확정 조건과 보관 중인 제안·질문을 바꾸지 않는다. READY/CLARIFICATION_REQUIRED에서는 answer가 null이어야 한다.
   answer는 UTF-16 1,000자 이내이며 LF/CR/tab 외 제어·형식 문자는 거부한다. 기존 응답의 answer 생략은 null로 처리한다.
 - changedFields는 Core가 요청의 확정 context와 최종 proposedContext를 비교하여 계산한다.
-  순서는 QUERY, REGION, INDUSTRY, ESTABLISHED_ON, SUPPORT_PURPOSE, ACCEPTING_ONLY다.
+  순서는 QUERY, REGION, INDUSTRY, ESTABLISHED_ON, FOUNDED_YEAR, SUPPORT_PURPOSE, ACCEPTING_ONLY다.
 - 해석 요청도 기존 검색·원문 질문과 같은 주소별/전역/동시 요청 제한을 공유한다.
   해석과 확인 검색은 HTTP 요청 2건으로 각각 계산한다.
 
@@ -130,7 +138,7 @@ AI는 전체 상태를 재작성하지 않고 변경 목록만 반환한다.
 }
 ```
 
-- updates 최대 6개, 동일 field 중복 금지. 위 changedFields와 같은 6개 field만 허용한다.
+- updates 최대 7개, 동일 field 중복 금지. 위 changedFields와 같은 7개 field만 허용한다.
 - SET은 비어 있지 않은 value, CLEAR는 null이다. ACCEPTING_ONLY의 SET은 문자열 true/false만 허용한다.
   CLEAR는 문자열 필드를 null로, ACCEPTING_ONLY를 기본 true로 되돌린다. KEEP은 목록에 넣지 않는다.
 - 각 변경의 evidence는 현재 message의 정확한 연속 부분 문자열이며 필수다. 짧은 동의의 대상이 직전 제안·질문에서

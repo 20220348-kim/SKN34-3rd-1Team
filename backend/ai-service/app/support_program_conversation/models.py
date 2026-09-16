@@ -46,7 +46,7 @@ AnswerText = Annotated[str, Field(min_length=1, max_length=1000), AfterValidator
     lambda value: validate_text(value, 1000, allow_layout=True)
 )]
 DateText = Annotated[str, Field(min_length=10, max_length=10), AfterValidator(validate_calendar_date)]
-UpdateField = Literal["QUERY", "REGION", "INDUSTRY", "ESTABLISHED_ON", "SUPPORT_PURPOSE", "ACCEPTING_ONLY"]
+UpdateField = Literal["QUERY", "REGION", "INDUSTRY", "ESTABLISHED_ON", "FOUNDED_YEAR", "SUPPORT_PURPOSE", "ACCEPTING_ONLY"]
 
 
 class ConversationCompanyConditions(BaseModel):
@@ -56,6 +56,7 @@ class ConversationCompanyConditions(BaseModel):
     industry: ConditionText | None
     established_on: DateText | None = Field(alias="establishedOn")
     support_purpose: ConditionText | None = Field(alias="supportPurpose")
+    founded_year: int | None = Field(default=None, alias="foundedYear", strict=True, ge=1900, le=9999, exclude_if=lambda value: value is None)
 
 
 class ConversationContext(BaseModel):
@@ -66,7 +67,12 @@ class ConversationContext(BaseModel):
     company_conditions: ConversationCompanyConditions = Field(alias="companyConditions")
 
     def validate_reference_date(self, reference_date: str) -> None:
+        founded_year = self.company_conditions.founded_year
         established_on = self.company_conditions.established_on
+        if founded_year is not None and founded_year > int(reference_date[:4]):
+            raise ValueError("foundedYear must not be in the future")
+        if founded_year is not None and established_on is not None:
+            raise ValueError("provide either foundedYear or establishedOn")
         if established_on is not None and not "1900-01-01" <= established_on <= reference_date:
             raise ValueError("establishedOn must be between 1900-01-01 and referenceDate")
 
@@ -129,6 +135,9 @@ class ConversationUpdate(BaseModel):
         if self.field == "ACCEPTING_ONLY":
             if self.value not in ("true", "false"):
                 raise ValueError("ACCEPTING_ONLY requires the string true or false")
+        elif self.field == "FOUNDED_YEAR":
+            if re.fullmatch(r"[0-9]{4}", self.value) is None or self.evidence not in (self.value, self.value + "년"):
+                raise ValueError("foundedYear must equal the explicitly quoted year")
         elif self.field == "ESTABLISHED_ON":
             validate_calendar_date(self.value)
             # Quote the full date alone. Neither relative age nor a date mentioned
@@ -152,7 +161,7 @@ class SupportProgramConversationOutput(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, populate_by_name=True)
 
     status: Literal["READY", "CLARIFICATION_REQUIRED", "ANSWERED"]
-    updates: list[ConversationUpdate] = Field(max_length=6)
+    updates: list[ConversationUpdate] = Field(max_length=7)
     clarification_question: ShortText | None = Field(alias="clarificationQuestion")
     answer: AnswerText | None = None
 
@@ -175,7 +184,7 @@ class SupportProgramConversationResponse(BaseModel):
 
     schema_version: Literal[SCHEMA_VERSION] = Field(alias="schemaVersion")
     status: Literal["READY", "CLARIFICATION_REQUIRED", "ANSWERED"]
-    updates: list[ConversationUpdate] = Field(max_length=6)
+    updates: list[ConversationUpdate] = Field(max_length=7)
     clarification_question: ShortText | None = Field(alias="clarificationQuestion")
     answer: AnswerText | None = None
 

@@ -21,5 +21,5 @@ data class SupportProgramConversationLastSearch(
 enum class SupportProgramConversationStatus { READY, CLARIFICATION_REQUIRED, ANSWERED }
 
 enum class SupportProgramConversationField {
-    QUERY, REGION, INDUSTRY, ESTABLISHED_ON, SUPPORT_PURPOSE, ACCEPTING_ONLY,
+    QUERY, REGION, INDUSTRY, ESTABLISHED_ON, FOUNDED_YEAR, SUPPORT_PURPOSE, ACCEPTING_ONLY,
 }

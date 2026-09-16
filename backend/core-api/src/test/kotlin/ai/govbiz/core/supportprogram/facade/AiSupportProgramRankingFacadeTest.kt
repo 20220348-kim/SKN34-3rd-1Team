@@ -27,6 +27,18 @@ class AiSupportProgramRankingFacadeTest {
     private val client = StubRankingClient()
 
     @Test
+    fun passesRegisteredFoundationYearToAiWithoutInventingADate() {
+        client.reset(response())
+        facade().rank(QUERY, candidates(), 5,
+            SupportProgramCompanyConditions(region = "서울특별시", industry = "정보통신업", foundedYear = 2021),
+            LocalDate.of(2026, 9, 16))
+        assertEquals(
+            AiSupportProgramCompanyConditionsRequest("서울특별시", "정보통신업", null, null, "2026-09-16", 2021),
+            client.requests.single().companyConditions,
+        )
+    }
+
+    @Test
     fun sendsTheVersionedScoringContractAndMapsValidatedRankings() {
         val candidates = candidates()
         client.response = response(

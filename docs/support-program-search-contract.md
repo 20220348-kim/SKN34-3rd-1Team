@@ -57,10 +57,11 @@ Accept: application/json
 |---|---|---|
 | `query` | 예 | 최대 500 UTF-16 코드 단위. 앞뒤 공백 제거 후 빈 검색문은 POST에서 400. 기존 제어문자 거부 규칙 유지 |
 | `acceptingOnly` | 아니요 | 기본 `true`. `false`는 전체 접수 상태이며 `UNKNOWN`을 `OPEN`으로 바꾸지 않음 |
-| `companyConditions` | 아니요 | 사용자가 직접 입력·확인한 조건. 생략·`null`·모든 필드 미입력은 조건 없는 검색 |
+| `companyConditions` | 아니요 | 등록 기업에서 불러오거나 사용자가 대화에서 확인한 조건. 생략·`null`·모든 필드 미입력은 조건 없는 검색 |
 | `companyConditions.region` | 아니요 | 현재 소재지, 최대 50 UTF-16 코드 단위. 이전 예정 지역으로 추정하지 않음 |
 | `companyConditions.industry` | 아니요 | 업종, 최대 100 UTF-16 코드 단위 |
 | `companyConditions.establishedOn` | 아니요 | 최대 10자, 실제 달력의 `YYYY-MM-DD`, 1900-01-01부터 서울 기준 오늘까지. 상대 업력을 임의의 설립일로 바꾸지 않음 |
+| `companyConditions.foundedYear` | 아니요 | 설립연도 정수, 1900부터 서울 기준 올해까지. 정확한 establishedOn과 동시 지정 불가. 특정 월·일을 임의로 만들지 않음 |
 | `companyConditions.supportPurpose` | 아니요 | 원하는 지원 목적, 최대 100 UTF-16 코드 단위 |
 
 조건 텍스트는 앞뒤 공백을 제거하고 빈 값은 미입력으로 처리합니다. 길이 상한은 공백 제거 전 요청값 기준이고,
@@ -182,7 +183,7 @@ AI Service의 버전 `govbiz-support-program-ranking-v5`는 검색 관련성과 
 `totalScore = 2 × (semanticRelevance + supportTypeFit)`이며 100점 만점의 관련도이지 자격 충족 확률이 아닙니다.
 기존 v3/v4 평가 기록은 당시 결과로 보존하며 v5 품질 근거로 재사용하지 않습니다.
 
-조건 검색에서는 위 요청에 선택 필드 `companyConditions`를 추가합니다. 공개 입력의 네 필드와 함께
+조건 검색에서는 위 요청에 선택 필드 `companyConditions`를 추가합니다. 공개 입력의 기존 네 필드 및 선택 foundedYear와 함께
 Core가 생성한 `referenceDate`(`YYYY-MM-DD`, 서울 기준)를 전달합니다. 조건 없는 요청에서는 이 필드를
 생략합니다. 원문 우선 자격 판정은 조건 유무에 관계없이 모든 비어 있지 않은 검색에 적용합니다.
 조건이 있는 경우에는 기존 Agent에 조건 해석 지침도 보충하며 Agent 수·LLM 호출 횟수·점수 배점은 늘리지 않습니다.

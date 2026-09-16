@@ -33,7 +33,7 @@ data class SupportProgramConversationContextResponse(
             context.query,
             context.acceptingOnly,
             context.companyConditions.let {
-                SupportProgramConversationCompanyConditionsResponse(it.region, it.industry, it.establishedOn?.toString(), it.supportPurpose)
+                SupportProgramConversationCompanyConditionsResponse(it.region, it.industry, it.establishedOn?.toString(), it.supportPurpose, it.foundedYear)
             },
         )
     }
@@ -44,4 +44,6 @@ data class SupportProgramConversationCompanyConditionsResponse(
     val industry: String?,
     val establishedOn: String?,
     val supportPurpose: String?,
+    @get:com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
+    val foundedYear: Int? = null,
 )

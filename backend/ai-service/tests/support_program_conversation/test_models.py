@@ -242,3 +242,16 @@ def test_legacy_ready_response_defaults_answer_to_null(model, output_data):
     if model is SupportProgramConversationResponse:
         output_data["schemaVersion"] = SCHEMA_VERSION
     assert model.model_validate(output_data).answer is None
+
+
+@pytest.mark.parametrize("year", [1899, 2027, True, "2021", 2021.5])
+def test_rejects_invalid_registered_year(request_data, year):
+    request_data["context"]["companyConditions"].update(establishedOn=None, foundedYear=year)
+    with pytest.raises(ValidationError):
+        SupportProgramConversationRequest.model_validate(request_data)
+
+
+def test_rejects_contradictory_foundation_precision(request_data):
+    request_data["context"]["companyConditions"]["foundedYear"] = 2021
+    with pytest.raises(ValidationError):
+        SupportProgramConversationRequest.model_validate(request_data)

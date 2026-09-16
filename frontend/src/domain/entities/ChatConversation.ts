@@ -19,6 +19,7 @@ export type ChatMessage = {
 /** 저장 시점의 대화와 조건입니다. 실행 중인 요청·인증 정보·미전송 초안은 저장하지 않습니다. */
 export type ChatConversationSnapshot = {
   schemaVersion: 1
+  companyDefaultsInitialized?: boolean
   messages: ChatMessage[]
   searchOptions: ChatSearchOptions
   conversationQuery: string | null

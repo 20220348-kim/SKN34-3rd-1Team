@@ -18,6 +18,17 @@ import tools.jackson.module.kotlin.KotlinModule
 
 class SupportProgramSearchRequestTest {
     @Test
+    fun preservesYearOnlyWithoutInventingAFoundationDate() {
+        val request = SupportProgramCompanyConditionsRequest(foundedYear = 2021)
+        assertTrue(violations(request).isEmpty())
+        assertEquals(2021, request.toDomain()!!.foundedYear)
+        assertNull(request.toDomain()!!.establishedOn)
+        assertEquals(setOf("foundedYear"), violations(request.copy(foundedYear = 2027)))
+        assertEquals(setOf("foundedYear"), violations(request.copy(foundedYear = 1899)))
+        assertEquals(setOf("foundationPrecisionValid"), violations(request.copy(establishedOn = "2021-01-01")))
+    }
+
+    @Test
     fun trimsOptionalTextAndTreatsEmptyConditionsAsUnspecified() {
         val conditions = SupportProgramCompanyConditionsRequest(" 서울 ", " 제조업 ", "2024-02-29", " 시제품 ").toDomain()!!
         assertEquals("서울", conditions.region)

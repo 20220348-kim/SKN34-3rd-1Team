@@ -8,4 +8,5 @@ data class SupportProgramCompanyConditions(
     val industry: String? = null,
     val establishedOn: LocalDate? = null,
     val supportPurpose: String? = null,
+    val foundedYear: Int? = null,
 )
