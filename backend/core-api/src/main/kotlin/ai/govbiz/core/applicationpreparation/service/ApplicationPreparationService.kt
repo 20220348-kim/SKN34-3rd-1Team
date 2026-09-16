@@ -18,6 +18,7 @@ import ai.govbiz.core.applicationpreparation.service.dto.ApplicationPreparationD
 import ai.govbiz.core.applicationpreparation.service.dto.ApplicationPreparationListItemResult
 import ai.govbiz.core.applicationpreparation.service.dto.ApplicationPreparationPageResult
 import ai.govbiz.core.applicationpreparation.service.dto.ApplicationInterpretationResult
+import ai.govbiz.core.supportprogram.repository.SavedSupportProgramRepository
 import org.springframework.stereotype.Service
 import ai.govbiz.core.applicationpreparation.domain.ApplicationDraftInput
 import ai.govbiz.core.applicationpreparation.domain.ApplicationContentVersion
@@ -31,6 +32,7 @@ class ApplicationPreparationService(
     private val inputs: ApplicationPreparationInputRepository,
     private val ai: AiApplicationPreparationFacade,
     private val contents: ApplicationPreparationContentRepository,
+    private val savedSupportPrograms: SavedSupportProgramRepository,
 ) {
     fun supportedForms(account: Account) = forms.listSupported().also { require(account.id > 0) }
 
@@ -42,6 +44,9 @@ class ApplicationPreparationService(
             draft.formVersionId,
             draft.serviceField,
         )
+        // 신청 준비를 시작한 공고는 관심 공고함에도 담아 둡니다. 진행 관리와 관심 공고함이 같은 목록을 보게 하는
+        // 규칙이며, 이미 담겨 있거나 더 이상 노출되지 않는 공고면 아무것도 바꾸지 않습니다.
+        savedSupportPrograms.saveIfPresent(account.id, draft.sourceCode, draft.sourceProgramId)
         return ApplicationPreparationDetailResult(repository.create(account.id, draft), form)
     }
 

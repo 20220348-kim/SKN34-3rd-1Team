@@ -1,11 +1,11 @@
 import { useState } from 'react'
-import { Link } from 'react-router'
+import { Link, useSearchParams } from 'react-router'
 
 import { applicationServiceFieldLabels, type ApplicationPreparationSummary, type ApplicationProgressStage } from '../../../../domain/entities/ApplicationPreparation'
 import type { SupportProgramStatus } from '../../../../domain/entities/SupportProgram'
 import { regionNames } from '../../../../domain/entities/Region'
 import { supportProgramCategories } from '../../../../domain/entities/SupportProgramCategory'
-import { appPaths, supportProgramDetailPath } from '../../../shared/routes/appPaths'
+import { appPaths, readSavedProgramsViewMode, savedProgramsPath, supportProgramDetailPath, type SavedProgramsViewMode } from '../../../shared/routes/appPaths'
 import { workspaceChipClassName, workspacePageStyles, workspaceTagClassName, type WorkspaceTagTone } from '../../../shared/workspace/WorkspacePage.styles'
 import { WorkspacePageHeader } from '../../../shared/workspace/WorkspacePageHeader'
 import { savedSupportProgramMessages } from '../../saved-support-program/viewmodel/useSavedSupportProgramsViewModel'
@@ -45,8 +45,17 @@ type SavedProgramsPageProps = {
  * 머리글·탭·검색 칸·필터·카드는 파트너 관리와 같은 공용 모양을 쓰고, 달력만 이 화면 고유입니다.
  */
 export function SavedProgramsPage({ initial, browseUseCase, preparationUseCase }: SavedProgramsPageProps = {}) {
-  const vm = useSavedProgramCalendarViewModel(initial, browseUseCase)
+  const [searchParams, setSearchParams] = useSearchParams()
+  const vm = useSavedProgramCalendarViewModel(initial, browseUseCase, readSavedProgramsViewMode(searchParams.get('view')))
   const pipelineVm = useApplicationPipelineViewModel(vm.viewMode === 'pipeline', preparationUseCase)
+  // 보던 탭을 주소에 남겨 두면 공고 상세에서 돌아올 때 같은 탭이 열립니다.
+  function chooseViewMode(view: SavedProgramsViewMode) {
+    vm.setViewMode(view)
+    const next = new URLSearchParams(searchParams)
+    if (view === 'calendar') next.delete('view')
+    else next.set('view', view)
+    setSearchParams(next, { replace: true })
+  }
   const monthLabel = `${vm.year}년 ${vm.month}월`
   const isEmpty = vm.phase === 'ready' && vm.totalProgramCount === 0
   const activeFilters: { key: keyof SavedProgramCalendarFilters; label: string }[] = [
@@ -59,11 +68,11 @@ export function SavedProgramsPage({ initial, browseUseCase, preparationUseCase }
   return <>
     <WorkspacePageHeader title="관심 공고함" tabs={<div className={s.viewTabs} role="tablist" aria-label="관심 공고 보기 방식">
       <button type="button" role="tab" aria-selected={vm.viewMode === 'calendar'} className={workspaceChipClassName(vm.viewMode === 'calendar')}
-        onClick={() => vm.setViewMode('calendar')}>달력 보기</button>
+        onClick={() => chooseViewMode('calendar')}>달력 보기</button>
       <button type="button" role="tab" aria-selected={vm.viewMode === 'list'} className={workspaceChipClassName(vm.viewMode === 'list')}
-        onClick={() => vm.setViewMode('list')}>목록 보기</button>
+        onClick={() => chooseViewMode('list')}>목록 보기</button>
       <button type="button" role="tab" aria-selected={vm.viewMode === 'pipeline'} className={workspaceChipClassName(vm.viewMode === 'pipeline')}
-        onClick={() => vm.setViewMode('pipeline')}>진행 관리</button>
+        onClick={() => chooseViewMode('pipeline')}>진행 관리</button>
     </div>} />
 
     <div className={workspacePageStyles.content}>
@@ -146,7 +155,7 @@ export function SavedProgramsPage({ initial, browseUseCase, preparationUseCase }
           </div>
         </> : vm.viewMode === 'list' ? <SavedProgramList programs={vm.listPrograms} page={vm.listPage}
           totalPages={vm.listTotalPages} onPageChange={vm.chooseListPage} />
-          : <ApplicationPipeline filteredSavedPrograms={vm.filteredPrograms}
+          : <ApplicationPipeline filteredSavedPrograms={vm.filteredPrograms} savedPrograms={vm.programs}
             filtersActive={vm.activeFilterCount > 0} savedPhase={vm.phase} items={pipelineVm.items} phase={pipelineVm.phase} nextBeforeId={pipelineVm.nextBeforeId}
             loadingMore={pipelineVm.loadingMore} changingId={pipelineVm.changingId} updateError={pipelineVm.updateError}
             onRetry={pipelineVm.retry} onLoadMore={pipelineVm.loadMore} onChangeProgress={pipelineVm.changeProgress} />}
@@ -155,8 +164,9 @@ export function SavedProgramsPage({ initial, browseUseCase, preparationUseCase }
   </>
 }
 
-function ApplicationPipeline({ filteredSavedPrograms, filtersActive, savedPhase, items, phase, nextBeforeId, loadingMore, changingId, updateError, onRetry, onLoadMore, onChangeProgress }: {
+function ApplicationPipeline({ filteredSavedPrograms, savedPrograms, filtersActive, savedPhase, items, phase, nextBeforeId, loadingMore, changingId, updateError, onRetry, onLoadMore, onChangeProgress }: {
   filteredSavedPrograms: readonly CalendarProgram[]
+  savedPrograms: readonly CalendarProgram[]
   filtersActive: boolean
   savedPhase: 'loading' | 'ready' | 'failed'
   items: ApplicationPreparationSummary[]
@@ -171,11 +181,15 @@ function ApplicationPipeline({ filteredSavedPrograms, filtersActive, savedPhase,
 }) {
   const [openedColumn, setOpenedColumn] = useState<string | null>(null)
   const [dialogPage, setDialogPage] = useState(1)
-  const preparedProgramKeys = new Set(items.map(item => `${item.sourceCode}:${item.sourceProgramId}`))
+  const savedProgramKeys = new Set(savedPrograms.map(program => `${program.sourceCode}:${program.sourceProgramId}`))
+  // 신청 준비를 시작하면 서버가 관심 공고함에도 담아 두므로, 여기 남아 있지 않다는 것은 사용자가 관심 공고에서
+  // 뺐다는 뜻입니다. 그래서 목록·달력과 마찬가지로 진행 관리에서도 보여 주지 않습니다.
+  const keptItems = items.filter(item => savedProgramKeys.has(`${item.sourceCode}:${item.sourceProgramId}`))
+  const preparedProgramKeys = new Set(keptItems.map(item => `${item.sourceCode}:${item.sourceProgramId}`))
   const filteredProgramKeys = new Set(filteredSavedPrograms.map(program => `${program.sourceCode}:${program.sourceProgramId}`))
   const visiblePreparationItems = filtersActive
-    ? items.filter(item => filteredProgramKeys.has(`${item.sourceCode}:${item.sourceProgramId}`))
-    : items
+    ? keptItems.filter(item => filteredProgramKeys.has(`${item.sourceCode}:${item.sourceProgramId}`))
+    : keptItems
   const interestPrograms = filteredSavedPrograms.filter(program => !preparedProgramKeys.has(`${program.sourceCode}:${program.sourceProgramId}`))
   const visibleInterestPrograms = interestPrograms.slice(0, interestPipelinePreviewSize)
   const openedStage = applicationPipelineStages.find(stage => stage.key === openedColumn)
@@ -286,7 +300,9 @@ function InterestPipelineCard({ program }: { program: CalendarProgram }) {
       <span className={s.pipelineRevision}>{program.region}</span>
     </div>
     <h3 className={s.pipelineCardTitle} title={program.title}>
-      {detailPath ? <Link className={s.cardTitleLink} to={detailPath}>{program.title}</Link> : program.title}
+      {detailPath
+        ? <Link className={s.cardTitleLink} to={detailPath} state={{ searchReturnTo: savedProgramsPath('pipeline') }}>{program.title}</Link>
+        : program.title}
     </h3>
     <p className={s.pipelineFormTitle}>{program.organization}</p>
     {startPath ? <Link className={`${workspacePageStyles.secondaryButton} ${s.pipelineCardAction}`} to={startPath}>지원 준비 시작</Link> : null}
@@ -304,7 +320,7 @@ function PipelineCard({ item, changing, onChangeProgress }: {
       <span className={s.pipelineRevision}>입력 {item.inputRevision}차</span>
     </div>
     <h3 className={s.pipelineCardTitle} title={item.programTitle}>
-      <Link className={s.cardTitleLink} to={`${appPaths.applicationPreparations}/${item.id}`}>{item.programTitle}</Link>
+      <Link className={s.cardTitleLink} to={supportProgramDetailPath({ sourceCode: item.sourceCode, sourceProgramId: item.sourceProgramId }, true)} state={{ searchReturnTo: savedProgramsPath('pipeline'), fromPipeline: true }}>{item.programTitle}</Link>
     </h3>
     <p className={s.pipelineFormTitle}>{item.formTitle}</p>
     <label className={s.pipelineStageField}>
@@ -374,7 +390,7 @@ function CalendarEventRow({ event, expanded = false }: { event: CalendarEvent; e
     <span className={`${s.eventBadge} ${eventBadgeStyle[event.type]}`}>{eventBadgeLabel[event.type]}</span>
     <span className="min-w-0 flex-1">
       {detailPath ? <Link className={expanded ? 'block font-semibold text-app-ink hover:text-brand-primary' : s.eventTitle}
-        to={detailPath} state={{ searchReturnTo: appPaths.savedPrograms }}>{event.program.title}</Link>
+        to={detailPath} state={{ searchReturnTo: savedProgramsPath('calendar') }}>{event.program.title}</Link>
         : <span className={expanded ? 'block font-semibold text-app-ink' : s.eventTitle}>{event.program.title}</span>}
       {expanded ? <span className="mt-1 block text-xs text-sample-muted">{event.program.organization} · {event.program.region} · {event.program.category}</span> : null}
     </span>
@@ -397,7 +413,7 @@ function SavedProgramList({ programs, page, totalPages, onPageChange }: {
         </div>
         <h2 className={s.cardTitle} title={program.title}>
           {detailPath
-            ? <Link to={detailPath} state={{ searchReturnTo: appPaths.savedPrograms }} className={s.cardTitleLink}>{program.title}</Link>
+            ? <Link to={detailPath} state={{ searchReturnTo: savedProgramsPath('list') }} className={s.cardTitleLink}>{program.title}</Link>
             : program.title}
         </h2>
         <p className={s.cardMeta}>{program.organization}</p>

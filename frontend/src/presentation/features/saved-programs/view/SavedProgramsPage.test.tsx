@@ -12,7 +12,7 @@ afterEach(() => { cleanup(); vi.useRealTimers() })
 it('관심 공고를 내부 스크롤 없이 달력과 페이지 목록으로 확인한다', () => {
   vi.useFakeTimers()
   vi.setSystemTime(new Date('2026-09-10T03:00:00Z'))
-  render(<SavedProgramsPage initial={{ today: '2026-09-10', programs: createCalendarPreview('2026-09-10') }} />)
+  render(<MemoryRouter><SavedProgramsPage initial={{ today: '2026-09-10', programs: createCalendarPreview('2026-09-10') }} /></MemoryRouter>)
   expect(screen.getByRole('table', { name: '2026년 9월 접수 일정' })).toBeTruthy()
   expect(screen.queryByRole('region', { name: '달력 내부 스크롤' })).toBeNull()
   expect(screen.queryByRole('link', { name: /지원사업 찾기/ })).toBeNull()
@@ -107,8 +107,23 @@ it('진행 관리를 열 때 실제 신청 준비 건만 준비 중 단계에 �
     updatedAt: '2026-09-13T10:00:00+09:00',
   })
 
+  // 신청 준비를 시작하면 서버가 관심 공고함에도 담아 두므로, 준비 건의 공고는 관심 공고 목록에도 있습니다.
+  const preparedProgram = {
+    id: 'BIZINFO:PBLN_41',
+    sourceCode: 'BIZINFO',
+    sourceProgramId: 'PBLN_41',
+    title: '해외 진출 역량 강화 지원사업',
+    organization: '중소벤처기업부',
+    startDate: '2026-09-01',
+    endDate: '2026-09-30',
+    status: 'OPEN' as const,
+    region: '전국',
+    category: '수출',
+    target: '중소기업',
+  }
+
   render(<MemoryRouter><SavedProgramsPage
-    initial={{ today: '2026-09-13', programs: [] }}
+    initial={{ today: '2026-09-13', programs: [preparedProgram] }}
     preparationUseCase={{ list, updateProgress }}
   /></MemoryRouter>)
 
@@ -122,7 +137,7 @@ it('진행 관리를 열 때 실제 신청 준비 건만 준비 중 단계에 �
   ])
   expect(within(board).getAllByRole('article')).toHaveLength(1)
   expect(within(board).getByRole('link', { name: '해외 진출 역량 강화 지원사업' }).getAttribute('href'))
-    .toBe('/app/application-preparations/41')
+    .toBe('/app/support-programs/detail?sourceCode=BIZINFO&sourceProgramId=PBLN_41')
   expect(screen.getByRole('form', { name: '관심 공고 필터' })).toBeTruthy()
 
   chooseOption(screen.getByRole('combobox', { name: '해외 진출 역량 강화 지원사업 단계 변경' }), 'APPLIED')

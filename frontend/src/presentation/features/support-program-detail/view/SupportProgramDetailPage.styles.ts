@@ -15,6 +15,8 @@ export const supportProgramDetailStyles = {
   ),
   // 담기·빼기 결과 안내입니다. 잠깐 보이고 닫을 수 있습니다.
   saveNotice: 'mb-4 flex items-center justify-between gap-3 rounded-[1rem] border border-brand-primary/30 bg-brand-accent px-4 py-3 text-[0.85rem] text-app-ink',
+  // 신청 준비 중인 공고를 뺄 때 받는 확인입니다. 결과 안내와 구분되도록 주의색을 씁니다.
+  removeConfirm: 'mb-4 flex flex-wrap items-center justify-between gap-3 rounded-[1rem] border border-[#e0b04a] bg-[#fffaf0] px-4 py-3 text-[0.85rem] text-app-ink',
   backLink: classes(
     'inline-flex items-center rounded-full border px-[0.85rem] py-[0.65rem]',
     'border-sample-border bg-white text-[0.85rem] font-bold text-app-ink no-underline',
