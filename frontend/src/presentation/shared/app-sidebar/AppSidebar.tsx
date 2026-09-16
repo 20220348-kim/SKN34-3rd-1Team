@@ -8,7 +8,6 @@ import { useAppSelector } from '../../../app/hooks'
 import { selectChatActivity } from '../../features/chat/state/chatSlice'
 import { useAuthSession } from '../auth/hooks/useAuthSession'
 import { ChatActivityDot } from '../chat-activity/ChatActivityDot'
-import { ChatActivityPanel } from '../chat-activity/ChatActivityPanel'
 import { usePendingReceivedProposalCount } from '../partner-proposal/useReceivedProposals'
 import { appPaths, publicPaths } from '../routes/appPaths'
 import { useFloatingPopover } from '../workspace/useFloatingPopover'
@@ -153,7 +152,7 @@ export function AppSidebar({ onClose, onNewChat, closeLabel, onNavigate, history
   const { account, logOut } = useAuthSession()
   const navigate = useNavigate()
   const pendingProposalCount = usePendingReceivedProposalCount()
-  // 해당 대화 기록 항목의 점은 조건 해석·검색 진행 중과 아직 보지 않은 결과를 모두 표시합니다. 아래 고정 패널은 해석 중을 건너뜁니다.
+  // 해당 대화 기록 항목의 점은 조건 해석·검색 진행 중과 아직 보지 않은 결과를 모두 표시합니다.
   const chatActivity = useAppSelector(selectChatActivity)
   const isSearchPage = pathname === appPaths.chat || pathname.startsWith(appPaths.supportProgramDetail)
   // 계정 카드를 누르면 내 프로필·로그아웃과 관리자 전용 회원·기업 메뉴가 열립니다.
@@ -279,8 +278,6 @@ export function AppSidebar({ onClose, onNewChat, closeLabel, onNavigate, history
           </div> : history.saving ? <p className="px-3 text-xs text-[#888]" role="status">대화 저장 중…</p> : null}
         </section> : null}
       </div>
-
-      <ChatActivityPanel />
 
       {account ? (
         <div className={appSidebarStyles.account} ref={accountRef}>

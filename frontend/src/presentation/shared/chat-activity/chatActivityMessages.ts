@@ -2,10 +2,6 @@ import type { ChatActivity, ChatOutcome } from '../../features/chat/state/chatSl
 
 /** 검색 화면 밖에서 진행 상태와 결과 도착을 알리는 문구입니다. */
 export const chatActivityMessages = {
-  panelLabel: '검색 상태',
-  panelOpen: '보기',
-  panelSearching: '검색 중',
-  panelInterpreting: '조건 해석 중',
   headerSearching: '지원사업 검색 진행 중',
   headerInterpreting: '조건 해석 진행 중',
   headerUnseen: '검색 결과 도착',
@@ -20,14 +16,14 @@ export const chatActivityMessages = {
 } as const
 
 /**
- * 조건 해석은 몇 초 안에 끝나므로 패널·헤더 칩은 진행 중 표시 없이 결과가 도착했을 때만 알립니다.
+ * 조건 해석은 몇 초 안에 끝나므로 헤더 칩은 진행 중 표시 없이 결과가 도착했을 때만 알립니다.
  * 검색은 수십 초가 걸려 진행 중임을 계속 보여 주고, 대화 기록 항목의 점은 해석 중에도 붙입니다.
  */
 export function visibleChatActivity(activity: ChatActivity | null): ChatActivity | null {
   return activity?.kind === 'interpreting' ? null : activity
 }
 
-/** 토스트를 띄우지 않는 결과입니다. "답변이 도착했어요"는 요청에 따라 알림을 끄고, 패널·배지로만 알립니다. */
+/** 토스트를 띄우지 않는 결과입니다. "답변이 도착했어요"는 요청에 따라 알림을 끄고, 배지로만 알립니다. */
 export const silentToastOutcomes: ReadonlySet<ChatOutcome> = new Set<ChatOutcome>(['interpretation-answered'])
 
 export function chatOutcomeMessage(outcome: ChatOutcome, resultCount: number | null): string {
@@ -41,30 +37,10 @@ export function chatOutcomeMessage(outcome: ChatOutcome, resultCount: number | n
     case 'interpretation-clarification':
       return '조건을 확인하는 질문이 있어요. 답하면 검색을 이어가요.'
     case 'interpretation-answered':
-      // 토스트는 `silentToastOutcomes`로 꺼 두었고, 문구는 패널·스크린 리더 안내용으로 남깁니다.
+      // 토스트는 `silentToastOutcomes`로 꺼 두었고, 문구는 스크린 리더 안내용으로 남깁니다.
       return '답변이 도착했어요.'
     case 'interpretation-failed':
       return '조건 해석을 마치지 못했어요. 대화에서 다시 시도할 수 있어요.'
-  }
-}
-
-/** 사이드바 아래 고정 패널의 한 줄 상태 문구입니다. 토스트 문장보다 짧게, 무슨 일이 끝났는지만 말합니다. */
-export function chatActivityPanelLabel(activity: ChatActivity): string {
-  if (activity.kind === 'searching') return chatActivityMessages.panelSearching
-  if (activity.kind === 'interpreting') return chatActivityMessages.panelInterpreting
-  switch (activity.outcome) {
-    case 'search-succeeded':
-      return activity.resultCount === null ? '검색 완료' : `결과 ${activity.resultCount}건 도착`
-    case 'search-failed':
-      return '검색 실패'
-    case 'interpretation-ready':
-      return '조건 변경안 준비됨'
-    case 'interpretation-clarification':
-      return '확인 질문 도착'
-    case 'interpretation-answered':
-      return '답변 도착'
-    case 'interpretation-failed':
-      return '조건 해석 실패'
   }
 }
 
