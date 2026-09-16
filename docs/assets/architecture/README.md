@@ -1,8 +1,19 @@
 # GovBiz 아키텍처 이미지
 
 주요 서비스 연결을 기술 로고와 함께 정리한 문서용 이미지입니다.
-**로컬 구성 기록(2026-09-12)**과 **Vercel + AWS 초기 배포 예정안(2026-09-13)**을 별도 파일로 관리합니다.
-배포 예정안은 실제 인프라 구축이나 배포 완료를 의미하지 않으며, 이미지 제작은 앱 실행 코드나 배포 설정을 변경하지 않습니다.
+**로컬 구성 기록(2026-09-12)**, **초기 배포 예정안(2026-09-13)**,
+**Vercel + AWS 배포 구성(2026-09-16 정리)**을 별도 파일로 관리합니다.
+이미지 제작은 앱 실행 코드나 배포 설정을 변경하지 않습니다.
+
+## Vercel + AWS 배포 구성
+
+- [배포 구성 PNG](govbiz-aws-architecture-deployed.png): 5,640 × 3,800.
+- [배포 구성 SVG](govbiz-aws-architecture-deployed.svg): 수정 가능한 벡터 원본.
+- [배포 경로·근거·확인 범위·재생성 방법](README-aws-deployed.md).
+
+`govbiz.vercel.app → Vercel 서버 미들웨어 → CloudFront VPC origin → 비공개 EC2`와 RDS를 표시합니다.
+백엔드 자동 배포 설정은 GitHub Actions/OIDC 예정 경로가 아니라 **CodeBuild → ECR → SSM → EC2**입니다.
+기존 배포 확인 기록과 저장소 설정 기준이며, 작성 시 만료된 AWS 세션으로 실시간 상태는 재조회하지 못했습니다.
 
 ## Vercel + AWS 초기 배포 예정안
 

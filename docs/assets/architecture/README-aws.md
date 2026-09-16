@@ -1,5 +1,8 @@
 # GovBiz Vercel + AWS 초기 배포 예정 구성도
 
+> 이 문서는 2026-09-13의 예정안을 보존한 기록입니다. 이후 배포를 반영한 그림은
+> [Vercel + AWS 배포 구성도](README-aws-deployed.md)에서 확인하세요. 아래의 미구축·미구현 설명은 당시 기준입니다.
+
 2026-09-13 논의한 **Vercel 프론트엔드 + AWS 백엔드(EC2·Docker Compose·비공개 RDS MySQL)**
 초기 배포안을 그린 문서용 자산입니다. **별도 도메인을 구매하지 않고 Vercel 기본 주소를 사용**하는 조건을 반영했습니다.
 브라우저의 `/api` 요청을 Vercel에서 CloudFront 기본 HTTPS 주소로 중계하고, 비공개 EC2에 연결하는 제안입니다.

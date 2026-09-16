@@ -9,10 +9,11 @@
 
 ## 서비스 경계
 
-AWS 운영 진입 경로는 `Vercel routing middleware → CloudFront VPC origin → Nginx → Core`로 준비했습니다.
+AWS 운영 진입 경로는 `Vercel routing middleware → CloudFront VPC origin → Nginx → Core`입니다.
 미들웨어는 프록시 공유 비밀값·신뢰 IP만 추가하며 업무/AI 실행을 맡지 않습니다. Core는 운영 Compose에서
 Nginx 한 IP의 전달 헤더만 신뢰하고 기존 계정·Origin 검증을 유지합니다.
-[운영 설정과 미검증 배포 경계](deployment-aws-vercel.md)를 참고하세요. 실제 클라우드 배포 완료를 뜻하지 않습니다.
+[운영 설정 안내](deployment-aws-vercel.md)와 [배포 확인 기록을 반영한 구성도](assets/architecture/README-aws-deployed.md)를 참고하세요.
+구성도는 실시간 상태 확인이나 모든 운영 기능의 검증 완료를 의미하지 않습니다.
 
 기존 계정별 수동 분석 API는 `ApplicationFormDiscoveryJobController → ApplicationFormDiscoveryJobService → Repository → MyBatis → MySQL`
 로 V26 분석 작업과 Outbox를 함께 저장하고 202를 반환합니다.
