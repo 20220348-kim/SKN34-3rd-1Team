@@ -106,6 +106,9 @@ function ProgramCard({ program, interests }: { program: SupportProgram; interest
               : eligibilityKind === 'unevaluated' ? '자격 미평가'
                 : review ? '확인 필요' : '자격 판정 없음 · 확인 필요'}
           </span>
+          {program.recommendationScore !== null ? (
+            <span className={chatPageStyles.programRelevance}>관련도 {program.recommendationScore}점</span>
+          ) : null}
         </div>
         <span className={chatPageStyles.programDeadline}>
           {{ OPEN: '접수 중', UPCOMING: '접수 예정', CLOSED: '접수 마감', UNKNOWN: '상태 확인 필요' }[program.status]} ·{' '}
@@ -133,9 +136,6 @@ function ProgramCard({ program, interests }: { program: SupportProgram; interest
           최종 신청 자격을 보장하지 않습니다. 미입력 조건·이전 의향 등은 원문에서 추가 확인하세요.
         </p>
       </div>
-      {program.recommendationScore !== null ? (
-        <p className={chatPageStyles.conditionsHint}>관련도 {program.recommendationScore}점 · 자격 충족 확률이 아닙니다.</p>
-      ) : null}
       {program.matchedReasons.length ? (
         <div className={chatPageStyles.matchedReasons}>
           <span className={chatPageStyles.matchedReason}>관련 검색 정보 (자격 근거 아님):</span>

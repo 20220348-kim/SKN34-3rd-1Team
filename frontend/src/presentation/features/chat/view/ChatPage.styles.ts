@@ -158,6 +158,7 @@ export const chatPageStyles = {
     'rounded-2xl border border-sample-border bg-white p-5 shadow-[0_8px_24px_rgb(32_33_36_/_4%)]',
   programCardHeader: 'flex flex-wrap items-center justify-between gap-3',
   programBadges: 'flex flex-wrap items-center gap-2',
+  programRelevance: 'text-xs leading-relaxed text-sample-muted',
   interestButton: classes(
     'inline-flex min-h-9 cursor-pointer items-center gap-1 rounded-lg border border-sample-border bg-white px-2 text-xs font-bold text-sample-muted',
     'hover:bg-brand-accent aria-pressed:border-brand-primary aria-pressed:bg-brand-accent aria-pressed:text-brand-primary',
