@@ -20,6 +20,11 @@ def validate(config):
         return errors
     core = services["core-api"]["environment"]
     ai = services["ai-service"]["environment"]
+    document_token = core.get("DOCUMENT_INTERNAL_TOKEN", "")
+    ai_document_token = ai.get("DOCUMENT_INTERNAL_TOKEN", "")
+    if document_token or ai_document_token:
+        if len(document_token.strip()) < 32 or document_token != ai_document_token:
+            errors.append("문서 처리에는 Core/AI에 동일한 32자 이상 서버 전용 토큰이 필요합니다.")
     agent_enabled = core.get("ASSISTANT_AGENT_ENABLED", "false")
     if agent_enabled not in {"true", "false"}:
         errors.append("ASSISTANT_AGENT_ENABLED는 true 또는 false여야 합니다.")
