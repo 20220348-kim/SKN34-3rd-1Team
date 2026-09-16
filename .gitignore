@@ -33,6 +33,8 @@ backend/core-api/bin/
 *.class
 
 # Runtime and local artifacts
+# Local publishing workspace; do not commit it as an embedded Git repository.
+/site-publish/
 .data/
 uploads/
 tmp/
