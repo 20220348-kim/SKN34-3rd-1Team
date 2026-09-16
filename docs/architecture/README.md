@@ -14,11 +14,15 @@
 
 ## 시스템 구성
 
-기술 로고가 포함된 이미지는 [로컬 구성 기록](../assets/architecture/README.md#로컬-구성-기록)과
-[Vercel + AWS 초기 배포 예정안](../assets/architecture/README-aws.md)으로 구분합니다.
-예정안은 별도 도메인 구매 없이 Vercel 기본 주소의 `/api`를 CloudFront 기본 HTTPS 주소로 중계하고,
-VPC origin으로 비공개 EC2에 연결하는 그림입니다. RDS·ECR·SSM 및 외부 연결용 NAT·IGW도 포함하며,
-추가 운영 비용이 발생합니다. 실제 인프라 구축 완료를 의미하지 않습니다.
+기술 로고가 포함된 이미지는 [로컬 구성 기록](../assets/architecture/README.md#로컬-구성-기록),
+[초기 배포 예정안](../assets/architecture/README-aws.md),
+[Vercel + AWS 배포 구성](../assets/architecture/README-aws-deployed.md)으로 구분합니다.
+
+![GovBiz Vercel + AWS 배포 구성](../assets/architecture/govbiz-aws-architecture-deployed.png)
+
+배포 구성은 `govbiz.vercel.app`의 `/api`를 서버 미들웨어·CloudFront VPC origin을 거쳐 비공개 EC2에 연결합니다.
+RDS·ECR·SSM·NAT·IGW와 CodeBuild 기반 백엔드 배포 경로도 표시합니다.
+기존 배포 확인 기록과 저장소 설정을 반영했으며, 2026-09-16 작성 시 AWS 세션 만료로 실시간 상태는 재조회하지 못했습니다.
 
 ```mermaid
 flowchart LR

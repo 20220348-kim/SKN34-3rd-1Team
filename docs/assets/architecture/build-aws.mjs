@@ -4,9 +4,12 @@ import {fileURLToPath} from 'node:url';
 import {createRequire} from 'node:module';
 import {createHash} from 'node:crypto';
 
-// Documentation proposal only: does not provision AWS, run containers, or call AI APIs.
+// Documentation only: does not provision AWS, run containers, or call AI APIs.
 // The existing local-development diagram and its generator remain unchanged.
 const root = path.dirname(fileURLToPath(import.meta.url));
+const deployed = process.argv.includes('--deployed');
+const basename = deployed ? 'govbiz-aws-architecture-deployed' : 'govbiz-aws-architecture';
+const variant = (proposal, production) => deployed ? production : proposal;
 const awsPackage = 'https://d1.awsstatic.com/onedam/marketing-channels/website/public/shared/architecture-icon-release/Icon-package_07312026.5846e92413caa21490223536cc97f1269e44fa92.zip';
 const serviceRoot = 'Architecture-Service-Icons_07312026';
 const awsIcons = [
@@ -72,8 +75,8 @@ function edge(d, {both = false, cd = false} = {}) {
 }
 
 p.push(`<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-labelledby="title description">
-<title id="title">GovBiz 시스템 아키텍처 — Vercel 프론트엔드 + AWS 백엔드 배포 예정안</title>
-<desc id="description">미배포 설계안. 별도 도메인을 구매하지 않고 Vercel이 제공하는 vercel.app 주소를 사용한다. 브라우저의 화면과 API는 같은 Vercel origin을 사용한다. Vercel external rewrites가 /api 경로를 CloudFront 기본 cloudfront.net HTTPS 주소로 중계한다. CloudFront는 VPC origin으로 비공개 EC2의 Nginx에 내부 HTTP 연결한다. API 캐시는 Vercel과 CloudFront 모두 비활성화한다. Core는 Elasticsearch, Redis, RabbitMQ, 비공개 RDS MySQL 및 FastAPI에 연결한다. FastAPI는 Qdrant와 OpenAI를 호출한다. 외부 공고와 OpenAI 등 인터넷 요청은 NAT Gateway와 Internet Gateway를 경유한다. GitHub 연동 Vercel 배포와 GitHub Actions 이후 ECR 이미지 저장 및 SSM EC2 배포는 구현 예정이다. 단일 EC2이며 고가용성이 아니다. CloudFront와 NAT 등 추가 운영 비용이 있으며 실제 인프라 생성과 인증 검증은 하지 않았다.</desc>
+<title id="title">GovBiz 시스템 아키텍처 — Vercel 프론트엔드 + AWS 백엔드 ${variant('배포 예정안', '배포 구성')}</title>
+<desc id="description">${variant('미배포 설계안. 별도 도메인을 구매하지 않고 Vercel이 제공하는 vercel.app 주소를 사용한다. 브라우저의 화면과 API는 같은 Vercel origin을 사용한다. Vercel external rewrites가 /api 경로를 CloudFront 기본 cloudfront.net HTTPS 주소로 중계한다. CloudFront는 VPC origin으로 비공개 EC2의 Nginx에 내부 HTTP 연결한다. API 캐시는 Vercel과 CloudFront 모두 비활성화한다. Core는 Elasticsearch, Redis, RabbitMQ, 비공개 RDS MySQL 및 FastAPI에 연결한다. FastAPI는 Qdrant와 OpenAI를 호출한다. 외부 공고와 OpenAI 등 인터넷 요청은 NAT Gateway와 Internet Gateway를 경유한다. GitHub 연동 Vercel 배포와 GitHub Actions 이후 ECR 이미지 저장 및 SSM EC2 배포는 구현 예정이다. 단일 EC2이며 고가용성이 아니다. CloudFront와 NAT 등 추가 운영 비용이 있으며 실제 인프라 생성과 인증 검증은 하지 않았다.', '배포 확인 기록과 저장소 설정을 반영한 포트폴리오 운영 구성. govbiz.vercel.app의 화면과 API는 같은 origin을 사용한다. Vercel 서버 미들웨어가 프록시 인증 헤더를 추가하고 /api 요청을 d1zikccbaq81k1.cloudfront.net으로 중계한다. CloudFront VPC origin은 비공개 EC2의 Nginx에 HTTP 80으로 연결한다. Core는 비공개 RDS MySQL, Elasticsearch, Redis, RabbitMQ 및 FastAPI에 연결한다. FastAPI는 Qdrant와 OpenAI를 호출한다. 외부 요청은 NAT Gateway와 Internet Gateway를 경유한다. GitHub Actions는 CI이고, main push 기반 백엔드 배포 설정은 CodeConnections를 통한 CodeBuild 검증, ECR 이미지 게시, SSM의 Core 및 AI 이미지 교체다. Vercel은 별도의 Git 연동 배포다. 단일 EC2이며 고가용성이나 무중단 배포를 보장하지 않는다. 2026-09-16 문서화 시 AWS 세션 만료로 실시간 인프라와 webhook 상태는 재조회하지 못했다.')}</desc>
 <defs>
 <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M1 1L9 5L1 9Z" fill="${line}"/></marker>
 <marker id="deploy-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M1 1L9 5L1 9Z" fill="${deploy}"/></marker>
@@ -83,9 +86,9 @@ p.push(`<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewB
 text(78, 93, 'GovBiz', {size: 56, weight: 700});
 text(295, 91, '시스템 아키텍처', {size: 34, weight: 600});
 text(80, 135, 'Vercel 기본 주소 · 동일 출처 /api 프록시 · CloudFront → 비공개 EC2 + RDS MySQL', {size: 23, fill: muted});
-card(2250, 60, 495, 58, '#FFF5E5', '#EAC68C', 18);
-text(2497, 98, 'Vercel + AWS · 배포 예정안', {size: 25, weight: 600, fill: '#965B15', anchor: 'middle', max: 460});
-text(2740, 150, '2026.09.13 · 미구축 · 실제 배포 상태와 구분', {size: 18, fill: muted, anchor: 'end'});
+card(2250, 60, 495, 58, variant('#FFF5E5', '#EDF9F1'), variant('#EAC68C', '#B6DAC4'), 18);
+text(2497, 98, variant('Vercel + AWS · 배포 예정안', 'Vercel + AWS · 배포 완료 구성'), {size: 25, weight: 600, fill: variant('#965B15', '#256B49'), anchor: 'middle', max: 460});
+text(2740, 150, variant('2026.09.13 · 미구축 · 실제 배포 상태와 구분', '2026.09.16 정리 · 배포 기록 / 저장소 설정 기준'), {size: 18, fill: muted, anchor: 'end'});
 p.push('<path d="M80 183H2740" stroke="#E4EBF0" stroke-width="2"/>');
 
 // Retain the existing backend topology; reserve a separate column outside AWS for Vercel.
@@ -100,20 +103,30 @@ icon('github', 467, 270, 66); text(548, 304, 'GitHub', {size: 29, weight: 600, m
 text(548, 339, '소스 저장소', {size: 18, fill: muted, max: 113});
 card(850, 220, 600, 190, '#F5F8FE', '#C9D9EF');
 icon('githubactions', 875, 246, 59); text(955, 286, 'GitHub Actions', {size: 34, weight: 600});
-text(880, 331, '전체 CI 검증 + 백엔드 이미지·배포 단계 추가', {size: 22, max: 550});
+text(880, 331, variant('전체 CI 검증 + 백엔드 이미지·배포 단계 추가', 'push / PR 테스트·빌드 · 배포 실행과 분리'), {size: 22, max: 550});
 icon('pnpm', 880, 358, 29); text(919, 381, 'pnpm', {size: 19});
 icon('gradle', 1040, 356, 39); text(1090, 381, 'Gradle', {size: 19});
 icon('pytest', 1220, 357, 31); text(1263, 381, 'pytest', {size: 19});
 edge('M305 315H445'); label(375, 295, 'git push', 125);
 edge('M675 315H850'); label(762, 295, 'CI · push / PR', 160);
+if (deployed) {
+  card(1630, 220, 700, 190, '#F1F9F5', '#BFDCCA');
+  text(1655, 272, 'AWS CodeBuild', {size: 34, weight: 600, max: 645});
+  text(1655, 309, 'govbiz-backend-deploy · 백엔드 자동 배포', {size: 22, max: 645});
+  text(1655, 345, 'CodeConnections · Core / AI 테스트 + 통합 검증', {size: 21, max: 645});
+  text(1655, 381, '검증 통과 후 이미지 게시 · SSM 배포', {size: 20, fill: muted, max: 645});
+  edge('M560 245V205H1980V220', {cd: true});
+  p.push('<rect x="895" y="192" width="470" height="26" fill="#FFFFFF"/>');
+  label(1130, 211, 'main push · PR 병합 / fork 동기화 포함', 450, deploy);
+}
 
 // CloudFront (global) and AWS regional management services sit outside the VPC boundary.
 card(260, 460, 1815, 1310, '#FFFCF7', '#E9CDA4', 34);
 icon('aws', 292, 477, 72, 51); text(385, 515, 'AWS Cloud', {size: 35, weight: 600});
-text(625, 511, '신규 인프라 · 배포 예정', {size: 19, fill: '#8E651F', max: 450});
+text(625, 511, variant('신규 인프라 · 배포 예정', '시드니 · ap-southeast-2 / CloudFront 글로벌'), {size: 19, fill: '#8E651F', max: 450});
 card(325, 540, 560, 145, '#F7F1FC', '#D7C0E8');
 icon('cloudfront', 348, 562, 61); text(429, 591, 'Amazon CloudFront', {size: 30, weight: 600, max: 430});
-text(429, 632, '<distribution>.cloudfront.net', {size: 23, weight: 600, max: 430});
+text(429, 632, variant('<distribution>.cloudfront.net', 'd1zikccbaq81k1.cloudfront.net'), {size: 23, weight: 600, max: 430});
 text(429, 663, '기본 주소 · HTTPS / TLS 종료 · API 캐시 끔', {size: 19, fill: muted, max: 430});
 card(1000, 555, 440, 130, '#FBF3F9', '#DEC4D8');
 icon('ssm', 1023, 579, 61); text(1106, 608, 'Systems Manager', {size: 28, weight: 600, max: 310});
@@ -125,7 +138,7 @@ text(1727, 649, '버전별 Docker 이미지 보관', {size: 20, max: 262});
 card(290, 705, 1755, 1030, '#F8FAFD', '#C7D3E2', 28);
 icon('vpc', 316, 717, 36); text(367, 743, 'VPC · 애플리케이션 / 데이터베이스 네트워크', {size: 22, weight: 600, max: 755});
 card(320, 770, 1310, 930, '#FFF9F0', '#E0BA85', 28);
-icon('ec2', 343, 786, 50); text(410, 820, 'Amazon EC2 · 1대', {size: 30, weight: 600});
+icon('ec2', 343, 786, 50); text(410, 820, variant('Amazon EC2 · 1대', 'Amazon EC2 · govbiz-app · 1대'), {size: 30, weight: 600});
 text(1600, 817, '프라이빗 서브넷 · CloudFront VPC origin만 진입', {size: 19, fill: muted, anchor: 'end', max: 620});
 card(345, 850, 1260, 785, '#F7FAFC', '#C5D8E4', 25);
 icon('docker', 365, 859, 49, 33); text(428, 884, 'Docker Compose', {size: 24, weight: 600});
@@ -136,11 +149,18 @@ text(1701, 875, 'PRIVATE · DB 서브넷 그룹', {size: 19, weight: 600, fill: 
 card(1710, 900, 295, 165, '#F7FAFF', '#C8D9EE');
 icon('rds', 1733, 922, 50); text(1800, 956, 'Amazon RDS', {size: 25, weight: 600, max: 185});
 icon('mysql', 1733, 985, 55, 43); text(1800, 1014, 'MySQL', {size: 29, weight: 600});
-text(1800, 1043, '원본 데이터 · 백업', {size: 18, max: 185});
+text(1800, 1043, variant('원본 데이터 · 백업', 'MySQL 8.4 · 원본 DB'), {size: 18, max: 185});
 
 // Proposed CD: ECR image retrieval and remote deployment commands are distinct.
-edge('M1450 315H1817V555', {cd: true}); label(1635, 294, '이미지 push · OIDC', 330, deploy);
-edge('M1180 410V555', {cd: true}); text(1200, 486, '승인 후 배포 · OIDC', {size: 18, fill: deploy, max: 295});
+if (deployed) {
+  edge('M2280 410V530H1817V555', {cd: true});
+  label(2130, 513, '이미지 push · digest 고정', 370, deploy);
+  edge('M1690 410V470H1215V555', {cd: true});
+  text(1240, 511, '검증 통과 → SSM', {size: 18, fill: deploy, max: 290});
+} else {
+  edge('M1450 315H1817V555', {cd: true}); label(1635, 294, '이미지 push · OIDC', 330, deploy);
+  edge('M1180 410V555', {cd: true}); text(1200, 486, '승인 후 배포 · OIDC', {size: 18, fill: deploy, max: 295});
+}
 edge('M1215 685V770', {cd: true}); text(1240, 734, '배포 명령', {size: 18, fill: deploy, max: 160});
 edge('M1620 635H1535V770', {cd: true}); text(1512, 734, '이미지 pull', {size: 18, fill: deploy, anchor: 'end', max: 150});
 
@@ -150,7 +170,7 @@ edge('M610 1255H785', {both: true}); label(698, 1235, '/api/*', 155); label(698,
 edge('M1135 1260H1260', {both: true}); label(1197, 1238, '내부 HTTP', 114);
 edge('M785 1180H740V970H610', {both: true}); label(678, 947, '복원 상태', 116);
 edge('M960 1130V1040', {both: true}); text(982, 1092, '키워드 검색', {size: 18, fill: muted, max: 145});
-edge('M1100 1130V1080H1655V1000H1710', {both: true}); label(1430, 1062, 'SQL · MyBatis', 240);
+edge('M1100 1130V1080H1655V1000H1710', {both: true}); label(1430, 1062, variant('SQL · MyBatis', 'SQL · MyBatis · TLS'), 240);
 edge('M1135 1185H1200V1105H2095V1055H2130', {both: true}); label(1820, 1135, '공고 수집 · 원문 조회', 285);
 label(1820, 1162, 'HTTPS · NAT / IGW 경유', 285);
 edge('M1570 1260H2130', {both: true}); label(1850, 1240, 'HTTPS · 임베딩 / LLM', 335);
@@ -206,7 +226,7 @@ text(1705, 1490, '퍼블릭 서브넷 · EIP · 별도 비용', {size: 18, fill:
 edge('M1855 1508V1540');
 icon('igw', 1710, 1552, 44); text(1776, 1583, 'Internet Gateway', {size: 22, weight: 600, max: 235});
 text(1705, 1634, 'EC2 → NAT → IGW → 외부 API', {size: 18, fill: muted, max: 310});
-icon('ebs', 366, 1651, 31); text(411, 1675, 'EBS 영속 볼륨 · Elasticsearch / Redis / RabbitMQ / Qdrant 데이터 보관', {size: 20, fill: muted, max: 1160});
+icon('ebs', 366, 1651, 31); text(411, 1675, variant('EBS 영속 볼륨 · Elasticsearch / Redis / RabbitMQ / Qdrant 데이터 보관', 'EBS 40 GiB · Elasticsearch / Redis / RabbitMQ / Qdrant 영속 데이터'), {size: 20, fill: muted, max: 1160});
 text(2020, 1757, '단일 EC2 · 고가용성 / 무중단 배포 구성 아님', {size: 19, fill: '#8E651F', anchor: 'end', max: 830});
 
 // Internet clients and external APIs are outside the AWS boundary.
@@ -231,27 +251,27 @@ text(101, 756, 'FRONTEND · 별도 배포', {size: 18, weight: 600, fill: muted,
 icon('vercel', 102, 784, 62); text(188, 829, 'Vercel', {size: 39, weight: 600, max: 355});
 icon('react', 101, 863, 47); text(169, 898, 'React', {size: 31, weight: 600, max: 115});
 icon('typescript', 307, 873, 31); text(354, 898, 'TypeScript', {size: 22, max: 200});
-text(101, 943, '<project>.vercel.app · HTTPS', {size: 24, weight: 600, max: 455});
-text(101, 979, '/api/* → AWS 프록시 · 화면은 CDN', {size: 22, max: 455});
-text(101, 1010, '기본 주소 사용 · API 캐시 끔 · 배포 전', {size: 17, fill: muted, max: 455});
+text(101, 943, variant('<project>.vercel.app · HTTPS', 'govbiz.vercel.app · HTTPS'), {size: 24, weight: 600, max: 455});
+text(101, 979, variant('/api/* → AWS 프록시 · 화면은 CDN', '/api/* → 서버 미들웨어 → AWS'), {size: 22, max: 455});
+text(101, 1010, variant('기본 주소 사용 · API 캐시 끔 · 배포 전', '인증 헤더 추가 · API 캐시 끔 · 화면은 CDN'), {size: 17, fill: muted, max: 455});
 edge('M585 935H640V595H745', {both: true});
 text(649, 574, 'HTTPS', {size: 18, fill: muted, max: 85});
 text(674, 1187, 'VPC origin', {size: 19, fill: muted, anchor: 'end', max: 155});
 text(674, 1216, '비공개 연결', {size: 18, fill: muted, anchor: 'end', max: 155});
 edge('M980 390V430H330V720', {cd: true});
 text(351, 595, '프론트 Git 연동', {size: 21, fill: deploy, max: 300});
-text(351, 632, '빌드 · 배포 예정', {size: 20, fill: deploy, max: 300});
+text(351, 632, variant('빌드 · 배포 예정', 'Vercel 빌드 · 자동 배포'), {size: 20, fill: deploy, max: 300});
 edge('M485 1030V1120', {both: true});
 text(459, 1070, '화면 + API · HTTPS', {size: 20, fill: muted, anchor: 'end', max: 300});
 text(459, 1100, '같은 Vercel 주소 · /api', {size: 17, fill: muted, anchor: 'end', max: 300});
 
 p.push('<path d="M80 1810H2740" stroke="#E4EBF0" stroke-width="2"/>');
-text(80, 1848, '주황 점선: 추가할 배포 경로 · Vercel + AWS 배포 예정안이며 실제 구축·검증 완료를 의미하지 않음', {size: 20, fill: '#8E651F', max: 2640});
-text(80, 1880, '별도 도메인 구매 없음 · 주소는 예시 · CloudFront / NAT 운영 비용 발생 · 쿠키·OAuth·API 캐시 금지·시간 제한은 배포 시 검증 · IAM·라우팅·백업 세부 생략 · ALB / S3 / ECS 미포함', {size: 16, fill: muted, max: 2640});
+text(80, 1848, variant('주황 점선: 추가할 배포 경로 · Vercel + AWS 배포 예정안이며 실제 구축·검증 완료를 의미하지 않음', '실선: 서비스 통신 · 주황 점선: 배포 경로 · CodeBuild는 Core / AI 이미지만 교체 · 운영 환경값·Compose는 별도 관리'), {size: 20, fill: '#8E651F', max: 2640});
+text(80, 1880, variant('별도 도메인 구매 없음 · 주소는 예시 · CloudFront / NAT 운영 비용 발생 · 쿠키·OAuth·API 캐시 금지·시간 제한은 배포 시 검증 · IAM·라우팅·백업 세부 생략 · ALB / S3 / ECS 미포함', '기존 배포 확인 기록 + 저장소 설정 기준 · 작성 시 AWS 세션 만료로 실시간 상태 재조회 안 됨 · 단일 EC2 / 중단 가능 · OAuth·백업 복구·부하 검증 완료를 뜻하지 않음 · 비밀값 미표기'), {size: 16, fill: muted, max: 2640});
 p.push('</svg>');
 const svg = p.join('\n');
-await fs.writeFile(path.join(root, 'govbiz-aws-architecture.svg'), svg);
-console.log('Created govbiz-aws-architecture.svg and aws-logo-sources.json');
+await fs.writeFile(path.join(root, `${basename}.svg`), svg);
+console.log(`Created ${basename}.svg and aws-logo-sources.json`);
 
 if (process.argv.includes('--render')) {
   const require = createRequire(import.meta.url);
@@ -282,8 +302,8 @@ if (process.argv.includes('--render')) {
     if (errors.length) throw new Error(`Text bounds failed: ${JSON.stringify(errors)}`);
     const shown = await page.locator('image').evaluateAll(nodes => new Set(nodes.map(n => n.dataset.brand)).size);
     if (shown !== assets.size) throw new Error(`Unused logo: ${assets.size - shown}`);
-    await page.screenshot({path: path.join(root, 'govbiz-aws-architecture.png'), fullPage: true});
-    console.log(`Created govbiz-aws-architecture.png (${W * 2} × ${H * 2}); ${shown} logos and text bounds verified`);
+    await page.screenshot({path: path.join(root, `${basename}.png`), fullPage: true});
+    console.log(`Created ${basename}.png (${W * 2} × ${H * 2}); ${shown} logos and text bounds verified`);
   } finally {
     await browser.close();
   }
