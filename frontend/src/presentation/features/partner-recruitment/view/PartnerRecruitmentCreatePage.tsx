@@ -1,3 +1,4 @@
+import { useRef } from 'react'
 import { Link } from 'react-router'
 
 import {
@@ -7,12 +8,13 @@ import {
 import { HelpTip } from '../../../shared/workspace/HelpTip'
 import { WorkspacePageHeader } from '../../../shared/workspace/WorkspacePageHeader'
 import { appPaths } from '../../../shared/routes/appPaths'
+import { SavedSupportProgramPickerDialog } from '../../../shared/support-program/SavedSupportProgramPickerDialog'
 import { usePartnerRecruitmentCreateViewModel } from '../viewmodel/usePartnerRecruitmentCreateViewModel'
 import { partnerRecruitmentStyles } from './PartnerRecruitment.styles'
 import { PartnerRecruitmentFormFields } from './PartnerRecruitmentFormFields'
 
 /**
- * 모집글 작성 화면입니다. 모집글은 공식 공고 하나에 반드시 묶이고,
+ * 모집글 작성 화면입니다. 모집글은 공식 공고 하나에 반드시 묶이고, 공고는 관심 공고함 팝업에서 고릅니다.
  * 모집 마감일은 공고 접수 마감일 이전만 허용합니다. 등록에 성공하면 새 모집글 상세로 이동합니다.
  */
 export function PartnerRecruitmentCreatePage() {
@@ -24,15 +26,29 @@ export function PartnerRecruitmentCreatePage() {
     submit,
     canCreate,
     profilePath,
+    savedProgramsPath,
     ownCompany,
-    programKeyword,
-    updateProgramKeyword,
-    programSearch,
-    canAttachRecruitment,
+    isPickerOpen,
+    openPicker,
+    closePicker,
+    savedProgramChoices,
+    recruitmentProgramBlocker,
     selectedProgram,
-    selectProgram,
+    selectedProgramKeys,
+    toggleProgram,
     clearProgram,
   } = usePartnerRecruitmentCreateViewModel()
+  const pickerButtonRef = useRef<HTMLButtonElement>(null)
+
+  function closePickerAndFocus() {
+    closePicker()
+    pickerButtonRef.current?.focus()
+  }
+
+  function changeProgram() {
+    clearProgram()
+    openPicker()
+  }
 
   if (!canCreate || ownCompany === null) {
     return (
@@ -102,57 +118,47 @@ export function PartnerRecruitmentCreatePage() {
                       {selectedProgram.organization} · {selectedProgram.applicationPeriod}
                     </span>
                   </span>
-                  <button className={workspacePageStyles.secondaryButton} type="button" onClick={clearProgram}>
+                  <button ref={pickerButtonRef} className={workspacePageStyles.secondaryButton} type="button" onClick={changeProgram}>
                     공고 변경
                   </button>
                 </div>
               ) : (
                 <div className={partnerRecruitmentStyles.field}>
-                  <label htmlFor="program-keyword">공고 검색</label>
-                  <input
-                    className={partnerRecruitmentStyles.fieldControl}
-                    id="program-keyword"
-                    type="search"
-                    name="programKeyword"
-                    placeholder="공고명이나 기관명을 두 글자 이상 입력하세요"
+                  <button
+                    ref={pickerButtonRef}
+                    type="button"
+                    className={partnerRecruitmentStyles.pickerButton}
+                    aria-label="관심 공고함에서 선택"
+                    aria-haspopup="dialog"
+                    aria-expanded={isPickerOpen}
                     aria-invalid={error?.field === 'program'}
                     aria-describedby={error?.field === 'program' ? 'recruitment-error' : undefined}
-                    value={programKeyword}
-                    onChange={(event) => updateProgramKeyword(event.target.value)}
-                  />
-                  <span className={partnerRecruitmentStyles.fieldHint}>접수 중인 공고만 검색합니다. 관심 공고함 연동은 준비 중입니다.</span>
-                  {programSearch.status === 'searching' ? (
-                    <p className={workspacePageStyles.emptyNote}>공고를 찾는 중입니다.</p>
-                  ) : programSearch.status === 'failed' ? (
-                    <p className={workspacePageStyles.emptyNote} role="alert">공고를 검색하지 못했습니다. 잠시 후 다시 시도해 주세요.</p>
-                  ) : programSearch.status === 'found' && programSearch.programs.length === 0 ? (
-                    <p className={workspacePageStyles.emptyNote}>검색어에 맞는 접수 중 공고가 없습니다.</p>
-                  ) : programSearch.status === 'found' ? (
-                    <ul className={partnerRecruitmentStyles.programResultList} aria-label="공고 검색 결과">
-                      {programSearch.programs.map((program) => (
-                        <li className={partnerRecruitmentStyles.programResult} key={`${program.sourceCode}:${program.id}`}>
-                          <span className="flex min-w-0 flex-col gap-[0.15rem]">
-                            <span className={partnerRecruitmentStyles.selectedProgramTitle}>{program.title}</span>
-                            <span className={partnerRecruitmentStyles.selectedProgramMeta}>
-                              {program.organization} · {program.applicationEndDate === null ? '마감일 미정' : `마감 ${program.applicationEndDate}`}
-                              {canAttachRecruitment(program) ? null : ' · 오늘 접수 마감'}
-                            </span>
-                          </span>
-                          <button
-                            className={workspacePageStyles.secondaryButton}
-                            type="button"
-                            aria-label={`${program.title} 선택`}
-                            disabled={!canAttachRecruitment(program)}
-                            onClick={() => selectProgram(program)}
-                          >
-                            선택
-                          </button>
-                        </li>
-                      ))}
-                    </ul>
-                  ) : null}
+                    onClick={openPicker}
+                  >
+                    <span>관심 공고함에서 선택</span>
+                    <span className="text-brand-primary">열기 ›</span>
+                  </button>
+                  <span className={partnerRecruitmentStyles.fieldHint}>
+                    관심 공고함에 담은 공고 중 접수 중인 공고만 고를 수 있습니다. 담은 공고가 없으면{' '}
+                    <Link className={partnerRecruitmentStyles.fieldHintLink} to={savedProgramsPath}>관심 공고함</Link>
+                    에서 먼저 담아 주세요.
+                  </span>
                 </div>
               )}
+              <SavedSupportProgramPickerDialog
+                open={isPickerOpen}
+                phase={savedProgramChoices.phase}
+                programs={savedProgramChoices.programs}
+                selectedProgramKeys={selectedProgramKeys}
+                selectionLimit={1}
+                description="모집글을 묶을 공고를 1개 선택하세요. 접수 중인 공고만 고를 수 있습니다."
+                listLabel="모집글 관심 공고 목록"
+                isSupported={(program) => recruitmentProgramBlocker(program) === null}
+                unsupportedLabel={(program) => recruitmentProgramBlocker(program) ?? '선택할 수 없음'}
+                onToggle={toggleProgram}
+                onRetry={savedProgramChoices.retry}
+                onClose={closePickerAndFocus}
+              />
             </section>
 
             <span className={partnerRecruitmentStyles.formDivider} aria-hidden="true" />

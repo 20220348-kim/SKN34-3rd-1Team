@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 
 import { useAppDispatch, useAppSelector } from './app/hooks'
 import { conversationReset } from './presentation/features/chat/state/chatSlice'
@@ -39,6 +39,7 @@ import { SupportProgramEvidenceQuestionPage } from './presentation/features/supp
 import { ReduxSampleItemPage } from './presentation/features/sample-item/view/ReduxSampleItemPage'
 import { SampleItemPage } from './presentation/features/sample-item/view/SampleItemPage'
 import { AppHeader } from './presentation/shared/app-header/AppHeader'
+import { publicLayoutStyles } from './presentation/shared/app-header/PublicLayout.styles'
 import { WorkspaceLayout } from './presentation/shared/app-sidebar/WorkspaceLayout'
 import { useRestoreAuthSession } from './presentation/shared/auth/hooks/useAuthSession'
 import { AssistantWidget } from './presentation/shared/assistant/AssistantWidget'
@@ -48,19 +49,23 @@ import { useResetScrollOnNavigate } from './presentation/shared/routes/useResetS
 
 /**
  * 비로그인 검색 흐름은 헤더·검색 탭이 위에 붙는 자체 레이아웃을 쓰고, 나머지 공개 화면은 공용 헤더를 사용합니다.
- * 두 경우 모두 스크롤은 문서가 맡습니다. 검색 흐름도 화면 안쪽에 따로 스크롤 영역을 두지 않습니다.
+ * 껍데기는 로그인 뒤 작업 화면과 같습니다. 바깥은 화면 높이에 고정된 흰 바탕이고 안쪽 칸이 스크롤하므로
+ * 문서(html)는 스크롤하지 않고, 두 상태에서 스크롤 위치와 바탕색이 같게 보입니다.
  */
 function PublicLayout() {
   const { pathname } = useLocation()
   const path = pathname.replace(/\/+$/, '') || publicPaths.landing
-  // 공개 화면은 문서가 스크롤하므로 다른 화면으로 가면 문서를 맨 위로 돌립니다.
-  useResetScrollOnNavigate()
+  const scrollAreaRef = useRef<HTMLDivElement>(null)
+  // 스크롤은 안쪽 칸이 맡으므로 다른 화면으로 가면 그 칸을 맨 위로 돌립니다.
+  useResetScrollOnNavigate(scrollAreaRef)
   // 비로그인 검색 흐름(검색·공고 상세·원문 질문)은 헤더·검색 탭이 위에 붙는 자체 레이아웃을 씁니다.
   const inSearchFlow = path === publicPaths.landing || path === publicPaths.supportProgramDetail || path === publicPaths.supportProgramQuestion
   return (
-    <div className={inSearchFlow ? 'flex min-h-dvh flex-col bg-white' : undefined}>
-      {inSearchFlow ? null : <AppHeader />}
-      <Outlet />
+    <div className={publicLayoutStyles.shell}>
+      <div ref={scrollAreaRef} className={publicLayoutStyles.scrollArea}>
+        {inSearchFlow ? null : <AppHeader />}
+        <Outlet />
+      </div>
     </div>
   )
 }

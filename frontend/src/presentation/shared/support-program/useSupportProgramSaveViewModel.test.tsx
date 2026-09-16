@@ -6,9 +6,9 @@ import { Provider } from 'react-redux'
 import { MemoryRouter } from 'react-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { createAppStore } from '../../../../app/store'
-import { supportPrograms } from '../../../../data/fixtures/supportPrograms'
-import { sessionRestored } from '../../../shared/auth/state/authSlice'
+import { createAppStore } from '../../../app/store'
+import { supportPrograms } from '../../../data/fixtures/supportPrograms'
+import { sessionRestored } from '../auth/state/authSlice'
 import {
   supportProgramSaveMessages,
   supportProgramSaveNoticeDurationMs,

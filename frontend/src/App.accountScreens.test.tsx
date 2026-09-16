@@ -978,6 +978,8 @@ describe('파트너 모집 화면', () => {
     vi.spyOn(appContainer.resolve('browsePartnerProposalsUseCase'), 'execute').mockResolvedValue({ box: 'received', proposals: [], pendingCount: 0 })
     vi.spyOn(appContainer.resolve('getPartnerRecruitmentDetailUseCase'), 'execute')
       .mockImplementation(async (id) => (id === partnerRecruitmentDetail.id ? partnerRecruitmentDetail : null))
+    // 모집글 상세는 묶인 공고가 관심 공고함에 있는지 확인하므로 기본은 담기지 않은 상태로 둡니다.
+    vi.spyOn(appContainer.resolve('checkSavedSupportProgramUseCase'), 'execute').mockResolvedValue(false)
   })
 
   afterEach(() => {
@@ -1117,6 +1119,15 @@ describe('파트너 모집 화면', () => {
     expect(within(proposal).getByText('5 / 500')).toBeTruthy()
   })
 
+  /** 관심 공고함 팝업을 열어 제목이 같은 공고를 고르고 선택 완료로 닫습니다. */
+  async function pickSavedProgram(form: HTMLElement, title: string) {
+    fireEvent.click(within(form).getByRole('button', { name: '관심 공고함에서 선택' }))
+    const dialog = await screen.findByRole('dialog', { name: '관심 공고함에서 선택' })
+    const results = await within(dialog).findByRole('list', { name: '모집글 관심 공고 목록' })
+    fireEvent.click(within(results).getByRole('button', { name: `${title} 관심 공고 선택` }))
+    fireEvent.click(within(dialog).getByRole('button', { name: '선택 완료' }))
+  }
+
   it('모집글 작성에서 필요 역량을 추가하고 지운다', () => {
     renderApp('/app/partners/new')
 
@@ -1140,46 +1151,66 @@ describe('파트너 모집 화면', () => {
     expect(screen.queryByRole('button', { name: '데이터 구축 삭제' })).toBeNull()
   })
 
-  it('공고를 검색해 고르면 모집 마감일은 접수 마감 전날까지만 고를 수 있다', async () => {
-    const browsePrograms = vi.spyOn(appContainer.resolve('browseSupportProgramsUseCase'), 'execute')
-      .mockResolvedValue({ programs: supportPrograms.slice(0, 2), total: 2, page: 1, pageSize: 8, totalPages: 1, regions: [], categories: [], startupStages: [], applicantTypes: [], founderAges: [] })
+  it('관심 공고함 팝업에서 공고를 고르면 모집 마감일은 접수 마감 전날까지만 고를 수 있다', async () => {
+    const browseSaved = vi.spyOn(appContainer.resolve('browseSavedSupportProgramsUseCase'), 'execute')
+      .mockResolvedValue(supportPrograms.slice(0, 2).map((program) => ({ savedAt: '2026-09-01T09:00:00', program })))
     renderApp('/app/partners/new')
     const form = screen.getByRole('form', { name: '모집글 작성' })
 
-    fireEvent.change(within(form).getByLabelText('공고 검색'), { target: { value: '서울' } })
-    const results = await screen.findByRole('list', { name: '공고 검색 결과' })
-    expect(browsePrograms).toHaveBeenCalledWith(
-      expect.objectContaining({ keyword: '서울', status: 'OPEN', page: 1 }),
-      expect.any(AbortSignal),
-    )
-    fireEvent.click(within(results).getByRole('button', { name: '2026 서울 AI 서비스 사업화 지원사업 선택' }))
+    // 화면에 들어온 것만으로는 관심 공고를 조회하지 않고, 팝업을 열 때 불러옵니다.
+    expect(browseSaved).not.toHaveBeenCalled()
+    fireEvent.click(within(form).getByRole('button', { name: '관심 공고함에서 선택' }))
+    const dialog = await screen.findByRole('dialog', { name: '관심 공고함에서 선택' })
+    expect(browseSaved).toHaveBeenCalledTimes(1)
+    const results = await within(dialog).findByRole('list', { name: '모집글 관심 공고 목록' })
+    fireEvent.click(within(results).getByRole('button', { name: '2026 서울 AI 서비스 사업화 지원사업 관심 공고 선택' }))
+    fireEvent.click(within(dialog).getByRole('button', { name: '선택 완료' }))
 
+    expect(screen.queryByRole('dialog')).toBeNull()
     expect(within(form).getByText('2026 서울 AI 서비스 사업화 지원사업')).toBeTruthy()
-    expect(within(form).queryByLabelText('공고 검색')).toBeNull()
+    expect(within(form).queryByRole('button', { name: '관심 공고함에서 선택' })).toBeNull()
     const deadline = within(form).getByLabelText('모집 마감일') as HTMLInputElement
     expect(deadline.max).toBe('2026-09-14')
     expect(within(form).getByText(/2026-09-14까지 고를 수 있으며/)).toBeTruthy()
 
+    // 공고 변경은 선택을 풀고 팝업을 다시 엽니다.
     fireEvent.click(within(form).getByRole('button', { name: '공고 변경' }))
-    expect(within(form).getByLabelText('공고 검색')).toBeTruthy()
+    expect(await screen.findByRole('dialog', { name: '관심 공고함에서 선택' })).toBeTruthy()
+    // 팝업이 폼 안에 그려지므로 제목 대신 선택한 공고 카드가 사라졌는지 봅니다.
+    expect(within(form).queryByLabelText('선택한 공고')).toBeNull()
   })
 
-  it('오늘 접수가 끝나는 공고는 고를 수 없다', async () => {
-    const today = new Date(Date.now() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10)
-    vi.spyOn(appContainer.resolve('browseSupportProgramsUseCase'), 'execute')
-      .mockResolvedValue({ programs: [{ ...supportPrograms[0]!, applicationEndDate: today }], total: 1, page: 1, pageSize: 8, totalPages: 1, regions: [], categories: [], startupStages: [], applicantTypes: [], founderAges: [] })
+  it('관심 공고함이 비어 있으면 팝업이 안내하고, 폼에는 관심 공고함 링크가 있다', async () => {
+    vi.spyOn(appContainer.resolve('browseSavedSupportProgramsUseCase'), 'execute').mockResolvedValue([])
     renderApp('/app/partners/new')
     const form = screen.getByRole('form', { name: '모집글 작성' })
-    fireEvent.change(within(form).getByLabelText('공고 검색'), { target: { value: '서울' } })
-    const results = await screen.findByRole('list', { name: '공고 검색 결과' })
-    expect((within(results).getByRole('button', { name: /선택$/ }) as HTMLButtonElement).disabled).toBe(true)
-    expect(within(results).getByText(/오늘 접수 마감/)).toBeTruthy()
+    expect((within(form).getByRole('link', { name: '관심 공고함' }) as HTMLAnchorElement).getAttribute('href')).toBe('/app/saved-programs')
+
+    fireEvent.click(within(form).getByRole('button', { name: '관심 공고함에서 선택' }))
+    const dialog = await screen.findByRole('dialog', { name: '관심 공고함에서 선택' })
+    expect(await within(dialog).findByText('관심 공고함에 담은 공고가 없습니다.')).toBeTruthy()
+  })
+
+  it('오늘 접수가 끝나는 공고와 접수 중이 아닌 공고는 관심 공고함에 있어도 고를 수 없다', async () => {
+    const today = new Date(Date.now() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10)
+    vi.spyOn(appContainer.resolve('browseSavedSupportProgramsUseCase'), 'execute').mockResolvedValue([
+      { savedAt: '2026-09-01T09:00:00', program: { ...supportPrograms[0]!, applicationEndDate: today } },
+      { savedAt: '2026-09-01T09:00:00', program: supportPrograms[5]! },
+    ])
+    renderApp('/app/partners/new')
+    const form = screen.getByRole('form', { name: '모집글 작성' })
+    fireEvent.click(within(form).getByRole('button', { name: '관심 공고함에서 선택' }))
+    const results = await screen.findByRole('list', { name: '모집글 관심 공고 목록' })
+    const closingToday = within(results).getByRole('button', { name: `${supportPrograms[0]!.title} 관심 공고 오늘 접수 마감` }) as HTMLButtonElement
+    const closed = within(results).getByRole('button', { name: `${supportPrograms[5]!.title} 관심 공고 접수 중 아님` }) as HTMLButtonElement
+    expect(closingToday.disabled).toBe(true)
+    expect(closed.disabled).toBe(true)
     expect(within(form).queryByRole('button', { name: '공고 변경' })).toBeNull()
   })
 
   it('공고 없이 제출하면 등록하지 않고 안내하며, 등록에 성공하면 새 모집글 상세로 이동한다', async () => {
-    vi.spyOn(appContainer.resolve('browseSupportProgramsUseCase'), 'execute')
-      .mockResolvedValue({ programs: supportPrograms.slice(0, 1), total: 1, page: 1, pageSize: 8, totalPages: 1, regions: [], categories: [], startupStages: [], applicantTypes: [], founderAges: [] })
+    vi.spyOn(appContainer.resolve('browseSavedSupportProgramsUseCase'), 'execute')
+      .mockResolvedValue([{ savedAt: '2026-09-01T09:00:00', program: supportPrograms[0]! }])
     const create = vi.spyOn(appContainer.resolve('createPartnerRecruitmentUseCase'), 'execute')
       .mockResolvedValue({ outcome: 'created', recruitment: partnerRecruitmentDetail })
     renderApp('/app/partners/new')
@@ -1189,8 +1220,7 @@ describe('파트너 모집 화면', () => {
     expect(screen.getByRole('alert').textContent).toContain('공고를 먼저 골라')
     expect(create).not.toHaveBeenCalled()
 
-    fireEvent.change(within(form).getByLabelText('공고 검색'), { target: { value: '서울' } })
-    fireEvent.click(within(await screen.findByRole('list', { name: '공고 검색 결과' })).getByRole('button', { name: /선택$/ }))
+    await pickSavedProgram(form, supportPrograms[0]!.title)
     fireEvent.change(within(form).getByLabelText('모집 마감일'), { target: { value: '2026-09-15' } })
     fireEvent.click(within(form).getByRole('button', { name: '모집글 등록' }))
     expect(screen.getByRole('alert').textContent).toContain('2026-09-14까지')
@@ -1222,14 +1252,13 @@ describe('파트너 모집 화면', () => {
   })
 
   it('같은 공고에 이미 쓴 모집글이 있으면 서버 안내를 보여 주고 화면에 남는다', async () => {
-    vi.spyOn(appContainer.resolve('browseSupportProgramsUseCase'), 'execute')
-      .mockResolvedValue({ programs: supportPrograms.slice(0, 1), total: 1, page: 1, pageSize: 8, totalPages: 1, regions: [], categories: [], startupStages: [], applicantTypes: [], founderAges: [] })
+    vi.spyOn(appContainer.resolve('browseSavedSupportProgramsUseCase'), 'execute')
+      .mockResolvedValue([{ savedAt: '2026-09-01T09:00:00', program: supportPrograms[0]! }])
     vi.spyOn(appContainer.resolve('createPartnerRecruitmentUseCase'), 'execute').mockResolvedValue({ outcome: 'already-exists' })
     renderApp('/app/partners/new')
     const form = screen.getByRole('form', { name: '모집글 작성' })
 
-    fireEvent.change(within(form).getByLabelText('공고 검색'), { target: { value: '서울' } })
-    fireEvent.click(within(await screen.findByRole('list', { name: '공고 검색 결과' })).getByRole('button', { name: /선택$/ }))
+    await pickSavedProgram(form, supportPrograms[0]!.title)
     fireEvent.change(within(form).getByLabelText('모집 마감일'), { target: { value: '2026-09-14' } })
     fireEvent.change(within(form).getByLabelText('제목'), { target: { value: '제목' } })
     fireEvent.change(within(form).getByLabelText('본문'), { target: { value: '본문' } })
@@ -1350,8 +1379,8 @@ describe('파트너 모집 화면', () => {
 
     const form = await screen.findByRole('form', { name: '모집글 수정' })
     await waitFor(() => expect((within(form).getByLabelText('제목') as HTMLInputElement).value).toBe(partnerRecruitmentDetail.title))
-    // 공고는 바꿀 수 없어 검색 대신 묶인 공고만 보입니다.
-    expect(within(form).queryByLabelText('공고 검색')).toBeNull()
+    // 공고는 바꿀 수 없어 관심 공고함 선택 대신 묶인 공고만 보입니다.
+    expect(within(form).queryByRole('button', { name: '관심 공고함에서 선택' })).toBeNull()
     expect(within(form).getByText(partnerRecruitmentDetail.program.title)).toBeTruthy()
     expect(within(form).getByRole('button', { name: '라벨링 삭제' })).toBeTruthy()
 
@@ -1402,6 +1431,33 @@ describe('파트너 모집 화면', () => {
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
     expect(screen.queryByRole('button', { name: '마감' })).toBeNull()
     expect(screen.getAllByText('모집 마감')).toHaveLength(2)
+  })
+
+  it('모집글 상세의 관심 공고에 추가 버튼은 묶인 공고를 담고 빼며 결과를 안내한다', async () => {
+    vi.spyOn(appContainer.resolve('checkSavedSupportProgramUseCase'), 'execute').mockResolvedValue(false)
+    const save = vi.spyOn(appContainer.resolve('saveSupportProgramUseCase'), 'execute')
+      .mockResolvedValue({ outcome: 'saved', saved: { savedAt: '2026-09-01T09:00:00', program: supportPrograms[0]! } })
+    const remove = vi.spyOn(appContainer.resolve('removeSavedSupportProgramUseCase'), 'execute').mockResolvedValue(undefined)
+    renderApp('/app/partners/detail?recruitmentId=101')
+
+    const add = await screen.findByRole('button', { name: '관심 공고에 추가' })
+    expect(add.getAttribute('aria-pressed')).toBe('false')
+    fireEvent.click(add)
+    await waitFor(() => expect(save).toHaveBeenCalledWith({
+      sourceCode: partnerRecruitmentDetail.program.sourceCode,
+      sourceProgramId: partnerRecruitmentDetail.program.sourceProgramId,
+    }))
+    expect(await screen.findByText('관심 공고함에 담았습니다.')).toBeTruthy()
+    const removeButton = await screen.findByRole('button', { name: '관심 공고에서 빼기' })
+    expect(removeButton.getAttribute('aria-pressed')).toBe('true')
+
+    fireEvent.click(removeButton)
+    await waitFor(() => expect(remove).toHaveBeenCalledWith({
+      sourceCode: partnerRecruitmentDetail.program.sourceCode,
+      sourceProgramId: partnerRecruitmentDetail.program.sourceProgramId,
+    }))
+    expect(await screen.findByText('관심 공고함에서 뺐습니다.')).toBeTruthy()
+    expect(await screen.findByRole('button', { name: '관심 공고에 추가' })).toBeTruthy()
   })
 
   it('남의 글이나 마감된 내 글은 수정 화면 대신 안내를 보여 준다', async () => {
