@@ -338,7 +338,7 @@ TTL은 성공 후 재사용 기한이며 만료 즉시 물리 삭제를 보장�
 현재 Health API는 서비스 응답과 Core→AI 연결을 확인합니다. 검색 화면의 `GET /api/v1/support-programs/readiness`는
 마지막 전체 색인 준비 결과와 동기화 이력을 보여 주지만, MySQL·Elasticsearch·Qdrant·OpenAI의 실시간 Health를 한 번에
 확인하는 endpoint는 아닙니다. CI 정의가 있다는 사실만으로 특정 원격 실행의 성공을 뜻하지는 않습니다.
-실행 명령은 [서비스별 안내](../README.md#상세-문서)와 [CI 정의](../.github/workflows/ci.yml)에 있습니다.
+실행 명령은 [서비스별 안내](technical-readme.md#상세-문서)와 [CI 정의](../.github/workflows/ci.yml)에 있습니다.
 
 ## 현재 제약과 다음 작업
 

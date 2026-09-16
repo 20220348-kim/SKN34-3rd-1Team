@@ -1,6 +1,6 @@
 # 기술 스택과 데이터 구성
 
-[메인 README](../README.md) · [문서 목록](README.md) · [아키텍처 README](architecture/README.md)
+[메인 README](../README.md) · [기술 README](technical-readme.md) · [문서 목록](README.md) · [아키텍처 README](architecture/README.md)
 
 이 문서는 저장소의 코드와 설정을 기준으로 각 기술의 역할과 주요 구현 방식을 설명합니다.
 기능의 완성 범위와 후속 과제는 [구현 현황](implementation-status.md)에서 관리합니다.
@@ -21,8 +21,8 @@
 | 원문 파싱 | jsoup 1.23.2 | 기업마당 상세 HTML의 제목 확인과 공고 본문 추출 | [build.gradle](../backend/core-api/build.gradle) |
 | 비밀번호 해시 | spring-security-crypto(BCrypt) | 회원 비밀번호 해시·비교. Security filter chain은 사용하지 않음 | [build.gradle](../backend/core-api/build.gradle) |
 | 사업자 확인 | Bizno(bizno.net) 사업자등록번호 조회 API | 기업 등록 시 등록 여부·상호·사업자 상태 확인. 키는 `BIZNO_API_KEY` | [계정·인증 계약](account-auth-contract.md) |
-| AI API | Python 3.11(Docker·CI), FastAPI 0.139.x, Pydantic 2 | 내부 API와 구조화된 요청·응답 검증 | [pyproject.toml](../backend/ai-service/pyproject.toml) |
-| AI 호출 | OpenAI SDK 3.x, Agents SDK 0.22.x, tiktoken | 임베딩, 후보 점수화, 입력 토큰 제한 | [pyproject.toml](../backend/ai-service/pyproject.toml) |
+| AI API | Python 3.12(Docker)·3.11(CI), FastAPI 0.139.x, Pydantic 2 | 내부 API와 구조화된 요청·응답 검증 | [pyproject.toml](../backend/ai-service/pyproject.toml) |
+| AI 호출 | LangChain 1.x, LangGraph 1.x, OpenAI SDK 3.x, Agents SDK 0.22.x, tiktoken | LangChain 조건 해석·추천·근거 답변, LangGraph 도우미, 임베딩·입력 토큰 제한 | [pyproject.toml](../backend/ai-service/pyproject.toml) |
 | 공고 저장 | MySQL 8.4 | 현재 공고와 원본 식별자, 신청 기간 저장 | [Compose 설정](../infrastructure/compose.yaml) |
 | 의미 검색 | Qdrant 1.17.1, qdrant-client 1.17.x | 임베딩 벡터 저장과 유사도 검색 | [Compose 설정](../infrastructure/compose.yaml) |
 | 한국어 키워드 검색 | Elasticsearch 9.5.3, analysis-nori 9.5.3, BM25 | 현재 공고 버전의 키워드 후보 최대 20개, 의미 후보와 RRF 결합 | [적용 상세](elasticsearch-lexical-search.md) |
