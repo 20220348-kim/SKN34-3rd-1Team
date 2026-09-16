@@ -103,17 +103,20 @@ GovBiz는 여러 정부기관과 공공 플랫폼에 분산된 지원사업 공�
 ![Agents SDK](https://img.shields.io/badge/Agents_SDK-412991?style=for-the-badge)
 ![tiktoken](https://img.shields.io/badge/tiktoken-412991?style=for-the-badge)
 
-### Data · Infrastructure
+### Database · Search
 
 ![MySQL 8.4](https://img.shields.io/badge/MySQL_8.4-4479A1?style=for-the-badge&logo=mysql&logoColor=white)
 ![Elasticsearch 9](https://img.shields.io/badge/Elasticsearch_9-005571?style=for-the-badge&logo=elasticsearch&logoColor=white)
 ![Qdrant 1.17](https://img.shields.io/badge/Qdrant_1.17-DC244C?style=for-the-badge)
+
+### Cache · Messaging
+
 ![Redis 8](https://img.shields.io/badge/Redis_8-DC382D?style=for-the-badge&logo=redis&logoColor=white)
 ![RabbitMQ 4](https://img.shields.io/badge/RabbitMQ_4-FF6600?style=for-the-badge&logo=rabbitmq&logoColor=white)
+
+### Infrastructure · Deployment
+
 ![Docker Compose](https://img.shields.io/badge/Docker_Compose-2496ED?style=for-the-badge&logo=docker&logoColor=white)
-
-### Cloud · Deployment
-
 ![Vercel](https://img.shields.io/badge/Vercel-000000?style=for-the-badge&logo=vercel&logoColor=white)
 ![Amazon EC2](https://img.shields.io/badge/Amazon_EC2-FF9900?style=for-the-badge)
 ![Amazon RDS](https://img.shields.io/badge/Amazon_RDS-527FFF?style=for-the-badge)
