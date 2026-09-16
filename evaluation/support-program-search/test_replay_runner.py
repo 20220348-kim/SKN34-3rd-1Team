@@ -194,8 +194,8 @@ class ReplayRunnerTest(unittest.TestCase):
 
             app.state.container = SimpleNamespace(
                 support_program_ranking_service=SimpleNamespace(_agent=SimpleNamespace(
-                    _agent=SimpleNamespace(model_settings=SimpleNamespace(max_tokens=10000),
-                                           clone=lambda **kwargs: SimpleNamespace(**kwargs)))),
+                    _model=SimpleNamespace(kwargs={"max_tokens": 10000}),
+                    _instructions=SUPPORT_PROGRAM_RANKING_INSTRUCTIONS)),
                 openai_client=SimpleNamespace(_client=upstream_client), close=close,
             )
 
@@ -214,7 +214,7 @@ class ReplayRunnerTest(unittest.TestCase):
                 responses_payload = {
                     "model": settings.openai_ranking_model or settings.openai_model,
                     "reasoning": {"effort": settings.openai_ranking_reasoning_effort},
-                    "instructions": app.state.container.support_program_ranking_service._agent._agent.instructions,
+                    "instructions": app.state.container.support_program_ranking_service._agent._instructions,
                     "input": [{"content": json.dumps(model_payload, ensure_ascii=False), "role": "user"}],
                     "store": False,
                 }

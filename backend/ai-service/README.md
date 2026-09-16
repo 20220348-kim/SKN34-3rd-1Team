@@ -1,7 +1,25 @@
 # GovBiz AI Service
 
-FastAPI, OpenAI 임베딩, Qdrant로 전체 공고에서 관련 후보를 찾고 OpenAI Agents SDK로 후보를
-점수화하는 내부 서비스입니다. 브라우저에 직접 공개하지 않고 Spring Core API만 호출합니다.
+FastAPI, OpenAI 임베딩, Qdrant로 전체 공고에서 관련 후보를 찾고 LangChain으로 후보를
+점수화하고 원문 근거 답변을 생성하는 내부 RAG 서비스입니다. 브라우저에 직접 공개하지 않고 Spring Core API만 호출합니다.
+
+## AI 대화 검색·상세 질의응답의 LangChain RAG
+
+- 조건 해석: Core → Conversation Service → Agent → LangChain 프롬프트 체인 → OpenAI Responses API → 조건 패치 검증.
+- 공고 추천: 질문 임베딩 → Qdrant 후보 검색 + Elasticsearch 어휘 검색 → Core RRF 병합·현재 공고 검증 → Ranking Service → Agent → LangChain → OpenAI → 후보별 자격·인용 검증.
+- 상세 질의응답: 질문 임베딩 → Qdrant 원문 청크 검색 → Core의 ID·내용 해시·문서 검증 및 text 복원 → Answer Service → Agent → LangChain → OpenAI → 인용 번호를 원래 청크 ID로 복원·검증.
+
+세 Agent는 `support_program_llm.py`의 `ChatPromptTemplate | ChatOpenAI.bind(...)` 체인을 비동기로 실행합니다.
+추천과 상세 답변은 검색된 공식 공고/청크를 프롬프트의 근거로 사용하며, 조건 해석은 검색 전에 실행하는 별도 단계입니다.
+검색과 생성 사이의 Core 검증 경계를 유지하므로 Qdrant를 생성 Agent가 다시 조회하지 않습니다.
+Qdrant 클라이언트·OpenAI 임베딩의 원시 응답 검증, 컬렉션 이름과 현재 버전 필터는 그대로이며 데이터 재색인이 필요 없습니다.
+
+기존 `langchain-core`·`langchain-openai` 의존성을 사용합니다. 요청별 strict JSON Schema를 지정하고,
+완료 상태와 전체 응답 JSON을 Pydantic strict 모드로 검증합니다. 잘린 JSON을 복구하거나 문자열 인용 번호를 숫자로 바꾸지 않습니다.
+모델별 설정·토큰 상한·타임아웃·`store=false`·재시도 없음은 유지하고 LangSmith 추적도 비활성화합니다.
+후보 수·점수 기준·기업 조건·HTTP 계약은 변경하지 않습니다.
+
+구현 API는 [LangChain ChatOpenAI 문서](https://docs.langchain.com/oss/python/integrations/chat/openai)를 참고합니다.
 
 프로젝트 전체 기술 구성은 [기술 문서](../../docs/technology.md), 기능별 완료 범위와 남은 작업은
 [구현 현황](../../docs/implementation-status.md)을 참고하세요. 이 문서는 AI Service 실행·설정·내부 처리 규칙을 다룹니다.
@@ -166,7 +184,7 @@ C02와 같은 모델·HTTP 25초/전체 실행 30초 제한, 최대 출력 1,200
 `principal`(`accountId`, `toolToken`, `hasCompany`; 비로그인은 `null`)과, 관심 공고 묶음 질문의 두 번째 호출에만
 `savedProgramDocuments[]`(최대 10건 × 청크 `{id, contentHash}` 50개, 청크가 비면 원문 미수집)·`resumeIntent`를 더한 것이고, 응답은 위 표의 필드에
 `cards[]`(최대 5장, `kind` RECRUITMENT/PROGRAM, `id`, `title`, `subtitle`, `reason`, `quote`, `to`), `navigation`(`label`, `to`),
-`toolCalls[]`(`name`, `ms`, `ok`), `needsDocuments`를 더한 것입니다. 이 경로만 LangGraph를 쓰며 중복 지원 검토와 신청 문서는 LangChain, 나머지 기능은 Agents SDK를 사용합니다.
+`toolCalls[]`(`name`, `ms`, `ok`), `needsDocuments`를 더한 것입니다. 이 경로만 LangGraph를 쓰며 대화 검색·공고 추천·상세 질의응답·중복 지원 검토·신청 문서는 LangChain, 도우미 자유 질문 분류는 Agents SDK를 사용합니다.
 
 ```
 classify(nano, 구조화) ─┬─ PRODUCT_HELP·SEARCH·PROGRAM_QUESTION·OUT_OF_SCOPE·UNCLEAR·(제안함) ─► finalize
@@ -220,7 +238,7 @@ Core는 기존 계약대로 공개 `504 AI_SERVICE_TIMEOUT` 또는 `503 AI_SERVI
 
 사용자 확인 전에는 적용 조건을 바꾸거나 검색하지 않습니다. 인용의 문자 일치는 value의 의미 정확도까지
 보증하지 않으므로 모든 READY 결과에 확인이 필요합니다. 기존 query에서 옛 지역을 제거하고 구조 조건 중복을
-줄이는 것은 프롬프트 지시이며, ScriptedModel 회귀는 실제 한국어 모델의 의미 정확도 평가가 아닙니다.
+줄이는 것은 프롬프트 지시이며, 고정 모델 응답 회귀는 실제 한국어 모델의 의미 정확도 평가가 아닙니다.
 Compose OpenAI 대역도 정해진 C02 smoke 문구만 처리하고 미지원 문구는 오류를 반환합니다.
 `대구로`, `설정해` 같은 후속 발화는 직전 제안·질문의 명확한 대상을 이어 해석하고 불필요한 확인 반복을 피하도록
 지시합니다. `왜 못찾아?`에는 lastSearch의 확인 가능한 결과만 설명하며 공고 부재·마감 등 원인을 창작하거나
@@ -328,7 +346,7 @@ Core의 상세 공고 준비
 → 모든 청크가 현재 collection에 존재하는지 확인 → HasId filter로 지정 청크만 유사도 검색
 → 최대 5개의 match 반환
 → Core가 match의 공식 text만 포함해 POST /support-program-evidence/answers 호출
-→ SupportProgramEvidenceAnswerAgent (max_turns=1)
+→ SupportProgramEvidenceAnswerAgent → LangChain (LLM 1회)
 → OpenAI가 이번 요청의 citationChunkIndexes 선택 → 번호 검증 후 원래 ID 복원
 → 출력 상태·중복 인용·입력 밖 citationChunkIds 재검증 → 한국어 답변 반환
 ```
@@ -393,7 +411,7 @@ assessment의 `score`를 제거하고, 총점 60점 컷과 MATCH 그룹 절대 �
 `sourceTextTruncated: true`를 보내며 기본값은 false입니다. true인 후보는 잘린 부분의 제한·예외를 알 수 없어
 대상·지역 모두 UNKNOWN만 허용합니다. 입력은 공식 API 요약이지 첨부 PDF/HWP 전체 원문이 아닙니다.
 읽지 않은 부분의 조건 충족이나 최종 신청 자격을 확정하지 않습니다.
-기존 Agent의 단일 호출(`max_turns=1`)을 유지하고 출력 토큰 상한만 10,000으로 늘렸습니다.
+Agent의 단일 LLM 호출을 유지하고 출력 토큰 상한만 10,000으로 늘렸습니다.
 순위화 시간 제한은 아래 설정 절의 별도 기본값을 사용하며, 20개 후보의 실제 모델 응답시간·품질은
 별도 승인된 실호출 검증이 필요합니다.
 
@@ -414,7 +432,7 @@ Service는 제외·점수 미달 후보까지 모두 해당 후보의 지정 본
 조건부 이전·확장 확약 신청 가능 문구를 전국 기업의 무조건 허용이나 경북 기존 소재 기업만의 허용으로
 바꾸지 않습니다. 필수 요건·예외 관계가 모호하면 UNKNOWN이고, 일반 대상 라벨보다 본문의 구체적인 산업 요건을 확인합니다.
 실제 보고된 '지원기간 내 경상북도 지역으로 사업장 이전(또는 확장) 확약기업 신청 가능' 문구는
-조건 유무 두 경로의 ScriptedModel 회귀로 전달·인용·UNKNOWN 보존을 검증합니다. 모델의 의미 판단 정확도 보장은 아닙니다.
+조건 유무 두 경로의 LangChain·HTTP 스텁 회귀로 전달·인용·UNKNOWN 보존을 검증합니다. 모델의 의미 판단 정확도 보장은 아닙니다.
 인용 존재 검증은 인용의 논리적 충분성까지 보장하지 않습니다. 자격의 의미 판단은 여전히 모델이 수행합니다.
 
 지역 판정 지침과 내부 `regionAssessment` schema 설명은 먼저 제한 주체를 일반 회사·특정 사업장·개인으로
@@ -459,7 +477,7 @@ Agent에 전달하는 strict output schema의 `rankings`는 배열이 아닌 객
 그 ID 20개 자체를 모두 `required` 속성 키로 선언하고 `additionalProperties=false`로 다른 키를 금지합니다.
 배열 길이만 맞추고 특정 공고를 중복 평가하는 실패를 막기 위한 구조이며, 적합하지 않은 후보도 평가한 뒤
 Service에서 제외합니다. Agent가 검증된 키를 `programId`로 붙여 입력 후보 순서의 내부 목록으로 변환합니다.
-요청별 Agent 복사본에만 이 스키마를 적용하므로 서로 다른 후보의 요청이 공통 설정을 바꾸지 않습니다.
+요청별 LangChain 모델 바인딩에만 이 스키마를 적용하므로 서로 다른 후보의 요청이 공통 설정을 바꾸지 않습니다.
 내부 목록 중복 검증과 Service의 후보 ID 집합 검증도 유지합니다.
 자격 값은 `MATCH`(제공된 정보와 일치), `INCOMPATIBLE`(명백한 조건 불일치), `UNKNOWN`(정보 부족) 중 하나입니다.
 `UNKNOWN`은 자동 탈락이나 자격 충족 확정을 뜻하지 않습니다. Service는 아래 조건을 모두 충족한 공고만 추천으로
@@ -511,7 +529,7 @@ Core API
    ├→ 전체 입력이 같은 검증된 캐시 응답이면 복사 반환
    └→ 캐시가 없으면 같은 진행 요청에 합류하거나 아래 평가 실행
 → SupportProgramRecommendationAgent.rank()
-→ OpenAI Agents SDK Runner.run(max_turns=1)
+→ LangChain ChatPromptTemplate → ChatOpenAI → OpenAI Responses API (1회)
    ├→ prompt.py의 평가 기준 사용
    ├→ 후보 문장을 지시가 아닌 데이터로 취급
    └→ 요청별 필수 ID 키 rankings 객체로 세부 점수·자격·인용 번호 선택 (총점 없음)
@@ -558,19 +576,19 @@ app/
 │   ├── models.py                   # 청크·근거 검색·답변 strict 계약
 │   ├── service.py                  # 별도 Qdrant collection 색인·현재 청크 검색
 │   ├── prompt.py                   # 근거 외 지식 금지 한국어 답변 지시
-│   ├── agent.py                    # 단일 typed Agent Runner 실행
+│   ├── agent.py                    # LangChain 프롬프트 체인·strict 출력 검증
 │   ├── answer_service.py           # 인용 청크 집합 재검증
 │   └── errors.py                   # 안전한 기능 실패
 └── support_program_ranking/         # 지원사업 점수화 수직 기능
     ├── router.py                   # 내부 HTTP 경계
     ├── models.py                   # 요청·출력·응답 Pydantic 계약
     ├── prompt.py                   # 버전된 100점 평가 기준
-    ├── agent.py                    # Runner와 OpenAI 실행
+    ├── agent.py                    # LangChain과 OpenAI 실행
     ├── service.py                  # 후보 ID 검증·총점 합산·HTTP 변환·정렬·최소 기준 필터
     └── errors.py                   # 안전한 기능 실패
 ```
 
-의존성 방향은 `router → service → agent → Agents SDK`입니다. 근거 색인은 Agent 없이
+의존성 방향은 `router → service → agent → LangChain → OpenAI`입니다. 근거 색인은 Agent 없이
 `router → service → OpenAI Embeddings/Qdrant`로 처리하고, 답변만 단일 typed Agent를 사용합니다.
 `bootstrap.py`만 구체 OpenAI client와 model을 생성하고, 요청마다 Agent를 새로 만들지 않습니다.
 
@@ -752,8 +770,8 @@ QDRANT_TEST_URL=http://localhost:6333 uv run --locked --extra dev python -m pyte
 uv build
 ```
 
-테스트는 `agents.testing.ScriptedModel`과 HTTP mock transport를 사용하므로 실제 OpenAI 네트워크를
-호출하지 않습니다. 색인 테스트는 기본적으로 실제 Qdrant client의 로컬 메모리 모드를 사용합니다.
+검색·상세 답변 테스트는 실제 LangChain 체인과 HTTP mock transport를 사용하므로 실제 OpenAI 네트워크를
+호출하지 않습니다. 도우미 분류 테스트는 Agents SDK의 ScriptedModel을 사용합니다. 색인 테스트는 기본적으로 실제 Qdrant client의 로컬 메모리 모드를 사용합니다.
 `QDRANT_TEST_URL`을 지정하면 같은 테스트를 실제 Qdrant 서버에서 실행하며, 테스트마다 독립적인
 collection을 만들고 정리합니다. 현재 운영 collection은 테스트가 사용하지 않습니다.
 

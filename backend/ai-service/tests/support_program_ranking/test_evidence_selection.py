@@ -1,9 +1,8 @@
 import json
-from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import Mock
 
 import pytest
-from agents.testing import ScriptedModel, assistant_message
+from tests.langchain_stub import ResponsesChatStub, response_message
 
 from app.support_program_ranking.agent import SupportProgramRecommendationAgent, build_evidence_options
 from app.support_program_ranking.errors import AgentExecutionError, AgentFailureCode
@@ -60,13 +59,13 @@ def assessment(*, target="MATCH", region="MATCH", target_evidence=None, region_e
 
 
 def agent_with_outputs(*outputs):
-    # Scripted responses exercise the real Runner and schema, not model semantic quality.
-    model = ScriptedModel([
-        [assistant_message(json.dumps(output, ensure_ascii=False))]
+    # Scripted responses exercise the real LangChain request and schema, not model semantic quality.
+    model = ResponsesChatStub([
+        [response_message(json.dumps(output, ensure_ascii=False))]
         for output in outputs
     ])
     return SupportProgramRecommendationAgent(
-        model=model, model_timeout_seconds=3, run_timeout_seconds=4,
+        model=model.model, model_timeout_seconds=3, run_timeout_seconds=4,
     ), model
 
 
@@ -108,7 +107,7 @@ async def test_candidate_local_indexes_restore_each_field_without_changing_input
 
 
 @pytest.mark.anyio
-async def test_kstartup_target_exclusions_and_metadata_reach_runner_and_restore_own_evidence():
+async def test_kstartup_target_exclusions_and_metadata_reach_langchain_and_restore_own_evidence():
     target = (
         "신청 대상: 창업 3년 이내 기업 및 예비창업자\n"
         "제외 대상: 금융기관 채무불이행 중인 기업은 신청할 수 없습니다.\n"
@@ -188,7 +187,7 @@ async def test_reusing_agent_does_not_reuse_previous_candidates_options_or_index
     pytest.param({"field": "SUMMARY", "quote": "다른 후보만의 요약"}, id="copied-other-candidate-quote"),
     pytest.param(None, id="null"),
 ])
-async def test_real_runner_rejects_out_of_range_or_non_strict_integer_evidence(selection):
+async def test_langchain_rejects_out_of_range_or_non_strict_integer_evidence(selection):
     values = [candidate(), candidate(2, summary="다른 후보만의 요약")]
     output = {"rankings": {
         values[0].id: assessment(target_evidence=[selection]),
@@ -315,25 +314,25 @@ async def test_invalid_selection_in_twentieth_excluded_candidate_fails_the_entir
 async def test_runtime_guard_rejects_out_of_range_evidence_after_nested_schema_validation_is_bypassed(monkeypatch):
     value = candidate()
     valid = {"rankings": {value.id: assessment()}}
-    agent, model = agent_with_outputs()
+    agent, model = agent_with_outputs(valid)
 
-    async def return_corrupted_output(dynamic_agent, *_args, **_kwargs):
-        output = dynamic_agent.output_type.output_type.model_validate(valid)
+    def return_corrupted_output(message, output_type):
+        output = output_type.model_validate(valid)
         selected = getattr(output.rankings, value.id)
         corrupted_target = selected.target_assessment.model_copy(update={"evidence": [2]})
         corrupted_selection = selected.model_copy(update={"target_assessment": corrupted_target})
         corrupted_rankings = output.rankings.model_copy(update={value.id: corrupted_selection})
-        return SimpleNamespace(final_output=output.model_copy(update={"rankings": corrupted_rankings}))
+        return output.model_copy(update={"rankings": corrupted_rankings})
 
-    run = AsyncMock(side_effect=return_corrupted_output)
-    monkeypatch.setattr("app.support_program_ranking.agent.Runner.run", run)
+    run = Mock(side_effect=return_corrupted_output)
+    monkeypatch.setattr("app.support_program_ranking.agent.validate_support_program_output", run)
 
     with pytest.raises(AgentExecutionError) as captured:
         await agent.rank(request_for([value]))
 
     assert captured.value.reason_code is AgentFailureCode.INVALID_EVIDENCE_SELECTION
-    run.assert_awaited_once()
-    assert len(model.calls) == 0
+    run.assert_called_once()
+    assert len(model.calls) == 1
 
 
 @pytest.mark.anyio

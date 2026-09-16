@@ -66,6 +66,7 @@ async def execute(args, envelope, prompts):
     sources = [
         "backend/ai-service/app/support_program_ranking/prompt.py",
         "backend/ai-service/app/support_program_ranking/agent.py",
+        "backend/ai-service/app/support_program_llm.py",
         "backend/ai-service/app/support_program_ranking/service.py",
         "backend/ai-service/app/support_program_ranking/models.py",
         "backend/ai-service/app/config.py",
@@ -116,12 +117,12 @@ async def execute(args, envelope, prompts):
                 app = create_app(settings=settings)
                 apps[variant] = app
                 agent = app.state.container.support_program_ranking_service._agent
-                configured_max_tokens = agent._agent.model_settings.max_tokens
+                configured_max_tokens = agent._model.kwargs["max_tokens"]
                 if max_output_tokens is not None and configured_max_tokens != max_output_tokens:
                     raise ValueError("Replay variants must use the same output token limit")
                 max_output_tokens = configured_max_tokens
-                # Evaluation-only clone: same production agent and output contract, different instructions.
-                agent._agent = agent._agent.clone(instructions=prompt)
+                # Evaluation-only instance: same production LangChain path and output contract, different instructions.
+                agent._instructions = prompt
                 hooks = app.state.container.openai_client._client.event_hooks
                 hooks["request"].append(on_request)
                 hooks["response"].append(on_response)

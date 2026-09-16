@@ -240,7 +240,7 @@ def response_record(status_code: int, body: object) -> dict:
 
 
 async def execute(prepared: list, fixture_hash: str, output_dir: Path) -> dict:
-    from agents import OpenAIResponsesModel
+    from langchain_openai import ChatOpenAI
     import httpx2
     from openai import AsyncOpenAI
     from app.support_program_evidence.agent import SupportProgramEvidenceAnswerAgent
@@ -278,7 +278,10 @@ async def execute(prepared: list, fixture_hash: str, output_dir: Path) -> dict:
         http_client=httpx2.AsyncClient(event_hooks={"response": [record_usage]}),
     )
     service = SupportProgramEvidenceAnswerService(SupportProgramEvidenceAnswerAgent(
-        model=OpenAIResponsesModel(model=DEFAULT_OPENAI_MODEL, openai_client=client),
+        model=ChatOpenAI(
+            model=DEFAULT_OPENAI_MODEL, api_key=key, use_responses_api=True, max_retries=0,
+            root_async_client=client, async_client=client.chat.completions,
+        ),
         model_timeout_seconds=DEFAULT_LLM_MODEL_TIMEOUT_SECONDS,
         run_timeout_seconds=DEFAULT_LLM_RUN_TIMEOUT_SECONDS,
     ))

@@ -706,13 +706,19 @@ Core의 공개 계약은 기능별 `controller/dto`, 외부 계약은 시스템�
 `DbRow`를 Repository 밖으로 노출하지 않습니다. 같은 필드가 있어도 외부 입력과 공개 응답을 하나의
 타입으로 합치지 않습니다. 상세 배치 규칙은 [Core API README](../backend/core-api/README.md)에 있습니다.
 
-AI Service는 조건 변경 해석·점수화·원문 근거 답변에서 각각 `HTTP API → Service → Agent → OpenAI → Response` 흐름으로
-실행합니다. `bootstrap.py`가 클라이언트와 서비스 수명주기를 구성하고, 역할이 다른 typed Agent를 각각
-`max_turns=1`로 실행합니다. 도우미 도구 에이전트(`app/assistant_agent`)만 예외로 LangGraph 그래프
+AI Service는 조건 변경 해석·점수화·원문 근거 답변에서 각각 `HTTP API → Service → Agent → LangChain → OpenAI → Response` 흐름으로
+실행합니다. `bootstrap.py`가 클라이언트와 서비스 수명주기를 구성하고, 역할이 다른 Agent가 각각
+`ChatPromptTemplate | ChatOpenAI.bind(...)` 체인으로 strict structured output을 한 번 요청합니다. 도우미 도구 에이전트(`app/assistant_agent`)만 예외로 LangGraph 그래프
 (`classify → plan ⇄ tools → answer → verify`, 관심 공고 묶음 질문은 `retrieve → map → reduce → verify` 서브그래프)를 쓰며
 도구는 Core 내부 읽기 API 세 개와 기존 근거 컬렉션의 문서 id 제한 검색뿐입니다. 그 밖의 tool·handoff·multi-agent orchestration은 없습니다. 일반 공고 색인·검색은
 `support_program_index`, 원문 청크 색인·검색은 `support_program_evidence`가 OpenAI 임베딩과 분리된 Qdrant
 컬렉션을 직접 사용합니다.
+공고 추천은 Qdrant·Elasticsearch 검색 후 Core가 병합·검증한 공식 후보를, 상세 질의응답은
+Qdrant 검색 후 Core가 ID·내용 해시·문서 ID를 검증하고 복원한 원문 청크를 LangChain 프롬프트의
+근거로 사용합니다. 조건 해석은 이 검색 전에 실행됩니다. 검색·생성을 연결하는 기존 Core 경계와
+임베딩 원시 응답 검증을 유지하며 LangChain 적용을 위해 컬렉션을 교체하거나 재색인하지 않습니다.
+세 Agent의 공유 실행 함수는 `support_program_llm.py`에 있으며 완료 상태·거부·JSON 전체를 엄격히 검증하고,
+LangSmith 추적·응답 저장·자동 재시도를 사용하지 않습니다.
 
 랭킹 모델은 `OPENAI_RANKING_MODEL`로 지정하고 미설정이면 공통 `OPENAI_MODEL`을 상속합니다.
 `OPENAI_RANKING_REASONING_EFFORT`는 `none`/`low`만 허용합니다. 제공 설정 예제는 비용 절감을 위해 랭킹도

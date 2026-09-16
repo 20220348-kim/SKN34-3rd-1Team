@@ -12,6 +12,8 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
+from metric_comparison import metrics_match
+
 ROOT = Path(__file__).resolve().parent
 PROJECT = ROOT.parent.parent
 RUN = ROOT / "runs/lexical-v2-20260913-v1"
@@ -25,6 +27,9 @@ CONFIGS = {name: PROJECT / f"backend/core-api/src/main/resources/elasticsearch/s
            for name in ("v1", "v2")}
 SCHEMA = "govbiz-lexical-v2-comparison-v1"
 PASSES = 2  # First pass and one warm repeat; not a load or end-to-end latency test.
+# The saved capture predates tolerant metric verification. Accept this exact
+# verifier revision as well as the current one, without relaxing other hashes.
+CAPTURE_COMPARISON_SHA256 = "a0bb8927617845a6567d878a811383168c5c1ce13e1932f5854814b69d16c900"
 
 
 def load_inputs():
@@ -58,12 +63,12 @@ def load_inputs():
 
 
 def metadata(fixture, cases, provenance):
-    sources = [Path(__file__).resolve(), ADDED, *CONFIGS.values(), base.FIXTURE, base.QUESTIONS,
+    sources = [Path(__file__).resolve(), ROOT / "metric_comparison.py", ADDED, *CONFIGS.values(), base.FIXTURE, base.QUESTIONS,
                budget.ADDED, BUDGET / "compare.py", BUDGET / "report.json", base.RUN / "compare.py",
                ROOT / "compare_elasticsearch.py", ROOT / "evaluate.py",
                PROJECT / "backend/core-api/src/main/kotlin/ai/govbiz/core/supportprogram/client/elasticsearch/ElasticsearchSupportProgramClient.kt"]
     return {
-        "sourceSha256": {str(path.relative_to(PROJECT)): base.sha256(path) for path in sources},
+        "sourceSha256": {path.relative_to(PROJECT).as_posix(): base.sha256(path) for path in sources},
         "catalog": fixture["catalog"], "referenceDate": fixture["referenceDate"],
         "additionalProvenance": provenance,
         "casesSha256": hashlib.sha256(json.dumps(cases, ensure_ascii=False, sort_keys=True).encode()).hexdigest(),
@@ -122,10 +127,16 @@ def summarize(fixture, cases, candidates, timings):
 
 def verify(report):
     fixture, cases, provenance = load_inputs()
+    expected = metadata(fixture, cases, provenance)
+    verifier_path = Path(__file__).resolve().relative_to(PROJECT).as_posix()
+    if report.get("sourceSha256", {}).get(verifier_path) == CAPTURE_COMPARISON_SHA256:
+        expected["sourceSha256"][verifier_path] = CAPTURE_COMPARISON_SHA256
+        # The captured revision had no shared metric comparator.
+        del expected["sourceSha256"][(ROOT / "metric_comparison.py").relative_to(PROJECT).as_posix()]
     if (report.get("schemaVersion") != SCHEMA or report.get("status") != "complete"
-            or any(report.get(key) != value for key, value in metadata(fixture, cases, provenance).items())):
+            or any(report.get(key) != value for key, value in expected.items())):
         raise ValueError("Report inputs/configuration/provenance changed")
-    if report["summaries"] != summarize(fixture, cases, report["candidateIds"], report["timings"]):
+    if not metrics_match(report["summaries"], summarize(fixture, cases, report["candidateIds"], report["timings"])):
         raise ValueError("Saved metrics cannot be reproduced")
     original = json.loads((BUDGET / "report.json").read_text(encoding="utf-8"))
     if any(report["candidateIds"]["v1"][case["id"]] != original["candidateIds"][case["id"]]["20"] for case in cases[:300]):

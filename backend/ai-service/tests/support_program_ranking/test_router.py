@@ -1,7 +1,7 @@
 import json
 
 import pytest
-from agents.testing import ScriptedModel, assistant_message
+from tests.langchain_stub import ResponsesChatStub, response_message
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
@@ -261,12 +261,12 @@ def test_computes_relevance_total_in_service_and_keeps_v5_http_contract() -> Non
             assessment[dimension]["evidence"] = [0] if assessment[dimension]["evidence"] else []
     llm_output = json.dumps(selections, ensure_ascii=False)
     assert "totalScore" not in llm_output
-    model = ScriptedModel([[assistant_message(llm_output)]])
+    model = ResponsesChatStub([[response_message(llm_output)]])
     client = TestClient(
         create_app(
             settings=TEST_SETTINGS,
             support_program_recommendation_agent=SupportProgramRecommendationAgent(
-                model=model,
+                model=model.model,
                 model_timeout_seconds=2.0,
                 run_timeout_seconds=2.5,
             ),
@@ -329,12 +329,12 @@ def test_invalid_llm_eligibility_returns_503_without_retry_or_fallback(dimension
         for axis in ("targetAssessment", "regionAssessment"):
             assessment[axis]["evidence"] = [0]
     payload["rankings"]["BIZINFO:program-low"][dimension].update(eligibility="INCOMPATIBLE", score=4)
-    model = ScriptedModel([[assistant_message(json.dumps(payload, ensure_ascii=False))]])
+    model = ResponsesChatStub([[response_message(json.dumps(payload, ensure_ascii=False))]])
     client = TestClient(
         create_app(
             settings=TEST_SETTINGS,
             support_program_recommendation_agent=SupportProgramRecommendationAgent(
-                model=model,
+                model=model.model,
                 model_timeout_seconds=2.0,
                 run_timeout_seconds=2.5,
             ),

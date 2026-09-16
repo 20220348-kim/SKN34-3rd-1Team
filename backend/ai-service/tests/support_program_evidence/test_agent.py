@@ -4,8 +4,7 @@ from hashlib import sha256
 
 import httpx2
 import pytest
-from agents import MaxTurnsExceeded, ModelBehaviorError, ModelTracing, OpenAIResponsesModel
-from agents.testing import ModelStep, ScriptedModel, assistant_message
+from tests.langchain_stub import ResponsesChatStub, response_message, chat_model, user_payload
 from openai import AsyncOpenAI
 from pydantic import ValidationError
 
@@ -96,11 +95,11 @@ def test_prompt_requires_target_scope_and_preserves_condition_relationships() ->
 
 
 @pytest.mark.anyio
-async def test_runs_typed_evidence_answer_agent_through_the_real_runner() -> None:
+async def test_runs_typed_evidence_answer_agent_through_langchain() -> None:
     expected = valid_output()
-    model = ScriptedModel([[assistant_message(valid_selection().model_dump_json(by_alias=True))]])
+    model = ResponsesChatStub([[response_message(valid_selection().model_dump_json(by_alias=True))]])
     agent = SupportProgramEvidenceAnswerAgent(
-        model=model,
+        model=model.model,
         model_timeout_seconds=3.0,
         run_timeout_seconds=4.0,
     )
@@ -116,18 +115,18 @@ async def test_runs_typed_evidence_answer_agent_through_the_real_runner() -> Non
     assert set(request_json["chunks"][0]) == {"index", "documentId", "order", "text"}
     assert request_json["chunks"][0]["index"] == 0
     assert answer_request().chunks[0].id not in json.dumps(request_json)
-    assert call.output_schema is not None
-    assert call.output_schema.output_type is SupportProgramEvidenceAnswerSelection
-    assert call.model_settings.timeout == 3.0
-    assert call.tracing is ModelTracing.DISABLED
+    assert call.schema is not None
+    assert call.schema["title"] == "SupportProgramEvidenceAnswerSelection"
+    assert call.timeout == 3.0
+    assert call.tracing_disabled
     model.assert_complete()
 
 
 @pytest.mark.anyio
 async def test_turns_invalid_structured_output_into_a_safe_boundary_error() -> None:
-    model = ScriptedModel([[assistant_message("not-json")]])
+    model = ResponsesChatStub([[response_message("not-json")]])
     agent = SupportProgramEvidenceAnswerAgent(
-        model=model,
+        model=model.model,
         model_timeout_seconds=1.0,
         run_timeout_seconds=2.0,
     )
@@ -138,9 +137,9 @@ async def test_turns_invalid_structured_output_into_a_safe_boundary_error() -> N
 
 @pytest.mark.anyio
 async def test_limits_evidence_answering_to_one_model_turn() -> None:
-    model = ScriptedModel([[], [assistant_message(valid_selection().model_dump_json(by_alias=True))]])
+    model = ResponsesChatStub([[], [response_message(valid_selection().model_dump_json(by_alias=True))]])
     agent = SupportProgramEvidenceAnswerAgent(
-        model=model,
+        model=model.model,
         model_timeout_seconds=1.0,
         run_timeout_seconds=2.0,
     )
@@ -148,7 +147,7 @@ async def test_limits_evidence_answering_to_one_model_turn() -> None:
     with pytest.raises(SupportProgramEvidenceError) as captured:
         await agent.answer(answer_request())
 
-    assert isinstance(captured.value.__cause__, MaxTurnsExceeded)
+    assert isinstance(captured.value.__cause__, ValueError)
     assert len(model.calls) == 1
 
 
@@ -158,9 +157,9 @@ async def test_enforces_whole_answering_deadline() -> None:
         await asyncio.Event().wait()
         return []
 
-    model = ScriptedModel([ModelStep.respond(hang_forever)])
+    model = ResponsesChatStub([(hang_forever)])
     agent = SupportProgramEvidenceAnswerAgent(
-        model=model,
+        model=model.model,
         model_timeout_seconds=1.0,
         run_timeout_seconds=0.01,
     )
@@ -220,7 +219,7 @@ async def test_openai_request_uses_non_stored_strict_structured_output() -> None
         max_retries=0,
     )
     agent = SupportProgramEvidenceAnswerAgent(
-        model=OpenAIResponsesModel(
+        model=chat_model(
             model="gpt-5.6-luna",
             openai_client=openai_client,
         ),
@@ -256,11 +255,11 @@ async def test_openai_request_uses_non_stored_strict_structured_output() -> None
     ([0, 0], "ANSWERED"), ([], "ANSWERED"), ([0], "INSUFFICIENT_EVIDENCE"),
 ])
 async def test_rejects_invalid_index_selections_without_a_fallback(indexes, status):
-    model = ScriptedModel([[assistant_message(json.dumps({
+    model = ResponsesChatStub([[response_message(json.dumps({
         "answer": "신청 접수 기간은 2026년 3월입니다.",
         "answerStatus": status, "citationChunkIndexes": indexes,
     }))]])
-    agent = SupportProgramEvidenceAnswerAgent(model=model, model_timeout_seconds=1, run_timeout_seconds=2)
+    agent = SupportProgramEvidenceAnswerAgent(model=model.model, model_timeout_seconds=1, run_timeout_seconds=2)
     with pytest.raises(SupportProgramEvidenceError):
         await agent.answer(answer_request())
     assert len(model.calls) == 1
@@ -276,17 +275,17 @@ async def test_restores_the_full_hash_instead_of_asking_the_model_to_copy_64_cha
         SupportProgramEvidenceAnswerOutput(
             answer="근거에 있는 답변", answerStatus="ANSWERED", citationChunkIds=[source_id[:-1]],
         )
-    model = ScriptedModel([[assistant_message(valid_selection().model_dump_json(by_alias=True))]])
-    agent = SupportProgramEvidenceAnswerAgent(model=model, model_timeout_seconds=1, run_timeout_seconds=2)
+    model = ResponsesChatStub([[response_message(valid_selection().model_dump_json(by_alias=True))]])
+    agent = SupportProgramEvidenceAnswerAgent(model=model.model, model_timeout_seconds=1, run_timeout_seconds=2)
     result = await agent.answer(request)
     assert result.citation_chunk_ids == [source_id]
     assert len(result.citation_chunk_ids[0]) == 64
     assert source_id not in json.dumps(model.first_call.input)
 
-    legacy_model = ScriptedModel([[assistant_message(json.dumps({
+    legacy_model = ResponsesChatStub([[response_message(json.dumps({
         "answer": "근거에 있는 답변", "answerStatus": "ANSWERED", "citationChunkIds": [source_id[:-1]],
     }))]])
-    legacy_agent = SupportProgramEvidenceAnswerAgent(model=legacy_model, model_timeout_seconds=1, run_timeout_seconds=2)
+    legacy_agent = SupportProgramEvidenceAnswerAgent(model=legacy_model.model, model_timeout_seconds=1, run_timeout_seconds=2)
     with pytest.raises(SupportProgramEvidenceError):
         await legacy_agent.answer(request)
 
@@ -300,8 +299,8 @@ async def test_uses_request_positions_not_non_contiguous_source_orders():
         first.model_copy(update={"id": sha256(b"third").hexdigest(), "order": 12}),
     ]})
     selection = valid_selection().model_copy(update={"citation_chunk_indexes": [2, 0]})
-    model = ScriptedModel([[assistant_message(selection.model_dump_json(by_alias=True))]])
-    agent = SupportProgramEvidenceAnswerAgent(model=model, model_timeout_seconds=1, run_timeout_seconds=2)
+    model = ResponsesChatStub([[response_message(selection.model_dump_json(by_alias=True))]])
+    agent = SupportProgramEvidenceAnswerAgent(model=model.model, model_timeout_seconds=1, run_timeout_seconds=2)
     result = await agent.answer(request)
     assert result.citation_chunk_ids == [request.chunks[2].id, request.chunks[0].id]
     payload = json.loads(model.first_call.input[0]["content"])
@@ -320,10 +319,10 @@ async def test_keeps_concurrent_request_index_mappings_isolated():
         if arrived == 2:
             both_arrived.set()
         await both_arrived.wait()
-        return [assistant_message(valid_selection().model_dump_json(by_alias=True))]
+        return [response_message(valid_selection().model_dump_json(by_alias=True))]
 
-    model = ScriptedModel([ModelStep.respond(answer_after_both_arrive), ModelStep.respond(answer_after_both_arrive)])
-    agent = SupportProgramEvidenceAnswerAgent(model=model, model_timeout_seconds=1, run_timeout_seconds=2)
+    model = ResponsesChatStub([(answer_after_both_arrive), (answer_after_both_arrive)])
+    agent = SupportProgramEvidenceAnswerAgent(model=model.model, model_timeout_seconds=1, run_timeout_seconds=2)
     first = answer_request()
     second = first.model_copy(update={"chunks": [first.chunks[0].model_copy(update={
         "id": sha256(b"other-request").hexdigest(), "document_id": "BIZINFO:OTHER",
@@ -335,11 +334,11 @@ async def test_keeps_concurrent_request_index_mappings_isolated():
 
 @pytest.mark.anyio
 async def test_keeps_insufficient_evidence_without_any_citations():
-    model = ScriptedModel([[assistant_message(json.dumps({
+    model = ResponsesChatStub([[response_message(json.dumps({
         "answer": "제공된 근거만으로는 확인할 수 없습니다.",
         "answerStatus": "INSUFFICIENT_EVIDENCE", "citationChunkIndexes": [],
     }))]])
-    agent = SupportProgramEvidenceAnswerAgent(model=model, model_timeout_seconds=1, run_timeout_seconds=2)
+    agent = SupportProgramEvidenceAnswerAgent(model=model.model, model_timeout_seconds=1, run_timeout_seconds=2)
     answer = await agent.answer(answer_request())
     assert answer.answer_status is SupportProgramEvidenceAnswerStatus.INSUFFICIENT_EVIDENCE
     assert answer.citation_chunk_ids == []
@@ -358,7 +357,7 @@ async def test_keeps_refusal_as_an_error_without_retrying():
     client = AsyncOpenAI(api_key="test-key", max_retries=0,
                          http_client=httpx2.AsyncClient(transport=httpx2.MockTransport(handler)))
     agent = SupportProgramEvidenceAnswerAgent(
-        model=OpenAIResponsesModel(model="gpt-5.6-luna", openai_client=client),
+        model=chat_model(model="gpt-5.6-luna", openai_client=client),
         model_timeout_seconds=1, run_timeout_seconds=2,
     )
     try:
@@ -375,8 +374,8 @@ async def test_evidence_answer_logs_stage_duration_without_question_or_source_te
     import logging
 
     text = "private invalid output" if failure else valid_selection().model_dump_json(by_alias=True)
-    model = ScriptedModel([[assistant_message(text)]])
-    agent = SupportProgramEvidenceAnswerAgent(model=model, model_timeout_seconds=3, run_timeout_seconds=4)
+    model = ResponsesChatStub([[response_message(text)]])
+    agent = SupportProgramEvidenceAnswerAgent(model=model.model, model_timeout_seconds=3, run_timeout_seconds=4)
     request = answer_request()
     with caplog.at_level(logging.INFO, logger="app.support_program_evidence.agent"):
         if failure:
@@ -394,12 +393,15 @@ async def test_evidence_answer_logs_stage_duration_without_question_or_source_te
 
 
 @pytest.mark.anyio
+@pytest.mark.parametrize("service_tier", [None, "default", "priority", "flex"])
 @pytest.mark.parametrize("with_usage", [True, False])
-async def test_actual_sdk_usage_is_logged_and_missing_usage_stays_unknown(caplog, with_usage):
+async def test_actual_sdk_usage_is_logged_and_missing_usage_stays_unknown(caplog, with_usage, service_tier):
     import logging
 
     def handler(request):
         body = responses_body(valid_selection().model_dump_json(by_alias=True))
+        if service_tier is not None:
+            body["service_tier"] = service_tier
         if with_usage:
             body["usage"] = {
                 "input_tokens": 800, "output_tokens": 120, "total_tokens": 920,
@@ -411,7 +413,7 @@ async def test_actual_sdk_usage_is_logged_and_missing_usage_stays_unknown(caplog
     client = AsyncOpenAI(api_key="secret-test-key", max_retries=0,
                          http_client=httpx2.AsyncClient(transport=httpx2.MockTransport(handler)))
     agent = SupportProgramEvidenceAnswerAgent(
-        model=OpenAIResponsesModel(model="test-model", openai_client=client),
+        model=chat_model(model="test-model", openai_client=client),
         model_timeout_seconds=3, run_timeout_seconds=4,
     )
     try:
@@ -427,4 +429,5 @@ async def test_actual_sdk_usage_is_logged_and_missing_usage_stays_unknown(caplog
     else:
         assert "usage_reported=False" in messages[0]
         assert "input_tokens=None" in messages[0] and "output_tokens=None" in messages[0]
+        assert "cached_input_tokens=None" in messages[0] and "reasoning_tokens=None" in messages[0]
     assert "secret-test-key" not in caplog.text
