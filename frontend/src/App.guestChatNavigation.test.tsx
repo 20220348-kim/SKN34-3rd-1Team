@@ -173,7 +173,19 @@ describe('비로그인 대화의 화면 이동 수명', () => {
   it('로그인 사용자가 검색 중에 다른 메뉴로 가도 계정 위에 상태 패널을 표시하지 않고 검색과 결과 복귀를 유지한다', async () => {
     let complete!: (response: Response) => void
     const pending = new Promise<Response>((resolve) => { complete = resolve })
-    const fetchMock = vi.fn().mockResolvedValueOnce(json(readyConversationProposal(context))).mockReturnValueOnce(pending)
+    const fetchMock = vi.fn<typeof fetch>(async (input) => {
+      const path = new URL(String(input), 'http://localhost').pathname
+      switch (path) {
+        case '/api/v1/support-programs/conversation/interpret':
+          return json(readyConversationProposal(context))
+        case '/api/v1/support-programs/search':
+          return pending
+        case '/api/v1/me/saved-programs':
+          return json({ programs: [] })
+        default:
+          throw new Error(`예상하지 않은 요청: ${path}`)
+      }
+    })
     vi.stubGlobal('fetch', fetchMock)
     const store = emptyStore(true)
     renderApp(store, '/app/chat')
@@ -184,7 +196,7 @@ describe('비로그인 대화의 화면 이동 수명', () => {
 
     const sidebar = () => screen.getByRole('complementary', { name: '작업 사이드바' })
     expect(within(sidebar()).queryByRole('status', { name: '검색 상태' })).toBeNull()
-    const signal = fetchMock.mock.calls.at(-1)![1].signal as AbortSignal
+    const signal = fetchMock.mock.calls.at(-1)![1]!.signal as AbortSignal
     await act(async () => fireEvent.click(within(sidebar()).getByRole('link', { name: /파트너 관리/ })))
     expect(within(sidebar()).queryByRole('status', { name: '검색 상태' })).toBeNull()
     expect(signal.aborted).toBe(false)
@@ -201,10 +213,16 @@ describe('비로그인 대화의 화면 이동 수명', () => {
     fireEvent.click(within(screen.getByRole('status', { name: '검색 알림' })).getByRole('button', { name: '닫기' }))
     expect(screen.queryByRole('status', { name: '검색 알림' })).toBeNull()
     // 도착 알림을 닫아도 기존 사이드바 링크로 돌아와 결과를 확인할 수 있습니다.
-    fireEvent.click(within(sidebar()).getByRole('link', { name: 'GovBiz' }))
+    await act(async () => fireEvent.click(within(sidebar()).getByRole('link', { name: 'GovBiz' })))
     expect(screen.getByRole('heading', { name: program.title })).toBeTruthy()
     expect(store.getState().chat.unseenOutcome).toBeNull()
-    expect(fetchMock).toHaveBeenCalledTimes(2)
+    // 복귀 시 관심 상태는 조회하지만 조건 해석과 검색은 다시 실행하지 않습니다.
+    expect(fetchMock.mock.calls.map(([input]) => new URL(String(input), 'http://localhost').pathname)).toEqual([
+      '/api/v1/support-programs/conversation/interpret',
+      '/api/v1/support-programs/search',
+      '/api/v1/me/saved-programs',
+    ])
+    expect(screen.getByRole('button', { name: '관심 공고 저장' }).hasAttribute('disabled')).toBe(false)
     expect(within(sidebar()).queryByRole('status', { name: '검색 상태' })).toBeNull()
   })
 
