@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import { appContainer } from '../../../../app/appContainer'
 import type { SavedSupportProgram } from '../../../../domain/entities/SavedSupportProgram'
 import type { BrowseSavedSupportProgramsUseCase } from '../../../../domain/usecases/SavedSupportProgramUseCases'
+import type { SavedProgramsViewMode } from '../../../shared/routes/appPaths'
 import {
   buildCalendarWeeks,
   calendarToday,
@@ -15,7 +16,7 @@ import {
   type SavedProgramCalendarFilters,
 } from './savedProgramCalendar'
 
-export type SavedProgramsViewMode = 'calendar' | 'list' | 'pipeline'
+export type { SavedProgramsViewMode } from '../../../shared/routes/appPaths'
 export type SavedProgramsBrowseUseCase = Pick<BrowseSavedSupportProgramsUseCase, 'execute'>
 
 const savedProgramListPageSize = 8
@@ -29,6 +30,8 @@ type LoadState =
 export function useSavedProgramCalendarViewModel(
   input?: { today: string; programs: readonly CalendarProgram[] },
   browseUseCase: SavedProgramsBrowseUseCase = appContainer.resolve('browseSavedSupportProgramsUseCase'),
+  /** 주소가 가리키는 탭입니다. 공고 상세에서 돌아올 때 보던 탭 그대로 열리게 합니다. */
+  initialViewMode: SavedProgramsViewMode = 'calendar',
 ) {
   const [initial] = useState(() => {
     const today = input?.today ?? calendarToday()
@@ -38,7 +41,7 @@ export function useSavedProgramCalendarViewModel(
   const [loadVersion, setLoadVersion] = useState(0)
   const [display, setDisplay] = useState(() => ({ year: Number(initial.today.slice(0, 4)), month: Number(initial.today.slice(5, 7)) }))
   const [filters, setFilters] = useState(defaultSavedProgramCalendarFilters)
-  const [viewMode, setViewMode] = useState<SavedProgramsViewMode>('calendar')
+  const [viewMode, setViewMode] = useState<SavedProgramsViewMode>(initialViewMode)
   const [listPage, setListPage] = useState(1)
 
   useEffect(() => {

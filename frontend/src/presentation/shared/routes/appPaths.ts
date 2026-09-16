@@ -35,6 +35,21 @@ export function combinationReviewRunResultPath(reviewId: number, runId: number):
   return `${appPaths.combinationReviews}/${reviewId}/runs/${runId}`
 }
 
+/** 관심 공고함의 보기 방식입니다. 달력·목록·진행 관리를 주소로 기억해 공고 상세에서 돌아올 때 같은 탭을 엽니다. */
+export const savedProgramsViewModes = ['calendar', 'list', 'pipeline'] as const
+
+export type SavedProgramsViewMode = (typeof savedProgramsViewModes)[number]
+
+/** 기본 탭인 달력은 주소에 남기지 않아 기존 `/app/saved-programs` 주소를 그대로 씁니다. */
+export function savedProgramsPath(view: SavedProgramsViewMode): string {
+  return view === 'calendar' ? appPaths.savedPrograms : `${appPaths.savedPrograms}?view=${view}`
+}
+
+/** 주소의 보기 방식입니다. 모르는 값이면 기본 탭인 달력으로 봅니다. */
+export function readSavedProgramsViewMode(value: string | null | undefined): SavedProgramsViewMode {
+  return savedProgramsViewModes.find((mode) => mode === value) ?? 'calendar'
+}
+
 export const publicPaths = {
   reportEmail: '/report-email',
   landing: '/',

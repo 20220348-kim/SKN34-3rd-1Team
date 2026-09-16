@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
 import { Link, useLocation, useSearchParams } from 'react-router'
 
 import { loginPathFor } from '../../../shared/auth/returnPath'
@@ -10,11 +10,13 @@ import type { SupportProgramIdentity } from '../../../../domain/repositories/Sup
 import { useSupportProgramDetailViewModel } from '../viewmodel/useSupportProgramDetailViewModel'
 import { useSupportProgramSaveViewModel } from '../../../shared/support-program/useSupportProgramSaveViewModel'
 import { supportProgramDetailStyles } from './SupportProgramDetailPage.styles'
-import { getSupportProgramSearchReturnTo, supportProgramBackLabel, type SupportProgramSearchReturnTo } from './supportProgramNavigation'
+import { getSupportProgramFromPipeline, getSupportProgramSearchReturnTo, supportProgramBackLabel, type SupportProgramSearchReturnTo } from './supportProgramNavigation'
 
 /** URL의 제공처·원본 공고 ID로 최신 상세 정보를 조회하는 화면입니다. */
 export function SupportProgramDetailPage() {
-  const searchReturnTo = getSupportProgramSearchReturnTo(useLocation().state)
+  const locationState = useLocation().state
+  const searchReturnTo = getSupportProgramSearchReturnTo(locationState)
+  const fromPipeline = getSupportProgramFromPipeline(locationState)
   const [searchParams] = useSearchParams()
   const identity = getSupportProgramIdentity(
     searchParams.get('sourceCode') ?? undefined,
@@ -36,13 +38,15 @@ export function SupportProgramDetailPage() {
       key={JSON.stringify([identity.sourceCode, identity.sourceProgramId])}
       identity={identity}
       searchReturnTo={searchReturnTo}
+      fromPipeline={fromPipeline}
     />
   )
 }
 
-function SupportProgramDetailContent({ identity, searchReturnTo }: {
+function SupportProgramDetailContent({ identity, searchReturnTo, fromPipeline }: {
   identity: SupportProgramIdentity
   searchReturnTo: SupportProgramSearchReturnTo
+  fromPipeline: boolean
 }) {
   const detail = useSupportProgramDetailViewModel(identity)
 
@@ -69,7 +73,7 @@ function SupportProgramDetailContent({ identity, searchReturnTo }: {
     />
   }
 
-  return <SupportProgramDetail program={detail.program} searchReturnTo={searchReturnTo} />
+  return <SupportProgramDetail program={detail.program} searchReturnTo={searchReturnTo} fromPipeline={fromPipeline} />
 }
 
 function LoadingSupportProgramDetail({ searchReturnTo }: { searchReturnTo: SupportProgramSearchReturnTo }) {
@@ -104,13 +108,18 @@ function DetailShell({ children, live = false, searchReturnTo }: {
   )
 }
 
-function SupportProgramDetail({ program, searchReturnTo }: {
+function SupportProgramDetail({ program, searchReturnTo, fromPipeline }: {
   program: SupportProgram
   searchReturnTo: SupportProgramSearchReturnTo
+  fromPipeline: boolean
 }) {
   // 작업 채팅에서 연 상세는 질문 화면도 사이드바 안(/app)에서 열리도록 현재 경로로 판단합니다.
   const inApp = isAppPath(useLocation().pathname)
   const save = useSupportProgramSaveViewModel({ sourceCode: program.sourceCode, sourceProgramId: program.id })
+  // 진행 관리에서 들어온 공고는 신청 준비 중인 사업이라, 관심 공고함에서 빼면 진행 관리 보드에서도 사라집니다.
+  // 책갈피 한 번에 실수로 빠지지 않도록 이때만 확인을 받습니다. 담기는 되돌리기 쉬우므로 바로 처리합니다.
+  const [confirmingRemove, setConfirmingRemove] = useState(false)
+  const needsRemoveConfirm = fromPipeline && save.isSaved === true
   const applicationPreparationPath = `${appPaths.applicationPreparationNew}?${new URLSearchParams({
     sourceCode: program.sourceCode,
     sourceProgramId: program.id,
@@ -126,7 +135,7 @@ function SupportProgramDetail({ program, searchReturnTo }: {
       title={saveLabel}
       aria-pressed={save.isSaved === true}
       disabled={save.isBusy}
-      onClick={() => void save.toggle()}
+      onClick={() => { if (needsRemoveConfirm) setConfirmingRemove(true); else void save.toggle() }}
     >
       <BookmarkIcon filled={save.isSaved === true} />
     </button>
@@ -153,6 +162,20 @@ function SupportProgramDetail({ program, searchReturnTo }: {
           <span className={supportProgramDetailStyles.sourceBadge}>{program.sourceName}</span>
         </div>
       </header>
+
+      {confirmingRemove ? (
+        <div className={supportProgramDetailStyles.removeConfirm} role="alertdialog" aria-label="관심 공고 빼기 확인">
+          <span>
+            신청 준비 중인 공고입니다. 관심 공고함에서 빼면 진행 관리에서도 보이지 않습니다.
+            작성한 신청 문서는 지워지지 않고 신청 준비 화면에 그대로 남습니다.
+          </span>
+          <span className="flex items-center gap-3">
+            <button className={workspacePageStyles.dangerButton} type="button" disabled={save.isBusy}
+              onClick={() => { setConfirmingRemove(false); void save.toggle() }}>정말 빼기</button>
+            <button className={workspacePageStyles.quietLink} type="button" onClick={() => setConfirmingRemove(false)}>취소</button>
+          </span>
+        </div>
+      ) : null}
 
       {save.notice ? (
         <p className={supportProgramDetailStyles.saveNotice} role="status" key={save.notice.id}>
