@@ -57,6 +57,10 @@ export function AppHeader() {
 
       <nav className={isMarketingPage ? appHeaderStyles.landingNav : appHeaderStyles.nav} aria-label="화면 이동">
         <div className={isMarketingPage ? appHeaderStyles.landingNavLinks : 'contents'}>
+          {activityLabel ? (
+            <Link className={isMarketingPage ? appHeaderStyles.landingActivityChip : appHeaderStyles.activityChip}
+              to={publicPaths.landing} role="status" aria-label={activityLabel}>{activityLabel}</Link>
+          ) : null}
           {isMarketingPage ? <>
             <Link className={appHeaderStyles.landingNavLink} to={publicPaths.landing} aria-current={isLanding ? 'page' : undefined}>지원사업 찾기</Link>
             <Link className={appHeaderStyles.landingNavLink} to={publicPaths.partners} aria-current={isPartners ? 'page' : undefined}>파트너 모집</Link>
@@ -68,9 +72,6 @@ export function AppHeader() {
           >
             요금제
           </Link>
-          {activityLabel ? (
-            <Link className={appHeaderStyles.activityChip} to={publicPaths.landing} role="status" aria-label={activityLabel}>{activityLabel}</Link>
-          ) : null}
         </div>
         <AccountMenu isMarketingPage={isMarketingPage} />
       </nav>

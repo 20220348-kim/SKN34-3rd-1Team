@@ -1,11 +1,8 @@
-import { useEffect, useRef } from 'react'
+import { useRef } from 'react'
 
-import { useAppDispatch, useAppSelector } from './app/hooks'
-import { conversationReset } from './presentation/features/chat/state/chatSlice'
 import { useChatRequestLifecycle } from './presentation/features/chat/hooks/useChatRequestLifecycle'
 import { useRestoreSupportProgramSearch } from './presentation/features/chat/hooks/useRestoreSupportProgramSearch'
 import { ChatActivityToast } from './presentation/shared/chat-activity/ChatActivityToast'
-import { selectAuthStatus } from './presentation/shared/auth/state/authSlice'
 import { CombinationReviewListPage, CombinationReviewEditorPage, CombinationReviewRunResultPage } from './presentation/features/combination-review/view/CombinationReviewPages'
 import { ApplicationPreparationEditorPage, ApplicationPreparationListPage } from './presentation/features/application-preparation/view/ApplicationPreparationPages'
 import { ApplicationDocumentPage } from './presentation/features/application-preparation/view/ApplicationDocumentPage'
@@ -80,23 +77,8 @@ function App() {
   useRestoreSupportProgramSearch()
   useChatRequestLifecycle()
   useReviewSessionIsolation()
-  const dispatchToStore = useAppDispatch()
-  const authStatus = useAppSelector(selectAuthStatus)
-  // 검색·해석이 진행 중이거나 아직 보지 않은 결과가 있으면 다른 메뉴로 나가도 비로그인 대화를 지키고, 결과를 본 뒤에야 비웁니다.
-  const isChatActive = useAppSelector((state) => state.chat.searchStatus === 'pending'
-    || state.chat.interpretation.status === 'pending' || state.chat.unseenOutcome !== null)
-  const { pathname } = useLocation()
-
-  useEffect(() => {
-    const path = pathname.replace(/\/+$/, '') || publicPaths.landing
-    // 상세·원문 질문 왕복은 검색 흐름에 포함하고, 다른 메뉴로 나가면 비로그인 대화를 비웁니다.
-    const inSearchFlow = path === publicPaths.landing
-      || path === publicPaths.supportProgramDetail
-      || path === publicPaths.supportProgramQuestion
-    if (authStatus === 'anonymous' && !inSearchFlow && !isChatActive) {
-      dispatchToStore(conversationReset())
-    }
-  }, [authStatus, dispatchToStore, isChatActive, pathname])
+  // 비로그인 대화는 로그인 뒤 대화와 같이 메뉴 이동으로 비우지 않습니다. 탭이 살아 있는 동안 메모리에 남고,
+  // 새 AI 대화 검색·로고(문서 새로고침)·로그인·계정 전환에서만 초기화합니다.
 
   return (
     <>

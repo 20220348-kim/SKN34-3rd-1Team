@@ -2,7 +2,7 @@ import type { ChatActivity, ChatOutcome } from '../../features/chat/state/chatSl
 
 /** 검색 화면 밖에서 진행 상태와 결과 도착을 알리는 문구입니다. */
 export const chatActivityMessages = {
-  headerSearching: '지원사업 검색 진행 중',
+  headerSearching: '검색 진행 중',
   headerInterpreting: '조건 해석 진행 중',
   headerUnseen: '검색 결과 도착',
   open: '대화 보기',

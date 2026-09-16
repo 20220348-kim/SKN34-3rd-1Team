@@ -485,7 +485,7 @@ describe('App navigation', () => {
     expect(
       (screen.getByRole('textbox', { name: '지원사업 검색어' }) as HTMLTextAreaElement)
         .value,
-    ).toBe('') // 비로그인 대화 초안은 검색 흐름을 떠나면 초기화한다.
+    ).toBe('서울 AI 지원사업') // 비로그인 초안도 탭 세션 동안 남아 돌아오면 이어 씁니다.
   })
 
   it.each([
