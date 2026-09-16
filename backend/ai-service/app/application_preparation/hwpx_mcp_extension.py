@@ -1,4 +1,4 @@
-"""Pinned Hangeul file-mode server with a narrow empty-run repair.
+"""Pinned Hangeul file-mode server with empty-run and physical body addresses.
 
 The upstream addressed engine cannot fill <hp:run .../> or <hp:t/>.
 This extension changes only its in-memory text replacement primitive, keeping
@@ -112,18 +112,18 @@ def verify_edits(source_path: str, output_path: str, expected_targets: list[dict
             return {"verified": False, "reason": "BODY_STRUCTURE_CHANGED"}
         if [addressed._P_OPEN_TAG_RE.match(block).group() for block in old_blocks] != [addressed._P_OPEN_TAG_RE.match(block).group() for block in new_blocks]:
             return {"verified": False, "reason": "BODY_ANCHOR_CHANGED"}
-        nonempty = [i for i, block in enumerate(old_blocks) if addressed._paragraph_text(block).strip()]
-        physical_index = nonempty[ordinal - 1]
+        physical_index = ordinal - 1
+        if not 0 <= physical_index < len(new_blocks):
+            return {"verified": False, "reason": "BODY_SOURCE_ADDRESS"}
         if addressed._paragraph_text(new_blocks[physical_index]) != expected["expected_text"]:
             return {"verified": False, "reason": "BODY_TEXT_MISMATCH"}
     if remaining and addressed.verify_targets(output, remaining)["verified"] is not True:
         return {"verified": False, "reason": "CELL_TEXT_MISMATCH"}
     return {"verified": True, "counts": {"requested": len(expected_targets), "verified": len(expected_targets), "failed": 0}}
 
-def main():
+def install_addressed_patches():
+    """Keep inspect, preview, apply and verify on the same physical paragraphs."""
     import hangeul_core.addressed as addressed
-    from hangeul_mcp.server import main as serve
-    from hangeul_mcp.server import mcp
 
     def replace(xml, value):
         result = replace_plain_text_runs(xml, value)
@@ -135,6 +135,65 @@ def main():
         raise ValueError("GOVBIZ_UNSUPPORTED_STYLE_RANGE")
 
     addressed._replace_text_nodes = replace
+
+    def paragraphs(section, section_number):
+        items = []
+        for start, end, has_table in addressed._body_para_spans(section):
+            if has_table:
+                continue
+            block = section[start:end]
+            ordinal = len(items) + 1
+            items.append({"target": f"s{section_number}.p{ordinal}", "start": start, "end": end,
+                "block": block, "paragraph_id": addressed._paragraph_id(block),
+                "paragraph_ordinal": ordinal, "text": addressed._paragraph_text(block)})
+        return items
+
+    def body_index(path):
+        package = addressed.HwpxPackage.open(path)
+        result = {}
+        for section_number, name in enumerate(addressed._section_names(package)):
+            for item in paragraphs(package.read(name).decode("utf-8"), section_number):
+                result[f"b{len(result) + 1}"] = (name, item["paragraph_ordinal"])
+        return result
+
+    def replace_body(section, ordinal_map, keep_marker=True):
+        items = paragraphs(section, 0)
+        applied = []
+        for ordinal in sorted(ordinal_map, reverse=True):
+            if not 1 <= ordinal <= len(items):
+                continue
+            item = items[ordinal - 1]
+            prefix = addressed.marker_prefix(item["text"]) if keep_marker else ""
+            block = replace(item["block"], prefix + ordinal_map[ordinal])
+            section = section[:item["start"]] + block + section[item["end"]:]
+            applied.append(ordinal)
+        return section, applied
+
+    original_inspect = addressed.inspect_editable_regions
+    def inspect(path, compact=False):
+        result = original_inspect(path, compact=compact)
+        package = addressed.HwpxPackage.open(path)
+        blocks = [item for i, name in enumerate(addressed._section_names(package))
+                  for item in paragraphs(package.read(name).decode("utf-8"), i)]
+        for region in result["regions"]:
+            if region["kind"] != "body_para":
+                continue
+            item = blocks[int(region["target"][1:]) - 1]
+            if replace_plain_text_runs(item["block"], item["text"]) is None and fill_empty_run(item["block"], item["text"]) is None:
+                region["editable"] = False
+                region["reason"] = "UNSUPPORTED_BODY_STRUCTURE"
+        return result
+
+    addressed._body_paragraphs_in_section = paragraphs
+    addressed.body_field_index = body_index
+    addressed.replace_body_paragraph = replace_body
+    addressed.inspect_editable_regions = inspect
+
+
+def main():
+    install_addressed_patches()
+    from hangeul_mcp.server import main as serve
+    from hangeul_mcp.server import mcp
     mcp.tool(name="govbiz_verify_hwpx_edits")(verify_edits)
     serve()
 

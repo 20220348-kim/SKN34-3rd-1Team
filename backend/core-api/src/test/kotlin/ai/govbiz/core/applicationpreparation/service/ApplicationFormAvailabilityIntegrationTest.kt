@@ -8,6 +8,7 @@ import ai.govbiz.core.applicationpreparation.repository.ApplicationFormSnapshotR
 import ai.govbiz.core.applicationpreparation.client.ai.AiApplicationPreparationClient
 import ai.govbiz.core.applicationpreparation.client.ai.dto.*
 import ai.govbiz.core.applicationpreparation.client.ai.exception.ApplicationFormTimeoutException
+import ai.govbiz.core.applicationpreparation.service.exception.ApplicationFormDiscoveryException
 import ai.govbiz.core.applicationpreparation.service.backfill.ApplicationFormBackfillInput
 import ai.govbiz.core.applicationpreparation.service.backfill.ApplicationFormBackfillService
 import ai.govbiz.core.supportprogram.client.bizinfo.BizInfoAttachmentClient
@@ -38,6 +39,7 @@ import tools.jackson.databind.ObjectMapper
 class ApplicationFormAvailabilityIntegrationTest {
     @Autowired lateinit var availability: ApplicationFormAvailabilityRepository
     @Autowired lateinit var worker: ApplicationFormAnalysisService
+    @Autowired lateinit var discovery: ApplicationFormDiscoveryService
     @org.springframework.test.context.bean.override.mockito.MockitoSpyBean lateinit var snapshots: ApplicationFormSnapshotRepository
     @Autowired lateinit var publication: ai.govbiz.core.supportprogram.service.sync.SupportProgramCatalogPublicationService
     @Autowired lateinit var catalog: SupportProgramRepository
@@ -91,6 +93,28 @@ class ApplicationFormAvailabilityIntegrationTest {
         assertEquals(ApplicationFormAvailabilityStatus.PENDING, state().status)
         assertNotNull(state().nextRetryAt)
         verify(ai, never()).discoveryConfiguration()
+    }
+
+    @Test fun requestedReanalysisPublishesAnActiveSnapshotWithoutRemovingOldVersions() {
+        availability.register("BIZINFO", id, "a".repeat(64))
+        val first = discovery.discoverQueued("BIZINFO", id) {}
+        val oldVersion = first.forms.first().formVersionId
+        assertEquals(oldVersion, availability.requireActive("BIZINFO", id, oldVersion).formVersionId)
+        val revisedPrompt = "sha256:" + "b".repeat(64)
+        `when`(ai.discoveryConfiguration()).thenReturn(AiApplicationPreparationConfigurationPayload("application-form-discovery-v1", "test-model", revisedPrompt, 210.0, 240.0))
+        `when`(ai.discover(any(AiApplicationFormDiscoveryRequest::class.java) ?: AiApplicationFormDiscoveryRequest("application-form-discovery-v1", "BIZINFO", id, program.title, emptyList()))).thenReturn(payload().copy(promptVersion=revisedPrompt))
+        val second = discovery.discoverQueued("BIZINFO", id) {}
+        val newVersion = second.forms.first().formVersionId
+        assertNotEquals(oldVersion, newVersion)
+        assertEquals(newVersion, availability.requireActive("BIZINFO", id, newVersion).formVersionId)
+        assertNotNull(snapshots.findByVersion(oldVersion))
+    }
+
+    @Test fun requestedReanalysisDoesNotStealAnActiveWorkerLease() {
+        availability.register("BIZINFO", id, "a".repeat(64))
+        assertNotNull(availability.claim())
+        assertThrows(ApplicationFormDiscoveryException::class.java) { discovery.discoverQueued("BIZINFO", id) {} }
+        verify(ai, never()).discover(any(AiApplicationFormDiscoveryRequest::class.java) ?: AiApplicationFormDiscoveryRequest("application-form-discovery-v1", "BIZINFO", id, program.title, emptyList()))
     }
     @Test fun multipleSnapshotsBecomeAvailableAndUnchangedInputsDoNotCallAiAgain() {
         configureFiles(two=true)

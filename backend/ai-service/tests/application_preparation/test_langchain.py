@@ -15,7 +15,7 @@ from .test_document import request_data as document_request, selection_data as d
 
 CASES = [
     ("interpret", InterpretRequest, request_data, selection_data, 2500),
-    ("discover", DiscoverFormsRequest, discovery_request_data, discovery_selection_data, 5000),
+    ("discover", DiscoverFormsRequest, discovery_request_data, discovery_selection_data, 16000),
     ("draft", DraftRequest, draft_request,
      lambda: {"content": "새봄테크", "usedFieldKeys": ["company-name"]}, 5000),
     ("place_document", DocumentRequest, document_request, document_selection, 10000),
@@ -102,3 +102,37 @@ def test_discovery_timeout_settings_do_not_change_global_defaults(monkeypatch):
     monkeypatch.setenv("APPLICATION_FORM_DISCOVERY_RUN_TIMEOUT_SECONDS", "200")
     with pytest.raises(SettingsConfigurationError):
         Settings.from_environment()
+
+
+@pytest.mark.parametrize("method", ["map_document", "plan_document"])
+@pytest.mark.parametrize("failure", [None, "transport_timeout", "deadline"])
+def test_document_analysis_uses_long_budget_and_preserves_timeout_reason(method, failure):
+    import base64
+    from app.application_preparation.document_contract import (
+        DocumentError, DocumentMap, MapDocumentRequest, GenerateDocumentRequest, NativeTarget, digest,
+    )
+    source = b"test document bytes"
+    req = GenerateDocumentRequest(sourceBase64=base64.b64encode(source).decode(), sourceSha256=digest(source),
+        format="hwpx", answerRevision=1, scope="신청서", facts=[{"id": "company:name", "label": "회사명", "value": "가상기업"}])
+    selection = {"operations": [], "scopeTargetIds": [], "unresolvedTargets": []}
+    if method == "map_document":
+        req = MapDocumentRequest(**req.model_dump(exclude={"facts", "answerRevision"}),
+            fields=[{"id": "company:name", "label": "회사명", "guidance": "", "required": True}])
+        selection = {"bindings": [], "scopeTargetIds": [], "unmappedFieldIds": ["company:name"]}
+    options = {"transport_timeout": True} if failure == "transport_timeout" else {"delay": 0.1}
+    model = make_model(selection, **options)
+    agent = ApplicationPreparationAgent(model=model, run_timeout_seconds=0.01,
+        discovery_model_timeout_seconds=0.02 if failure == "deadline" else 210,
+        discovery_run_timeout_seconds=0.03 if failure == "deadline" else 240)
+    document = DocumentMap(sourceSha256=req.sourceSha256, format="hwpx", engineVersion="test",
+        targets=[NativeTarget(targetId="p1", nativeLocator={}, kind="paragraph", currentText="")])
+    if failure:
+        with pytest.raises(DocumentError) as error:
+            asyncio.run(getattr(agent, method)(req, document))
+        assert error.value.code == "APPLICATION_DOCUMENT_PLAN_TIMEOUT"
+        assert error.value.reason == ("AI_MODEL_TIMEOUT" if failure == "transport_timeout" else "AI_RUN_TIMEOUT")
+    else:
+        asyncio.run(getattr(agent, method)(req, document))
+        assert model.calls[0].extensions["timeout"]["read"] == 210
+    assert agent._run_timeout_seconds == 0.01
+    assert model.request_timeout == 2

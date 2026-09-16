@@ -110,6 +110,34 @@ it.each(['REQUEST_TIMEOUT', 'REQUEST_FAILED', 'AI_SERVICE_INVALID_RESPONSE'])('s
   expect(repository.generateDocuments).toHaveBeenCalledTimes(1)
 })
 
+it('recovers an existing document after the old two-minute polling limit without another paid request', async () => {
+  vi.useFakeTimers()
+  const started = Date.now()
+  repository.get.mockResolvedValue(readyPreparation())
+  repository.documents.mockImplementation(async () => Date.now() - started >= 300_000 ? [documentFile] : [])
+  repository.generateDocuments.mockRejectedValueOnce(new ApplicationPreparationError(409, 'APPLICATION_PREPARATION_RUN_CONFLICT'))
+  await act(async () => { mount('/app/application-preparations/12/documents?generate=3') })
+  await act(async () => { await vi.advanceTimersByTimeAsync(123_000) })
+  expect(screen.queryByRole('alert')).toBeNull()
+  await act(async () => { await vi.advanceTimersByTimeAsync(177_000) })
+  expect(screen.getByRole('button', { name: '신청문서 1 다운로드' })).toBeTruthy()
+  expect(repository.generateDocuments).toHaveBeenCalledTimes(1)
+})
+
+it('bounds polling when an existing document never finishes without automatically posting again', async () => {
+  vi.useFakeTimers()
+  repository.get.mockResolvedValue(readyPreparation())
+  repository.documents.mockResolvedValue([])
+  repository.generateDocuments.mockRejectedValueOnce(new ApplicationPreparationError(409, 'APPLICATION_PREPARATION_RUN_CONFLICT'))
+  await act(async () => { mount('/app/application-preparations/12/documents?generate=3') })
+  await act(async () => { await vi.advanceTimersByTimeAsync(660_000) })
+  expect(screen.getByRole('alert').textContent).toContain('기존 문서 생성 결과를 아직 확인하지 못했습니다')
+  const reads = repository.documents.mock.calls.length
+  await act(async () => { await vi.advanceTimersByTimeAsync(30_000) })
+  expect(repository.documents).toHaveBeenCalledTimes(reads)
+  expect(repository.generateDocuments).toHaveBeenCalledTimes(1)
+})
+
 it('stops waiting for an existing generation when the results page is closed', async () => {
   vi.useFakeTimers()
   repository.get.mockResolvedValue(readyPreparation())
@@ -243,6 +271,39 @@ it('lists unknown and unanswered fields separately from the downloadable documen
   const report = await screen.findByRole('region', { name: '답변이 없어 기입하지 않은 항목' })
   expect(within(report).getByText('바우처 활용 계획 · 과제명')).toBeTruthy()
   expect(within(report).queryByText('기업 개요 · 업체명')).toBeNull()
+})
+
+it('shows a partial answer count even when the server confirms all required fields', async () => {
+  const ready = readyPreparation()
+  ready.form.sections[0].fields.push({ key: 'position', label: '직위', guidance: '직위만 입력', required: false })
+  repository.get.mockResolvedValue(ready)
+  mount('/app/application-preparations/12')
+  await screen.findByRole('heading', { name: '공식 작성 항목' })
+  expect(screen.getAllByText('1/2개 입력 확인').length).toBeGreaterThan(0)
+  expect(screen.queryByText('사실 확인됨')).toBeNull()
+})
+
+it('starts reanalysis only on an explicit click and preserves existing preparations', async () => {
+  mount('/app/application-preparations/new?sourceCode=BIZINFO&sourceProgramId=PBLN_1')
+  const button = await screen.findByRole('button', { name: '입력칸별 양식 다시 분석' })
+  expect(repository.discover).not.toHaveBeenCalled()
+  fireEvent.click(button)
+  await screen.findByText(/입력칸별로 분석한 양식입니다/)
+  expect(repository.discover).toHaveBeenCalledTimes(1)
+  expect(repository.create).not.toHaveBeenCalled()
+  expect(repository.delete).not.toHaveBeenCalled()
+  expect(repository.replaceInputs).not.toHaveBeenCalled()
+})
+
+it('marks a manual-only field without accepting an auto-fill answer', async () => {
+  const ready = readyPreparation()
+  ready.form.sections[0].fields[0].documentWritable = false
+  ready.form.sections[0].facts = []
+  repository.get.mockResolvedValue(ready)
+  mount('/app/application-preparations/12')
+  const input = await screen.findByLabelText('답변 입력')
+  expect((input as HTMLTextAreaElement).disabled).toBe(true)
+  expect(screen.getByText(/이 항목은 자동 기입할 수 없습니다/)).toBeTruthy()
 })
 
 beforeEach(() => {
@@ -575,7 +636,7 @@ describe('application preparation creation and detail', () => {
     expect(screen.queryByText('파일 SHA-256')).toBeNull()
     expect(screen.queryByRole('heading', { name: '신청 준비 정보' })).toBeNull()
     expect(screen.getByRole('link', { name: /공식 공고 열기/ }).getAttribute('href')).toBe(firstForm.sourceUrl)
-    expect(screen.getAllByLabelText('작성 상태: 작성 전')).toHaveLength(2)
+    expect(screen.getAllByLabelText('작성 상태: 0/1개 입력 확인')).toHaveLength(2)
     expect(screen.getAllByText('1. 기업 개요')).toHaveLength(2)
     expect(screen.queryByText(/공식 양식 위치:/)).toBeNull()
     expect(repository.create).not.toHaveBeenCalled()

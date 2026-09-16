@@ -1,7 +1,22 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ApplicationPreparationRepositoryImpl } from '../../repositories/ApplicationPreparationRepositoryImpl'
 
-afterEach(() => vi.unstubAllGlobals())
+afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers() })
+
+it('waits for sequential document analysis but still bounds a stalled generation', async () => {
+  vi.useFakeTimers()
+  const fetcher = vi.fn((_url: string, init?: RequestInit) => new Promise<Response>((_resolve, reject) => {
+    init?.signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')), { once: true })
+  }))
+  vi.stubGlobal('fetch', fetcher)
+  const pending = new ApplicationPreparationRepositoryImpl().generateDocuments(1, 3)
+  const rejected = expect(pending).rejects.toMatchObject({ code: 'REQUEST_TIMEOUT' })
+  await vi.advanceTimersByTimeAsync(540_000)
+  expect(fetcher.mock.calls[0][1]?.signal?.aborted).toBe(false)
+  await vi.advanceTimersByTimeAsync(120_000)
+  await rejected
+  expect(fetcher).toHaveBeenCalledTimes(1)
+})
 
 it('requests and downloads the native document with credentials and validates binary content', async () => {
   const file = { id: 8, inputRevision: 3, fileName: '신청서.hwpx', mediaType: 'application/hwp+zip', size: 4 }
@@ -64,6 +79,15 @@ const creation = {
   formVersionId: form.formVersionId,
   serviceField: 'TECHNICAL_SUPPORT' as const,
 }
+
+it('preserves manual-only fields from the Core response', async () => {
+  const manual = { ...form, sections: form.sections.map((section) => ({ ...section,
+    fields: section.fields.map((field) => ({ ...field, documentWritable: false })),
+  })) }
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValue(Response.json({ items: [manual] })))
+  const result = await new ApplicationPreparationRepositoryImpl().forms()
+  expect(result[0].sections[0].fields[0].documentWritable).toBe(false)
+})
 
 it('validates draft, edited content and confirmation responses across the HTTP boundary', async () => {
   const version = { id: 10, sectionKey: 'company-overview', inputRevision: 1, kind: 'AI_DRAFT', content: '기업 개요',

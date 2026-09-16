@@ -40,7 +40,9 @@ function DocumentResults({ id }: { id: number }) {
     async function waitForExistingDocuments(revision: number) {
       // A cancelled browser request does not cancel server-side file generation.
       // Recover its stored result with GET only; never automatically repeat the paid POST.
-      for (let poll = 0; poll < 40; poll++) {
+      // Match the generation request budget: a cold run includes mapping and writing.
+      const deadline = Date.now() + 660_000
+      while (Date.now() < deadline) {
         await new Promise<void>((resolve, reject) => {
           const abort = () => { clearTimeout(timer); reject(new DOMException('Aborted', 'AbortError')) }
           const timer = setTimeout(() => { controller.signal.removeEventListener('abort', abort); resolve() }, 3000)
@@ -119,6 +121,7 @@ function DocumentResults({ id }: { id: number }) {
     <main className={workspacePageStyles.content}>
       {busy && <p className={s.notice} role="status">공식 양식을 확인하고 저장된 답변으로 문서를 준비하고 있습니다…</p>}
       {error && <div className={s.warning} role="alert"><p>{error}</p>{!busy && <button type="button" className={s.button} onClick={() => setAttempt((n) => n + 1)}>다시 시도</button>}</div>}
+      {error && preparation && <Link className={s.button} to={`${appPaths.applicationPreparationNew}?${new URLSearchParams({ sourceCode: preparation.form.sourceCode, sourceProgramId: preparation.form.sourceProgramId })}`}>기존 답변을 보관하고 입력칸별 양식 확인</Link>}
       {!busy && !error && files.length === 0 && <p className={s.notice}>현재 답변으로 생성된 문서가 없습니다. 답변 입력에서 초안 생성하기를 눌러 주세요.</p>}
       {!busy && files.map((file, index) => <section className={s.card} key={file.id} aria-label={`신청문서 ${index + 1}`}>
         <h2 className={s.cardTitle}>신청문서 {index + 1}</h2>

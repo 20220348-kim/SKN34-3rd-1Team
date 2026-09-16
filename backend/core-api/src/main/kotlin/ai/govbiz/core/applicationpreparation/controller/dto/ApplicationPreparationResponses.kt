@@ -39,8 +39,10 @@ data class ApplicationFormResponse(
             form.verificationStatus,
             form.institutionReviewed,
             form.supportedServiceFields.map { it.name },
-            form.sections.map(ApplicationFormSectionResponse::from),
+            form.sections.map { ApplicationFormSectionResponse.from(it, unmapped = unmappedFields(form)) },
         )
+        fun unmappedFields(form: ApplicationFormManifest): Set<String> =
+            (form.documentMapSnapshot?.documentMap?.get("unmappedFieldIds") as? List<*>)?.filterIsInstance<String>()?.toSet().orEmpty()
     }
 }
 
@@ -54,7 +56,7 @@ data class ApplicationFormSectionResponse(
     val facts: List<ApplicationPreparationFactResponse> = emptyList(),
 ) {
     companion object {
-        fun from(section: ApplicationFormSectionDefinition, facts: List<ConfirmedApplicationFact> = emptyList()): ApplicationFormSectionResponse = ApplicationFormSectionResponse(
+        fun from(section: ApplicationFormSectionDefinition, facts: List<ConfirmedApplicationFact> = emptyList(), unmapped: Set<String> = emptySet()): ApplicationFormSectionResponse = ApplicationFormSectionResponse(
             section.key,
             section.title,
             section.locator,
@@ -64,15 +66,15 @@ data class ApplicationFormSectionResponse(
                 section.fields.filter { it.required }.all { required -> facts.any { it.fieldKey == required.key } } -> "INPUT_CONFIRMED"
                 else -> "IN_PROGRESS"
             },
-            fields = section.fields.map(ApplicationFormFieldResponse::from),
+            fields = section.fields.map { ApplicationFormFieldResponse.from(it, "${section.key}:${it.key}" !in unmapped) },
             facts = facts.map(ApplicationPreparationFactResponse::from),
         )
     }
 }
 
-data class ApplicationFormFieldResponse(val key: String, val label: String, val guidance: String, val required: Boolean, val options: List<String> = emptyList()) {
+data class ApplicationFormFieldResponse(val key: String, val label: String, val guidance: String, val required: Boolean, val options: List<String> = emptyList(), val documentWritable: Boolean = true) {
     companion object {
-        fun from(field: ApplicationFormFieldDefinition) = ApplicationFormFieldResponse(field.key, field.label, field.guidance, field.required, field.options)
+        fun from(field: ApplicationFormFieldDefinition, documentWritable: Boolean = true) = ApplicationFormFieldResponse(field.key, field.label, field.guidance, field.required, field.options, documentWritable)
     }
 }
 
@@ -144,7 +146,7 @@ data class ApplicationPreparationResponse(
             updatedAt = result.preparation.updatedAt.atZone(SEOUL).toOffsetDateTime(),
             form = ApplicationFormResponse.from(result.form).copy(
                 sections = result.form.sections.map { section ->
-                    ApplicationFormSectionResponse.from(section, result.facts.filter { it.sectionKey == section.key })
+                    ApplicationFormSectionResponse.from(section, result.facts.filter { it.sectionKey == section.key }, ApplicationFormResponse.unmappedFields(result.form))
                 },
             ),
             result.contents.map { ApplicationContentVersionResponse.from(it, result.facts) },

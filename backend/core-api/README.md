@@ -862,4 +862,6 @@ Discovery 전용 timeout은 model 210초 < AI run 240초 < Core read 270초 < Wo
 
 ## 신청 문서 MCP 파이프라인
 
-생성 경로는 Core의 공식 첨부·소유권·revision 관리와 AI Service의 형식별 MCP 실행을 연결한다. HWP는 내부 Windows 브리지, HWPX는 Hangeul 파일 모드, PDF는 MCP 정리 후 PDFBox AcroForm 처리이다. 기존 직접 HWP/HWPX 편집 코드는 생성 경로에서 호출하지 않는다. 새 fingerprint로 과거 생성 결과와 구분하고 다운로드 이력을 보존한다. 구현 범위와 미지원 구조·검증 상태는 [MCP 구조](../../docs/application-document-mcp-architecture.md), [설치](../../docs/application-document-mcp-setup.md), [검증 기록](../../docs/application-document-mcp-validation.md)를 확인한다.
+질문·입력칸 대응에서 선택 문항의 미지원 위치는 `documentMap.unmappedFieldIds`로 받으며, 공개 양식 필드의 `documentWritable=false`로 UI에 전달한다. 필수 미매핑 항목은 여전히 거절한다. 입력한 값에 binding이 없으면 `APPLICATION_DOCUMENT_UNMAPPED_INPUT`, 여러 표 열을 한 질문으로 묶은 이전 양식은 `APPLICATION_DOCUMENT_FORM_REANALYSIS_REQUIRED`를 보존해 반환한다. 기존 답변을 바꾸지 않고 `/forms/discovery-jobs`로 다시 분석한 새 양식에서 작성을 시작한다. Core의 원문·빈칸·값 검증은 유지한다.
+
+생성 경로는 Core의 공식 첨부·소유권·revision 관리와 AI Service의 형식별 MCP 실행을 연결한다. HWP는 Core hwplib의 구조 검사·범위 편집·재열기, HWPX는 Hangeul 파일 모드, PDF는 MCP 정리 후 PDFBox AcroForm 처리이다. AI는 HWP의 hwpTargets를 받아 지도와 계획만 반환하며 Core가 원본·plan hash·revision·bindings/scope를 독립 검증한다. HWP에 Windows·한컴 한글·브리지 설정이 필요하지 않다. 과거 직접 HWPX 편집 경로는 현재 생성에서 사용하지 않는다. 새 fingerprint로 과거 생성 결과와 구분하고 다운로드 이력을 보존한다. 구현 범위와 미지원 구조·검증 상태는 [MCP 구조](../../docs/application-document-mcp-architecture.md), [설치](../../docs/application-document-mcp-setup.md), [검증 기록](../../docs/application-document-mcp-validation.md)를 확인한다.

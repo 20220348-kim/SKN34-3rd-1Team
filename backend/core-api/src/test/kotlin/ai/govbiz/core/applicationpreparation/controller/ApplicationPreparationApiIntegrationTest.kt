@@ -175,6 +175,7 @@ class ApplicationPreparationApiIntegrationTest {
                 listOf("과기정통부 원문 대조 필요"),
             ),
         )
+        val hwpBytes = requireNotNull(javaClass.getResourceAsStream("/applicationpreparation/checkbox-form.hwp")).readBytes()
         val kStartupProgram = program.copy(
             id = KSTARTUP_PROGRAM_ID,
             sourceCode = "KSTARTUP",
@@ -185,7 +186,7 @@ class ApplicationPreparationApiIntegrationTest {
         `when`(kStartupAttachments.collect("KSTARTUP", KSTARTUP_PROGRAM_ID, KSTARTUP_SOURCE_URL)).thenReturn(
             SupportProgramAttachments(
                 kStartupProgram.title,
-                listOf(SupportProgramAttachment("https://www.k-startup.go.kr/afile/fileDownload/test", "신청양식.hwp", "HWP", bytes)),
+                listOf(SupportProgramAttachment("https://www.k-startup.go.kr/afile/fileDownload/test", "신청양식.hwp", "HWP", hwpBytes)),
                 listOf("K-Startup 원문 대조 필요"),
             ),
         )
@@ -211,7 +212,7 @@ class ApplicationPreparationApiIntegrationTest {
         `when`(documentParser.parse(bytes, "HWPX")).thenReturn(
             listOf(SupportProgramDocumentBlock(DISCOVERY_LOCATOR, DISCOVERY_BLOCK_TEXT)),
         )
-        `when`(documentParser.parse(bytes, "HWP")).thenReturn(
+        `when`(documentParser.parse(hwpBytes, "HWP")).thenReturn(
             listOf(SupportProgramDocumentBlock("HWP paragraph 1 part 1", DISCOVERY_BLOCK_TEXT)),
         )
         `when`(documentParser.parse(pdfBytes, "PDF")).thenReturn(
@@ -552,6 +553,63 @@ class ApplicationPreparationApiIntegrationTest {
         mvc.perform(post("$endpoint/confirmations").cookie(owner).header(HttpHeaders.ORIGIN, ORIGIN).contentType(MediaType.APPLICATION_JSON)
             .content("""{"expectedRevision":3,"expectedVersionId":$second}"""))
             .andExpect(status().isConflict())
+    }
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(booleans = [false, true])
+    fun generatesHwpInsideCoreAndRejectsAnEditedSourceFromAi(tamperSource: Boolean) {
+        val native = kr.dogfoot.hwplib.tool.blankfilemaker.BlankFileMaker.make()
+        native.bodyText.sectionList[0].addNewParagraph().apply {
+            createText(); text.addString("____"); createCharShape(); charShape.addParaCharShape(0, 0)
+        }
+        val original = java.io.ByteArrayOutputStream().also { kr.dogfoot.hwplib.writer.HWPWriter.toStream(native, it) }.toByteArray()
+        val target = documentEditor.inspect(original, "hwp").targets.single { it.text == "____" }
+        `when`(bizInfoAttachments.collect("BIZINFO", DISCOVERY_PROGRAM_ID)).thenReturn(SupportProgramAttachments("동적 지원사업", listOf(
+            SupportProgramAttachment("https://www.bizinfo.go.kr/file", "신청양식.hwp", "HWP", original)), emptyList()))
+        `when`(documentParser.parse(original, "HWP")).thenReturn(listOf(SupportProgramDocumentBlock(DISCOVERY_LOCATOR, DISCOVERY_BLOCK_TEXT)))
+        stubDocumentMapping(documentMcp, target.id)
+        val fallback = AiDocumentGenerationRequest(sourceBase64 = "", sourceSha256 = "", format = "hwp", answerRevision = 1, facts = emptyList(), scope = "test")
+        `when`(documentMcp.generate(any(AiDocumentGenerationRequest::class.java) ?: fallback)).thenAnswer { invocation ->
+            val request = invocation.getArgument<AiDocumentGenerationRequest>(0)
+            assertEquals(target.id, request.hwpTargets.single { it.text == "____" }.id)
+            assertEquals(emptyList<Any>(), request.pdfTargets)
+            val op = sortedMapOf<String, Any?>("targetId" to target.id, "operation" to "replace_range", "expectedText" to "____",
+                "start" to 0, "end" to 4, "valueRef" to "business-plan:business-overview", "box" to null, "reason" to "공식 입력란", "stylePolicy" to "preserve")
+            val plan = sortedMapOf<String, Any?>("sourceSha256" to request.sourceSha256, "mapVersion" to "native-map-v2",
+                "answerRevision" to request.answerRevision, "operations" to listOf(op), "scopeTargetIds" to listOf(target.id), "unresolvedTargets" to emptyList<String>())
+            fun hash(bytes: ByteArray) = java.security.MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
+            val planHash = hash(json.writeValueAsBytes(plan))
+            plan["planHash"] = planHash
+            val returned = if (tamperSource) original + byteArrayOf(0) else original
+            AiDocumentGenerationPayload("application-document-mcp-v1", "b".repeat(64), request.sourceSha256, request.answerRevision,
+                java.util.Base64.getEncoder().encodeToString(returned), hash(returned), planHash, "native-map-v2", "kr.dogfoot/hwplib@1.1.11",
+                mapOf("stage" to "HWPLIB_REQUIRED"), listOf(ApplicationDocumentPlacement("business-plan:business-overview", target.id)), emptyMap(), plan)
+        }
+        val discovery = mvc.perform(post("$BASE/forms/discover").cookie(owner).header(HttpHeaders.ORIGIN, ORIGIN).contentType(MediaType.APPLICATION_JSON)
+            .content("""{"sourceCode":"BIZINFO","sourceProgramId":"$DISCOVERY_PROGRAM_ID"}""")).andExpect(status().isOk()).andReturn().response
+        val version = json.readTree(discovery.contentAsString).path("items").path(0).path("formVersionId").asString()
+        activateStored(version)
+        val created = mvc.perform(post(BASE).cookie(owner).header(HttpHeaders.ORIGIN, ORIGIN).contentType(MediaType.APPLICATION_JSON)
+            .content("""{"sourceCode":"BIZINFO","sourceProgramId":"$DISCOVERY_PROGRAM_ID","formVersionId":"$version","serviceField":"GENERAL"}"""))
+            .andExpect(status().isCreated()).andReturn().response
+        val id = json.readTree(created.contentAsString).path("id").asLong()
+        mvc.perform(put("$BASE/$id/sections/business-plan/inputs").cookie(owner).header(HttpHeaders.ORIGIN, ORIGIN).contentType(MediaType.APPLICATION_JSON)
+            .content("""{"expectedRevision":1,"facts":[{"fieldKey":"business-overview","status":"PROVIDED","value":"가상 & 연구소","sourceText":"가상 & 연구소"}]}"""))
+            .andExpect(status().isOk())
+        val generation = mvc.perform(post("$BASE/$id/documents").cookie(owner).header(HttpHeaders.ORIGIN, ORIGIN).contentType(MediaType.APPLICATION_JSON)
+            .content("""{"expectedRevision":2}"""))
+        if (tamperSource) {
+            generation.andExpect(status().isUnprocessableContent()).andExpect(jsonPath("$.code").value("APPLICATION_DOCUMENT_VALIDATION_FAILED"))
+            assertEquals(0, jdbc.queryForObject("SELECT COUNT(*) FROM application_document_file WHERE preparation_id = ?", Int::class.java, id))
+        } else {
+            val response = generation.andExpect(status().isOk()).andReturn().response
+            val fileId = json.readTree(response.contentAsString).path(0).path("id").asLong()
+            val downloaded = mvc.perform(get("$BASE/$id/documents/$fileId/download").cookie(owner))
+                .andExpect(status().isOk()).andExpect(content().contentType("application/x-hwp")).andReturn().response.contentAsByteArray
+            assertEquals("가상 & 연구소", documentEditor.inspect(downloaded, "hwp").targets.single { it.id == target.id }.text)
+            mvc.perform(get("$BASE/$id/documents/$fileId/download").cookie(other)).andExpect(status().isNotFound())
+            assertEquals("HWPLIB_VERIFIED", jdbc.queryForObject("SELECT JSON_UNQUOTE(JSON_EXTRACT(placements_json, '$.mcp.verification.stage')) FROM application_document_file WHERE id = ?", String::class.java, fileId))
+        }
     }
 
     @org.junit.jupiter.params.ParameterizedTest

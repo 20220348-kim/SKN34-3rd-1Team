@@ -1,14 +1,13 @@
 """Concrete integrations for the selected file editors (no format fallbacks)."""
 import base64
+import re
 from collections import defaultdict
-import os
 from pathlib import Path
 import shutil
 from tempfile import TemporaryDirectory
 import zipfile
 from xml.etree import ElementTree
 
-import httpx
 
 from app.application_preparation.document_contract import (
     DocumentError, DocumentMap, ENGINES, GenerateDocumentRequest, MAX_BYTES,
@@ -40,6 +39,48 @@ def validate_hwpx(path: Path):
                 ElementTree.fromstring(data)
 
 
+def hwpx_table_contexts(path: Path) -> dict:
+    ns = {"hp": "http://www.hancom.co.kr/hwpml/2011/paragraph"}
+    text = lambda node: "".join(t.text or "" for t in node.findall('.//hp:t', ns)).strip()
+    result, table_number = {}, 0
+    with zipfile.ZipFile(path) as archive:
+        sections = sorted((name for name in archive.namelist() if re.fullmatch(r'Contents/section\d+\.xml', name)), key=lambda n:int(re.search(r'\d+', n).group()))
+        for section in sections:
+            root = ElementTree.fromstring(archive.read(section))
+            preceding = []
+            for paragraph in root:
+                tables = paragraph.findall('.//hp:tbl', ns)
+                if not tables:
+                    value = text(paragraph)
+                    if value: preceding.append(value[:1000])
+                for table in tables:
+                    table_number += 1
+                    cells = []
+                    for cell in table.findall('./hp:tr/hp:tc', ns):
+                        address, span = cell.find('hp:cellAddr', ns), cell.find('hp:cellSpan', ns)
+                        if address is None or span is None: raise DocumentError("UNSUPPORTED", reason="HWPX_CELL_ADDRESS_MISSING")
+                        cells.append({"row":int(address.get('rowAddr')), "col":int(address.get('colAddr')),
+                            "rows":int(span.get('rowSpan')), "cols":int(span.get('colSpan')), "text":text(cell)})
+                    rows = {row:[c for c in cells if c['row']==row] for row in {c['row'] for c in cells}}
+                    header_rows = {row for row,items in rows.items() if len(items)>1 and all(c['text'] and len(c['text'])<=100 and any(ch.isalpha() for ch in c['text']) for c in items)}
+                    header_cells = [c for c in cells if c['row'] in header_rows]
+                    column_names = sorted({c['text'] for c in header_cells if c['cols'] == 1})
+                    for cell in cells:
+                        left = [c for c in cells if c['row'] <= cell['row'] < c['row']+c['rows'] and c['col']+c['cols'] <= cell['col'] and any(ch.isalpha() for ch in c['text'])]
+                        row_label = max(left,key=lambda c:c['col'])['text'] if left else ''
+                        above = [c for c in header_cells if c['row']+c['rows'] <= cell['row'] and c['col'] <= cell['col'] < c['col']+c['cols']]
+                        column = max(above,key=lambda c:(c['row'],-c['cols'])) if above else None
+                        column_label = column['text'] if column else ''
+                        field_label = column_label if column and column['col']==cell['col'] and column['cols']==cell['cols'] else row_label or column_label
+                        first = max((c['row']+c['rows'] for c in above), default=cell['row'])
+                        groups = [c['text'] for c in left if c['rows']>1]
+                        result[f"t{table_number}.r{cell['row']}.c{cell['col']}"] = {
+                            "section":section, "tableHeadings":preceding[-3:]+groups, "columnLabels":column_names,
+                            "fieldLabels":[field_label] if field_label else [],
+                            "bindingEligible":cell['row'] not in header_rows and (not above or cell['row'] == first or (field_label == row_label and any(c['rows']==1 for c in left)))}
+    return result
+
+
 class HwpxDocumentAdapter:
     async def inspect(self, path: Path) -> DocumentMap:
         validate_hwpx(path)
@@ -48,15 +89,22 @@ class HwpxDocumentAdapter:
         if result["source_sha256"] != digest(path.read_bytes()):
             raise DocumentError("SOURCE_CHANGED")
         targets = []
+        contexts = hwpx_table_contexts(path)
         for item in [*result["regions"], *result["unsupported_controls"]]:
             locator = {key: item.get(key) for key in ("target", "kind", "section", "table", "row", "col", "paragraph_count")}
+            if item["kind"] == "cell":
+                source_context = contexts.get(item["target"])
+                if source_context is None or source_context["section"] != item["section"]:
+                    raise DocumentError("SOURCE_CHANGED", reason="HWPX_TABLE_LAYOUT_MISMATCH")
+                locator.update(source_context)
             context = str({k: v for k, v in locator.items() if v is not None})
             targets.append(NativeTarget(targetId=item["target"], nativeLocator=locator, kind=item["kind"],
                                         currentText=item["text"], context=context[:1000], editable=item["editable"],
                                         unsupportedReason=item.get("reason")))
             for paragraph in item.get("paragraphs", []):
                 targets.append(NativeTarget(targetId=paragraph["target"], nativeLocator={**locator, "target": paragraph["target"], "kind": "paragraph", "parent": item["target"]},
-                                            kind="paragraph", currentText=paragraph["text"], context=item["text"][:1000]))
+                                            kind="paragraph", currentText=paragraph["text"], context=item["text"][:1000],
+                                            editable=item["editable"], unsupportedReason=item.get("reason")))
         for i, target in enumerate(targets):
             target.context = (target.context + " | " + " | ".join(t.currentText for t in targets[max(0, i-2):i+3]))[:1000]
         return DocumentMap(sourceSha256=result["source_sha256"], format="hwpx", engineVersion=ENGINES["hwpx"], targets=targets)
@@ -114,8 +162,8 @@ class PdfDocumentAdapter:
         for target in request.pdfTargets:
             field = fields.get(target.id)
             is_field = target.id.startswith("pdf-field:")
-            targets.append(NativeTarget(targetId=target.id, nativeLocator=field.model_dump() if field else {"target": target.id},
-                kind="PDF_FIELD" if is_field else "PDF_PAGE", label=target.context, currentText=target.text, context=target.context,
+            targets.append(NativeTarget(targetId=target.id, nativeLocator=field.model_dump() if field else {"target": target.id, "pageText": target.text},
+                kind="PDF_FIELD" if is_field else "PDF_PAGE", label=target.context, currentText=target.text if is_field else "", context=target.context,
                 editable=(field.editable if field else not is_field), unsupportedReason=None if (field and field.editable) or not is_field else "FIELD_NOT_EDITABLE_OR_METADATA_MISSING"))
         async with document_session("pdf", path.parent) as session:
             text = await session.call("pdf_get_text", {"pdf_path": str(path)})
@@ -123,10 +171,26 @@ class PdfDocumentAdapter:
                 raise DocumentError("LIMIT_EXCEEDED")
             if not text["text"].strip():
                 raise DocumentError("UNSUPPORTED")
+            geometry = await session.call("govbiz_pdf_text_regions", {"pdf_path": str(path)})
+            if geometry["page_count"] != text["page_count"] or len(geometry["pages"]) != text["page_count"]:
+                raise DocumentError("VALIDATION_FAILED", reason="PDF_GEOMETRY_PAGE_MISMATCH")
+            for page, item in enumerate(geometry["pages"]):
+                if item["page"] != page:
+                    raise DocumentError("VALIDATION_FAILED", reason="PDF_GEOMETRY_PAGE_MISMATCH")
+                for target in targets:
+                    if target.targetId == f"page-{page}":
+                        target.nativeLocator["printedTextRegions"] = item["regions"]
+                        target.editable = False
+                        target.unsupportedReason = "PAGE_IS_READ_ONLY"
+                if not fields:
+                    for region in item.get("blankRegions", []):
+                        targets.append(NativeTarget(targetId=f"pdf-blank:{page}:{region['id']}", kind="PDF_INPUT", currentText="",
+                            label=" / ".join(region["labels"])[:1000], context=f"Measured empty region on PDF page {page+1}",
+                            nativeLocator={"page": page, "pageTarget": f"page-{page}", "box": region["box"], "fieldLabels": region["labels"]}))
             # Do not use pdf_inspect: upstream swallows individual page failures.
             for page in range(text["page_count"]):
                 layout = await session.call("pdf_get_text_layout", {"pdf_path": str(path), "page": page})
-                if not layout["blocks"] and any(t.targetId == f"page-{page}" and t.currentText.strip() for t in targets):
+                if not layout["blocks"] and any(t.id == f"page-{page}" and t.text.strip() for t in request.pdfTargets):
                     raise DocumentError("UNSUPPORTED")
                 paragraphs = await session.call("pdf_detect_paragraphs", {"pdf_path": str(path), "page": page})
                 for index, paragraph in enumerate(paragraphs["paragraphs"]):
@@ -173,34 +237,35 @@ class PdfDocumentAdapter:
         for op in plan.operations:
             if op.operation == "delete_range":
                 continue
-            if op.operation != "set_field" or targets[op.targetId].kind not in {"PDF_PAGE", "PDF_FIELD"}:
+            if op.operation != "set_field" or targets[op.targetId].kind not in {"PDF_PAGE", "PDF_FIELD", "PDF_INPUT"}:
                 raise DocumentError("UNSUPPORTED")
-            placements.append({"factId": op.valueRef, "targetId": op.targetId, "box": op.box.model_dump() if op.box else None})
+            target = targets[op.targetId]
+            placements.append({"factId": op.valueRef,
+                "targetId": target.nativeLocator["pageTarget"] if target.kind == "PDF_INPUT" else op.targetId,
+                "box": target.nativeLocator["box"] if target.kind == "PDF_INPUT" else op.box.model_dump() if op.box else None})
         return read_output(current, path.parent), {"stage": "PDFBOX_REQUIRED", "deletionsVerified": len(deletions), "placements": placements, "warnings": warnings, "render": "NOT_RUN"}
 
 
 class HwpDocumentAdapter:
-    async def job(self, request: dict) -> dict:
-        url = os.getenv("DOCUMENT_HWP_BRIDGE_URL", "")
-        token = os.getenv("DOCUMENT_HWP_BRIDGE_TOKEN", "")
-        parsed = httpx.URL(url)
-        if not url or len(token) < 32 or (parsed.scheme != "https" and parsed.host not in {"127.0.0.1", "localhost", "host.docker.internal"}):
-            raise DocumentError("MCP_NOT_READY")
-        try:
-            async with httpx.AsyncClient(timeout=130, follow_redirects=False, trust_env=False) as client:
-                response = await client.post(url.rstrip("/") + "/internal/v1/document-job", json=request, headers={"Authorization": "Bearer " + token})
-                if response.status_code != 200:
-                    code = response.json().get("detail", {}).get("code", "APPLICATION_DOCUMENT_MCP_FAILED")
-                    if code not in {"APPLICATION_DOCUMENT_MCP_NOT_READY", "APPLICATION_DOCUMENT_UNSUPPORTED", "APPLICATION_DOCUMENT_OUTCOME_UNKNOWN", "APPLICATION_DOCUMENT_RUN_CONFLICT"}:
-                        code = "APPLICATION_DOCUMENT_MCP_FAILED"
-                    raise DocumentError(code.removeprefix("APPLICATION_DOCUMENT_"))
-                return response.json()
-        except httpx.TimeoutException as error:
-            raise DocumentError("OUTCOME_UNKNOWN") from error
-        except httpx.HTTPError as error:
-            raise DocumentError("MCP_NOT_READY") from error
-        except (ValueError, TypeError) as error:
-            raise DocumentError("OUTCOME_UNKNOWN") from error
+    def inspect(self, request: GenerateDocumentRequest) -> DocumentMap:
+        """Core's authenticated hwplib inspection is the authority for binary HWP addresses."""
+        source = base64.b64decode(request.sourceBase64, validate=True)
+        if not source.startswith(bytes.fromhex("d0cf11e0a1b11ae1")):
+            raise DocumentError("UNSUPPORTED")
+        if not request.hwpTargets or len({t.id for t in request.hwpTargets}) != len(request.hwpTargets):
+            raise DocumentError("MAPPING_FAILED")
+        return DocumentMap(sourceSha256=request.sourceSha256, format="hwp", engineVersion=ENGINES["hwp"], targets=[
+            NativeTarget(targetId=t.id, nativeLocator={"paragraph": t.id, "group": t.groupId},
+                         kind="CHECKBOX" if t.kind == "CHECKBOX" else "paragraph", label=t.text if t.kind == "CHECKBOX" else "",
+                         currentText=t.text, context=t.context, editable=t.editable, unsupportedReason=t.unsupportedReason)
+            for t in request.hwpTargets
+        ])
+
+    def stage(self, source: bytes, plan: WritePlan) -> tuple[bytes, dict]:
+        # No binary edits in Python. Core independently validates and applies these exact ranges.
+        return source, {"stage": "HWPLIB_REQUIRED", "render": "NOT_RUN", "placements": [
+            {"factId": op.valueRef, "targetId": op.targetId, "box": None} for op in plan.operations if op.valueRef is not None
+        ]}
 
 
 async def assist_with_kordoc(path: Path, document: DocumentMap):

@@ -67,6 +67,22 @@ class ApplicationFormAvailabilityRepository(
         return ApplicationFormAnalysisLease(row.sourceCode, row.sourceProgramId, row.generation, requireNotNull(row.leaseToken), row.attemptCount)
     }
 
+    /** 명시적인 재분석은 같은 공고의 진행 중 실행권을 빼앗지 않는다. */
+    @Transactional
+    fun claimRequested(sourceCode: String, sourceProgramId: String): ApplicationFormAnalysisLease? {
+        val row = mapper.lock(sourceCode, sourceProgramId) ?: return null
+        if (row.leaseToken != null && (row.aiStarted || row.leaseUntil?.isAfter(now()) == true))
+            throw ai.govbiz.core.applicationpreparation.service.exception.ApplicationFormDiscoveryException(
+                ai.govbiz.core.applicationpreparation.service.exception.ApplicationFormDiscoveryException.Reason.JOB_CONFLICT)
+        row.generation++
+        row.leaseToken = UUID.randomUUID().toString()
+        row.leaseUntil = now().plus(timeouts.applicationFormWorkerLease)
+        row.attemptCount = 1
+        row.aiStarted = false
+        mapper.update(row)
+        return ApplicationFormAnalysisLease(sourceCode, sourceProgramId, row.generation, requireNotNull(row.leaseToken), row.attemptCount)
+    }
+
     /** 동일 첨부와 버전에서 완료된 결과는 NO_FORM을 포함하여 재사용한다. */
     @Transactional
     fun observe(lease: ApplicationFormAnalysisLease, metadata: ApplicationFormAnalysisMetadata): Boolean {

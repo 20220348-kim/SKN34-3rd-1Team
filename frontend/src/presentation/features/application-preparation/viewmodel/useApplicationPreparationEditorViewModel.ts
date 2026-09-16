@@ -222,6 +222,41 @@ export function useApplicationPreparationEditorViewModel(id: number | null, init
     return () => controller.abort()
   }, [id, initialSourceCode, initialSourceProgramId, programDetailUseCase, applyProgramSelection])
 
+  const reanalyzeForms = useCallback(async () => {
+    if (discoveryController.current || !discoveryInput.trim() || id !== null) return
+    const controller = new AbortController()
+    discoveryController.current = controller
+    setDiscovering(true); setError(null); setForms([]); setSelectedFormVersionId('')
+    setCreationStep('PROGRAM')
+    setDiscoveryWarnings(['공식 원본의 입력칸별 질문을 다시 분석하고 있습니다. 기존 작성본은 변경하지 않습니다.'])
+    try {
+      let job = await useCase.discover(discoverySourceCode, discoveryInput, controller.signal, crypto.randomUUID())
+      const deadline = Date.now() + 720_000
+      while (job.status === 'QUEUED' || job.status === 'RUNNING') {
+        if (Date.now() >= deadline) throw new Error('양식 분석이 아직 진행 중입니다. 잠시 후 저장된 양식을 다시 확인해 주세요.')
+        await new Promise<void>((resolve, reject) => {
+          const abort = () => { clearTimeout(timer); reject(new DOMException('Aborted', 'AbortError')) }
+          const timer = setTimeout(() => { controller.signal.removeEventListener('abort', abort); resolve() }, 2000)
+          controller.signal.addEventListener('abort', abort, { once: true })
+          if (controller.signal.aborted) abort()
+        })
+        job = await useCase.discoveryJob(job.id, controller.signal)
+      }
+      if (controller.signal.aborted) return
+      if (job.status !== 'SUCCEEDED' || !job.result) throw new Error(availabilityReason(job.failureCode ?? 'AI_INVALID_RESPONSE'))
+      const first = job.result.items[0]
+      if (!first) throw new Error('공식 원본에서 작성할 양식을 찾지 못했습니다.')
+      setForms(job.result.items); setSelectedFormVersionId(first.formVersionId)
+      setServiceField(first.supportedServiceFields[0]); setAvailabilityStatus('AVAILABLE')
+      setDiscoveryWarnings(['입력칸별로 분석한 양식입니다. 이전 답변은 자동으로 나누지 않으므로 필요한 값을 직접 확인해 주세요.', ...job.result.warnings])
+      setCreationStep('FORM')
+    } catch (caught) {
+      if (!controller.signal.aborted) setError(asError(caught))
+    } finally {
+      if (discoveryController.current === controller) { discoveryController.current = null; setDiscovering(false) }
+    }
+  }, [id, discoveryInput, discoverySourceCode, useCase])
+
   const backToProgramSelection = useCallback(() => {
     setCreationStep('PROGRAM')
     setError(null)
@@ -341,6 +376,7 @@ export function useApplicationPreparationEditorViewModel(id: number | null, init
     selectProgram,
     clearProgramSelection,
     discoverForms,
+    reanalyzeForms,
     availabilityStatus,
     backToProgramSelection,
     selectForm,

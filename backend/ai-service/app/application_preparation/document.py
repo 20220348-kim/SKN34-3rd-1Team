@@ -59,6 +59,8 @@ class DocumentTarget(Contract):
     exampleText: str = Field(default="", max_length=2000)
     kind: str = Field(default="TEXT", pattern="^(TEXT|CHECKBOX)$")
     groupId: str = Field(default="", max_length=500)
+    editable: bool = True
+    unsupportedReason: str | None = None
 
 
 class DocumentRequest(Contract):
@@ -87,6 +89,14 @@ class DocumentBox(Contract):
     y: float = Field(ge=0, le=1)
     width: float = Field(gt=0, le=1)
     height: float = Field(gt=0, le=1)
+
+    def overlaps(self, other: "DocumentBox") -> bool:
+        # Compare the declared decimal coordinates. Binary float addition can
+        # turn a shared edge (e.g. .2055855856 + .0191441441) into an overlap.
+        from decimal import Decimal
+        a = [Decimal(str(value)) for value in (self.x, self.y, self.width, self.height)]
+        b = [Decimal(str(value)) for value in (other.x, other.y, other.width, other.height)]
+        return max(a[0], b[0]) < min(a[0] + a[2], b[0] + b[2]) and max(a[1], b[1]) < min(a[1] + a[3], b[1] + b[3])
 
 
 class DocumentPlacement(Contract):

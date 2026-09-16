@@ -24,7 +24,7 @@ public class PdfSmoke {
             var hash = HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(source));
             var request = new AiDocumentGenerationRequest("application-document-mcp-v1", Base64.getEncoder().encodeToString(source),
                 hash, "pdf", 1, List.of(new ApplicationDocumentFact("company:name", "기업명", "가상기업")),
-                "사람이 확인한 기업지원 신청서 첫 페이지의 기업명 입력란", inspection.getTargets(), inspection.getPageImages(), List.of(), List.of(), inspection.getPdfFields());
+                "사람이 확인한 기업지원 신청서 첫 페이지의 기업명 입력란", inspection.getTargets(), inspection.getPageImages(), List.of(), List.of(), inspection.getPdfFields(), List.of());
             Files.writeString(output, mapper.writeValueAsString(request));
             System.out.println("Core inspection pages=" + inspection.getPageImages().size());
         } else if (args[0].equals("fill")) {

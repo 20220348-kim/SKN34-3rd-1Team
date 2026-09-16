@@ -2,6 +2,8 @@
 import base64
 import hashlib
 import json
+import re
+import unicodedata
 from typing import Literal
 
 from pydantic import Field, model_validator
@@ -10,14 +12,14 @@ from app.application_preparation.models import Contract
 from app.application_preparation.document import DocumentBox, DocumentFact, DocumentTarget, DocumentPlacement
 
 CONTRACT = "application-document-mcp-v1"
-MAP_VERSION = "native-map-v3"
-PLAN_VERSION = "confirmed-facts-bound-v2"
+MAP_VERSION = "native-map-v5-atomic-fields"
+PLAN_VERSION = "confirmed-facts-bound-v5-native-pdf"
 ENGINES = {
-    "hwp": "Topabaem05/hwpx-mcp@5993e014dd5bec68770379f2532ed0c1502a9952+govbiz-fields-v1",
-    "hwpx": "pblsketch/Hangeul-mcp@b6fef153714e0cc9ce566df0da4082fc57c4fda4+govbiz-ranges-v3",
-    "pdf": "AryanBV/pdf-edit-mcp@d4527e62b59433ad02f31a0511db218a2eeec1d3+govbiz-deletion-proof-v4+pdfbox-v6",
+    "hwp": "kr.dogfoot/hwplib@1.1.11+govbiz-ranges-v1",
+    "hwpx": "pblsketch/Hangeul-mcp@b6fef153714e0cc9ce566df0da4082fc57c4fda4+govbiz-ranges-v4-body-positions",
+    "pdf": "AryanBV/pdf-edit-mcp@d4527e62b59433ad02f31a0511db218a2eeec1d3+govbiz-deletion-proof-v4+printed-regions-v1+pdfbox-v6",
 }
-KORDOC_VERSION = "chrisryugj/kordoc@f715573df1712d415604ac949603a00e387cd3d7"
+KORDOC_VERSION = "chrisryugj/kordoc@f715573df1712d415604ac949603a00e387cd3d7+pdfjs-dist@4.10.38"
 PIPELINE_VERSION = hashlib.sha256(json.dumps([CONTRACT, MAP_VERSION, PLAN_VERSION, ENGINES, KORDOC_VERSION], sort_keys=True).encode()).hexdigest()
 MAX_BYTES = 32 * 1024 * 1024
 
@@ -31,8 +33,9 @@ def object_hash(value: object) -> str:
 
 
 class DocumentError(RuntimeError):
-    def __init__(self, code: str):
+    def __init__(self, code: str, *, reason: str = "UNSPECIFIED"):
         self.code = "APPLICATION_DOCUMENT_" + code
+        self.reason = reason
         super().__init__(self.code)
 
 
@@ -56,6 +59,7 @@ class DocumentMap(Contract):
     targets: list[NativeTarget] = Field(max_length=3000)
     auxiliaryStatus: str = "SKIPPED_PRIMARY_SUFFICIENT"
     auxiliaryText: str = Field(default="", max_length=40000)
+    unmappedFieldIds: list[str] = Field(default_factory=list, max_length=200)
 
 
 class EditOperation(Contract):
@@ -102,6 +106,7 @@ class GenerateDocumentRequest(Contract):
     pdfTargets: list[DocumentTarget] = Field(default_factory=list, max_length=3000)
     pageImages: list[str] = Field(default_factory=list, max_length=50)
     pdfFields: list[PdfFieldInfo] = Field(default_factory=list, max_length=3000)
+    hwpTargets: list[DocumentTarget] = Field(default_factory=list, max_length=3000)
     bindings: list[DocumentPlacement] = Field(default_factory=list, max_length=600)
     scopeTargetIds: list[str] = Field(default_factory=list, max_length=3000)
 
@@ -119,6 +124,8 @@ class GenerateDocumentRequest(Contract):
                 raise ValueError("invalid image")
         if self.format != "pdf" and (self.pdfTargets or self.pageImages):
             raise ValueError("PDF metadata on another format")
+        if self.format != "hwp" and self.hwpTargets:
+            raise ValueError("HWP metadata on another format")
         return self
 
 
@@ -142,72 +149,101 @@ class MappingSelection(Contract):
     unmappedFieldIds: list[str] = Field(max_length=200)
 
 
+def mapping_label_key(text: str) -> str:
+    text = re.sub(r"^\s*[①-⑳]?\s*", "", text)
+    return "".join(c for c in unicodedata.normalize("NFKC", text).casefold() if c.isalnum())
+
+
 def validate_mapping(request: MapDocumentRequest, document: DocumentMap, selection: MappingSelection):
     fields = {f.id for f in request.fields}
     targets = {t.targetId: t for t in document.targets}
-    if len(fields) != len(request.fields) or selection.unmappedFieldIds or {b.factId for b in selection.bindings} != fields:
-        raise DocumentError("MAPPING_FAILED")
+    if len(fields) != len(request.fields):
+        raise DocumentError("MAPPING_FAILED", reason="DUPLICATE_FIELD_IDS")
+    unmapped = set(selection.unmappedFieldIds)
+    bound = {b.factId for b in selection.bindings}
+    if len(unmapped) != len(selection.unmappedFieldIds) or not unmapped <= fields or unmapped & bound:
+        raise DocumentError("MAPPING_FAILED", reason="INVALID_UNMAPPED_FIELDS")
+    if unmapped & {f.id for f in request.fields if f.required}:
+        raise DocumentError("MAPPING_FAILED", reason="UNMAPPED_REQUIRED_FIELDS")
+    if bound | unmapped != fields:
+        raise DocumentError("MAPPING_FAILED", reason="FIELD_COVERAGE_MISMATCH")
     if len(selection.scopeTargetIds) != len(set(selection.scopeTargetIds)) or not set(selection.scopeTargetIds) <= targets.keys():
-        raise DocumentError("MAPPING_FAILED")
+        raise DocumentError("MAPPING_FAILED", reason="INVALID_MAPPING_SCOPE")
     if document.sourceSha256 != request.sourceSha256 or document.format != request.format or len(targets) != len(document.targets):
         raise DocumentError("SOURCE_CHANGED")
     seen = {}
+    labels = {mapping_label_key(f.label.partition(" / ")[2] or f.label) for f in request.fields}
     for binding in selection.bindings:
         target = targets.get(binding.targetId)
         if target is None or not target.editable or binding.targetId not in selection.scopeTargetIds or target.kind == "PDF_TEXT":
-            raise DocumentError("MAPPING_FAILED")
+            raise DocumentError("MAPPING_FAILED", reason="MAPPING_TARGET_NOT_EDITABLE_OR_OUT_OF_SCOPE")
+        if not target.nativeLocator.get("bindingEligible", True):
+            raise DocumentError("MAPPING_FAILED", reason="REPEATED_ROW_NOT_SELECTED")
         box = binding.box
+        field = next(f for f in request.fields if f.id == binding.factId)
+        field_label = mapping_label_key(field.label.partition(" / ")[2] or field.label)
+        native_labels = target.nativeLocator.get("fieldLabels", [])
+        if native_labels and not any(len(mapping_label_key(label)) >= 2 and
+                (field_label in mapping_label_key(label) or mapping_label_key(label) in field_label) for label in native_labels):
+            raise DocumentError("MAPPING_FAILED", reason="FIELD_LABEL_MISMATCH")
         if (box is not None) != (target.kind == "PDF_PAGE"):
-            raise DocumentError("MAPPING_FAILED")
+            raise DocumentError("MAPPING_FAILED", reason="MAPPING_BOX_KIND_MISMATCH")
         if box and (box.x + box.width > 1 or box.y + box.height > 1):
-            raise DocumentError("MAPPING_FAILED")
+            raise DocumentError("MAPPING_FAILED", reason="MAPPING_BOX_OUT_OF_PAGE")
+        if box:
+            for region in target.nativeLocator.get("printedTextRegions", []):
+                if mapping_label_key(region["text"]) in labels and box.overlaps(DocumentBox.model_validate(region["box"])):
+                    raise DocumentError("MAPPING_FAILED", reason="MAPPING_BOX_COVERS_PRINTED_LABEL")
         for previous in seen.get(binding.targetId, []):
             other = previous.box
-            if box is None or other is None or (max(box.x, other.x) < min(box.x + box.width, other.x + other.width) and max(box.y, other.y) < min(box.y + box.height, other.y + other.height)):
-                raise DocumentError("MAPPING_FAILED")
+            if box is None or other is None or box.overlaps(other):
+                raise DocumentError("MAPPING_FAILED", reason="MAPPING_TARGET_OVERLAP")
         seen.setdefault(binding.targetId, []).append(binding)
     if any(targets[key].nativeLocator.get("parent") in seen for key in seen):
-        raise DocumentError("MAPPING_FAILED")
+        raise DocumentError("MAPPING_FAILED", reason="MAPPING_PARENT_CHILD_CONFLICT")
 
 
 def validate_plan(request: GenerateDocumentRequest, document: DocumentMap, selection: PlanSelection) -> WritePlan:
     if document.sourceSha256 != request.sourceSha256 or document.format != request.format:
         raise DocumentError("SOURCE_CHANGED")
     if selection.unresolvedTargets:
-        raise DocumentError("MAPPING_FAILED")
+        raise DocumentError("MAPPING_FAILED", reason="UNRESOLVED_TARGETS")
     targets = {t.targetId: t for t in document.targets}
     if len(targets) != len(document.targets):
         raise DocumentError("VALIDATION_FAILED")
     facts = {f.id: f.value for f in request.facts}
     scope = set(selection.scopeTargetIds)
     if not scope <= targets.keys() or len(scope) != len(selection.scopeTargetIds):
-        raise DocumentError("MAPPING_FAILED")
+        raise DocumentError("MAPPING_FAILED", reason="INVALID_SCOPE_IDS")
     if request.scopeTargetIds and not scope <= set(request.scopeTargetIds):
-        raise DocumentError("MAPPING_FAILED")
+        raise DocumentError("MAPPING_FAILED", reason="SCOPE_OUTSIDE_SAVED_FORM")
     used: set[str] = set()
     seen: dict[str, list[EditOperation]] = {}
     for op in selection.operations:
         target = targets.get(op.targetId)
         if target is None or op.targetId not in scope or not target.editable:
-            raise DocumentError("MAPPING_FAILED")
+            raise DocumentError("MAPPING_FAILED", reason="TARGET_NOT_EDITABLE_OR_OUT_OF_SCOPE")
         if op.expectedText != target.currentText:
             raise DocumentError("SOURCE_CHANGED")
         if not 0 <= op.start <= op.end <= len(target.currentText):
-            raise DocumentError("MAPPING_FAILED")
+            raise DocumentError("MAPPING_FAILED", reason="INVALID_TEXT_RANGE")
         if op.operation == "delete_range":
             if op.valueRef is not None or op.start == op.end or op.box is not None:
-                raise DocumentError("MAPPING_FAILED")
+                raise DocumentError("MAPPING_FAILED", reason="INVALID_DELETE_OPERATION")
         else:
             if op.valueRef not in facts:
                 raise DocumentError("INPUT_REQUIRED")
             used.add(op.valueRef)
             if request.bindings and not any(b.factId == op.valueRef and b.targetId == op.targetId and b.box == op.box for b in request.bindings):
-                raise DocumentError("MAPPING_FAILED")
+                raise DocumentError("MAPPING_FAILED", reason="SAVED_BINDING_CHANGED")
         if op.operation == "input" and (op.start != op.end or target.currentText.strip()):
-            raise DocumentError("MAPPING_FAILED")
+            raise DocumentError("MAPPING_FAILED", reason="INPUT_TARGET_NOT_EMPTY")
         if op.operation == "set_check" and target.kind != "CHECKBOX":
             raise DocumentError("UNSUPPORTED")
-        if op.operation == "set_field" and target.kind not in {"HWP_FIELD", "PDF_FIELD", "PDF_PAGE"}:
+        if target.kind == "CHECKBOX" and (op.operation != "set_check" or op.start != 0 or op.end != len(target.currentText)
+                                           or facts.get(op.valueRef, "").strip() != target.currentText.strip()):
+            raise DocumentError("MAPPING_FAILED", reason="CHECK_VALUE_MISMATCH")
+        if op.operation == "set_field" and target.kind not in {"HWP_FIELD", "PDF_FIELD", "PDF_PAGE", "PDF_INPUT"}:
             raise DocumentError("UNSUPPORTED")
         if (op.box is not None) != (target.kind == "PDF_PAGE" and op.operation == "set_field"):
             raise DocumentError("MAPPING_FAILED")
@@ -215,11 +251,10 @@ def validate_plan(request: GenerateDocumentRequest, document: DocumentMap, selec
             raise DocumentError("MAPPING_FAILED")
         for previous in seen.get(op.targetId, []):
             if op.box and previous.box:
-                a, b = op.box, previous.box
-                if max(a.x, b.x) < min(a.x + a.width, b.x + b.width) and max(a.y, b.y) < min(a.y + a.height, b.y + b.height):
-                    raise DocumentError("MAPPING_FAILED")
+                if op.box.overlaps(previous.box):
+                    raise DocumentError("MAPPING_FAILED", reason="OVERLAPPING_BOXES")
             elif max(op.start, previous.start) < min(op.end, previous.end) or op.start == previous.start or op.operation.startswith("set_") or previous.operation.startswith("set_"):
-                raise DocumentError("MAPPING_FAILED")
+                raise DocumentError("MAPPING_FAILED", reason="OVERLAPPING_OPERATIONS")
         seen.setdefault(op.targetId, []).append(op)
     if request.bindings:
         def identity(field, target, box):
@@ -227,14 +262,24 @@ def validate_plan(request: GenerateDocumentRequest, document: DocumentMap, selec
         expected = {identity(b.factId, b.targetId, b.box) for b in request.bindings if b.factId in facts}
         applied = {identity(op.valueRef, op.targetId, op.box) for op in selection.operations if op.valueRef is not None}
         if applied != expected:
-            raise DocumentError("MAPPING_FAILED")
+            raise DocumentError("MAPPING_FAILED", reason="BOUND_FACTS_NOT_COVERED")
+    if request.format == "hwp":
+        groups = set()
+        for op in selection.operations:
+            target = targets[op.targetId]
+            if target.kind == "CHECKBOX":
+                group = target.nativeLocator.get("group")
+                members = {t.targetId for t in document.targets if t.kind == "CHECKBOX" and t.nativeLocator.get("group") == group}
+                if not group or group in groups or not members <= scope:
+                    raise DocumentError("MAPPING_FAILED", reason="INCOMPLETE_CHECK_GROUP")
+                groups.add(group)
     # A fact can legitimately appear in several official input fields.
     if used != facts.keys():
-        raise DocumentError("MAPPING_FAILED")
+        raise DocumentError("MAPPING_FAILED", reason="FACTS_NOT_COVERED")
     for target_id in seen:
         parent = targets[target_id].nativeLocator.get("parent")
         if parent in seen:
-            raise DocumentError("MAPPING_FAILED")
+            raise DocumentError("MAPPING_FAILED", reason="PARENT_CHILD_CONFLICT")
     payload = {**selection.model_dump(), "sourceSha256": request.sourceSha256,
                "mapVersion": document.mapVersion, "answerRevision": request.answerRevision}
     return WritePlan(**payload, planHash=object_hash(payload))

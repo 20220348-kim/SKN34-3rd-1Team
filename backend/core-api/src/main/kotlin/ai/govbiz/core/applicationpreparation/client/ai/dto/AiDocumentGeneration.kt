@@ -18,6 +18,7 @@ data class AiDocumentGenerationRequest(
     val bindings: List<ApplicationDocumentPlacement> = emptyList(),
     val scopeTargetIds: List<String> = emptyList(),
     val pdfFields: List<Map<String, Any?>> = emptyList(),
+    val hwpTargets: List<ApplicationDocumentTarget> = emptyList(),
 )
 data class AiDocumentGenerationPayload(
     val contractVersion: String,
@@ -46,6 +47,7 @@ data class AiDocumentMappingRequest(
     val pdfTargets: List<ApplicationDocumentTarget> = emptyList(),
     val pageImages: List<String> = emptyList(),
     val pdfFields: List<Map<String, Any?>> = emptyList(),
+    val hwpTargets: List<ApplicationDocumentTarget> = emptyList(),
 )
 data class AiDocumentMappingPayload(
     val contractVersion: String,

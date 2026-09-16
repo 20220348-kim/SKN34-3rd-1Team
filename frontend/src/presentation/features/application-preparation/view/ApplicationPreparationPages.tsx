@@ -21,11 +21,12 @@ import { applicationPreparationStyles as s } from './ApplicationPreparation.styl
 
 
 const listTitle = '신청 문서 작성 도우미'
-const sectionStatus = {
-  NOT_STARTED: { label: '작성 전', className: s.notStarted },
-  IN_PROGRESS: { label: '입력 중', className: s.inProgress },
-  INPUT_CONFIRMED: { label: '사실 확인됨', className: s.confirmed },
-} as const
+function savedSectionStatus(section: ApplicationFormSection) {
+  const fields = section.fields.filter((field) => field.documentWritable !== false)
+  const answered = fields.filter((field) => section.facts.some((fact) => fact.fieldKey === field.key)).length
+  return { label: fields.length === 0 ? '원문에서 직접 작성' : `${answered}/${fields.length}개 입력 확인`,
+    className: answered === 0 ? s.notStarted : answered === fields.length ? s.confirmed : s.inProgress }
+}
 const programStatusLabels = {
   OPEN: '접수 중',
   UPCOMING: '접수 예정',
@@ -83,7 +84,7 @@ function SectionInputEditor({ section, vm, isLastSection }: {
   const messageKey = field ? `${section.key}:${field.key}` : section.key
   const answeredCount = section.fields.filter((value) => vm.sectionMessages[`${section.key}:${value.key}`]?.trim() || section.facts.some((fact) => fact.fieldKey === value.key)).length
   const busy = vm.busySection?.key === section.key
-  const status = sectionStatus[section.status]
+  const status = savedSectionStatus(section)
   const labels = new Map(section.fields.map((field) => [field.key, field.label]))
   return <section className={s.sectionItem} aria-label={`${section.title} 작성`}>
     <div className={s.sectionHeading}>
@@ -105,7 +106,8 @@ function SectionInputEditor({ section, vm, isLastSection }: {
       </ul>
     </div>}
     <label className={s.label} htmlFor={`section-answer-${section.key}`}>답변 입력</label>
-    {options.length > 0 ? <fieldset className="space-y-2" disabled={vm.busySection !== null}>
+    {field?.documentWritable === false && <p className={s.warning}>이 항목은 자동 기입할 수 없습니다. 내려받은 원본 문서에서 직접 작성해 주세요.</p>}
+    {options.length > 0 ? <fieldset className="space-y-2" disabled={vm.busySection !== null || field?.documentWritable === false}>
       <legend className={s.label}>공식 선택지 중 하나를 선택하세요</legend>
       {options.map((option) => <label className="flex cursor-pointer items-center gap-3 rounded-xl border border-slate-200 p-3 text-sm has-[:checked]:border-emerald-700 has-[:checked]:bg-emerald-50" key={option}>
         <input type="radio" name={`choice-${messageKey}`} value={option} checked={vm.sectionMessages[messageKey] === option} onChange={() => vm.setSectionMessage(messageKey, option)} />
@@ -116,7 +118,7 @@ function SectionInputEditor({ section, vm, isLastSection }: {
       </label>
     </fieldset> : <textarea
       className={s.textarea}
-      disabled={vm.busySection !== null}
+      disabled={vm.busySection !== null || field?.documentWritable === false}
       id={`section-answer-${section.key}`}
       maxLength={2000}
       value={vm.sectionMessages[messageKey] ?? ''}
@@ -179,7 +181,7 @@ function SectionWritingWorkspace({ vm }: { vm: ReturnType<typeof useApplicationP
         <ol className="flex max-h-64 flex-col gap-2 overflow-y-auto lg:max-h-[65vh]">
           {sections.map((section, index) => {
             const pending = Boolean(section.fields.some((field) => vm.sectionMessages[`${section.key}:${field.key}`]?.trim()))
-            const status = pending ? { label: '저장 전 답변', className: s.inProgress } : sectionStatus[section.status]
+            const status = pending ? { label: '저장 전 답변', className: s.inProgress } : savedSectionStatus(section)
             return <li key={section.key}>
               <button type="button" aria-current={index === activeIndex ? 'step' : undefined}
                 className={`flex w-full flex-col gap-2 rounded-xl border p-3 text-left focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#087f46] ${index === activeIndex ? 'border-emerald-700 bg-white shadow-sm' : 'border-transparent hover:bg-white'}`}
@@ -316,6 +318,15 @@ function ApplicationPreparationEditor({ id, initialSourceCode, initialSourceProg
       />}
 
 
+      {id === null && vm.selectedProgram && <section className={s.notice} aria-label="입력칸별 양식 분석">
+        <p>표의 여러 칸이 한 질문으로 묶여 있다면 입력칸별로 다시 분석해 새 작성을 시작하세요. 기존 작성본과 답변은 유지됩니다.</p>
+        <button type="button" className={s.button} disabled={vm.discovering || vm.submitting} onClick={() => { void vm.reanalyzeForms() }}>
+          {vm.discovering ? '양식 확인 중…' : '입력칸별 양식 다시 분석'}
+        </button>
+      </section>}
+      {detail && <p className={s.notice}>각 항목의 입력 확인 수를 확인하세요. 미입력 칸은 문서에서도 비어 있습니다.
+        {' '}<Link className={s.button} to={`${appPaths.applicationPreparationNew}?${new URLSearchParams({ sourceCode: detail.form.sourceCode, sourceProgramId: detail.form.sourceProgramId })}`}>기존 답변을 보관하고 새 양식 확인</Link>
+      </p>}
       {id === null && <form className={s.form} aria-labelledby="create-preparation-title" onSubmit={(event) => {
         event.preventDefault()
         if (vm.selectedForm) void vm.create()

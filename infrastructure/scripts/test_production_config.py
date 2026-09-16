@@ -36,6 +36,22 @@ class ProductionConfigTest(unittest.TestCase):
     def test_valid_config(self):
         self.assertEqual(checker.validate(self.config), [])
 
+    def test_document_token_reaches_core_and_ai_without_a_windows_bridge(self):
+        token = "document-test-only-" * 3
+        result = subprocess.run(["docker", "compose", "--env-file", os.devnull, "-f", str(checker.COMPOSE),
+                                 "config", "--format", "json"], env={**self.env, "DOCUMENT_INTERNAL_TOKEN": token},
+                                capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0)
+        services = json.loads(result.stdout)["services"]
+        for name, service in services.items():
+            environment = service.get("environment", {})
+            if name in {"core-api", "ai-service"}:
+                self.assertEqual(environment["DOCUMENT_INTERNAL_TOKEN"], token)
+            else:
+                self.assertNotIn("DOCUMENT_INTERNAL_TOKEN", environment)
+            self.assertNotIn("DOCUMENT_HWP_BRIDGE_URL", environment)
+            self.assertNotIn("DOCUMENT_HWP_BRIDGE_TOKEN", environment)
+
     def test_assistant_disabled_by_default(self):
         self.assertEqual(self.config["services"]["core-api"]["environment"]["ASSISTANT_AGENT_ENABLED"], "false")
         for name in ("core-api", "ai-service"):

@@ -4,6 +4,7 @@ import ai.govbiz.core._common.exception.AiServiceCallException
 import ai.govbiz.core.account.domain.Account
 import ai.govbiz.core.applicationpreparation.client.ai.exception.AiApplicationFormValidationException
 import ai.govbiz.core.applicationpreparation.domain.ApplicationFormAnalysisMetadata
+import ai.govbiz.core.applicationpreparation.domain.ApplicationFormAvailabilityStatus
 import ai.govbiz.core.applicationpreparation.domain.ApplicationFormDiscoveryBlock
 import ai.govbiz.core.applicationpreparation.domain.ApplicationFormDiscoveryDocument
 import ai.govbiz.core.applicationpreparation.domain.ApplicationFormDiscoveryInput
@@ -41,7 +42,10 @@ class ApplicationFormDiscoveryService(
     private val snapshots: ApplicationFormSnapshotRepository,
     private val documentMapping: ApplicationDocumentMappingService,
     private val admission: SupportProgramRequestAdmissionService,
+    private val availability: ai.govbiz.core.applicationpreparation.repository.ApplicationFormAvailabilityRepository,
+    transactionManager: org.springframework.transaction.PlatformTransactionManager,
 ) {
+    private val transactions = org.springframework.transaction.support.TransactionTemplate(transactionManager)
     fun discover(account: Account, sourceCode: String, sourceProgramId: String): ApplicationFormDiscoveryResult {
         require(account.id > 0)
         validateIdentity(sourceCode, sourceProgramId)
@@ -70,15 +74,26 @@ class ApplicationFormDiscoveryService(
             throw ApplicationFormDiscoveryException(Reason.SOURCE_NOT_FOUND, error)
         }
         val configuration = ai.discoveryConfiguration()
-        return discoverFresh(
+        val lease = availability.claimRequested(sourceCode, sourceProgramId)
+        try {
+            return discoverFresh(
                 program.sourceCode,
                 program.id,
                 program.title,
                 program.targetDescription,
                 program.sourceUrl,
                 configuration,
-                beforeAi,
+                { beforeAi(); if (lease != null) availability.beforeAi(lease) },
+                persist = if (lease == null) null else { forms, metadata ->
+                    transactions.executeWithoutResult { availability.available(lease, forms, metadata) }
+                },
             )
+        } catch (error: Exception) {
+            if (lease != null) availability.finish(lease,
+                ApplicationFormAvailabilityStatus.REVIEW_REQUIRED,
+                "MANUAL_REANALYSIS_FAILED", cacheResult = false)
+            throw error
+        }
     }
 
     /** 시스템 작업과 백필은 계정별 discovery job을 사용하지 않으며 저장 transaction을 호출자가 소유한다. */
