@@ -2,19 +2,19 @@
 
 ## 현재 호출 경로
 
-React의 저장된 답변·expectedRevision → Core `ApplicationDocumentService` → 공식 첨부 재수집/hash 확인 → AI `/internal/v1/application-preparations/document/generate` → 원본 복사본 지도 → OpenAI 구조화 수정 계획 → 형식별 MCP → Core 결과 확인 → 소유권/revision 잠금 재확인 → 파일 저장 → 기존 다운로드 API.
+React의 저장된 답변·expectedRevision → Core `ApplicationDocumentService` → 공식 첨부 재수집/hash 확인 → AI `/internal/v1/application-preparations/document/generate` → 원본 복사본 지도 → OpenAI 구조화 수정 계획 → HWP는 Core hwplib 계획 실행 / HWPX·PDF는 MCP → Core 결과 확인 → 소유권/revision 잠금 재확인 → 파일 저장 → 기존 다운로드 API.
 
 | 형식 | 편집 경로 | 현재 검증/제약 |
 |---|---|---|
-| HWP | 인증된 Windows 브리지 → stdio 고정 확장 → Topabaem05 COM controller | 번호 있는 누름틀의 읽기·입력·HWP 저장·재열기. 이름 없는 표/병합 셀/체크 컨트롤 주소는 미지원 blocker |
+| HWP | Core hwplib 검사 → AI 지도·계획 → Core hwplib 편집·재열기 | 일반 문단·표 셀 구간 및 실제 체크/라디오. 미지원 제어 문자·범위 주석은 거절 |
 | HWPX | Hangeul-mcp 파일 모드 inspect → preview → apply → verify_targets | 셀/셀 문단/본문, 범위의 문자열 교체. 원본 불변·XML·값 검증. 중첩 표/누름틀/체크 컨트롤은 지원을 추정하지 않음 |
 | PDF | pdf-edit-mcp 페이지별 읽기/선택 예시 실제 삭제 → Core PDFBox AcroForm → 재열기·appearance·렌더 실행 | 기존 필드 재사용 또는 평면 문서에 새 필드. flatten하지 않음 |
 
-MCP 서버마다 실제 stdio `initialize`, `tools/list`, `tools/call`을 실행한다. HTTP URL을 stdio 서버에 붙이지 않는다. Windows HTTP 브리지는 내부 고정 작업만 받으며 tools/call 프록시가 아니다. COM은 해당 작업의 새 `DispatchEx` 인스턴스에서 같은 MCP 이벤트 루프 스레드로 실행한다. 질문 대기 동안 프로세스/문서를 유지하지 않는다.
+HWPX/PDF MCP 서버는 실제 stdio `initialize`, `tools/list`, `tools/call`을 실행한다. HWP는 새 서버 없이 기존 Core JVM에서 hwplib을 호출한다. AI에 `hwpTargets`로 실제 원본 구조를 보내고, `HWPLIB_REQUIRED` 단계의 원본 bytes와 수정 계획을 받는다. Core는 원본 동일성·계획 hash·revision·저장된 bindings/scope를 검사한 뒤 편집하고 `HWPLIB_VERIFIED` 근거와 최종 출력 hash를 저장한다.
 
 ## 지도와 계획
 
-`application-document-mcp-v1`의 지도는 sourceSha256, 형식, engineVersion, mapVersion, 실제 nativeLocator, 본문, 주변 문맥, editable/unsupportedReason을 포함한다. 확인하지 못한 표/페이지 정보는 null이며 구조를 추정하지 않는다. HWPX 엔진의 `tN.rN.cN.pN`/`bN` 주소(표·문단은 1-based, 행·열은 XML의 0-based 주소)를 그대로 사용한다. COM 누름틀의 중복 이름은 `GetFieldList(1,0)`가 반환하는 `{{n}}` 주소를 사용한다.
+`application-document-mcp-v1`의 지도는 sourceSha256, 형식, engineVersion, mapVersion, 실제 nativeLocator, 본문, 주변 문맥, editable/unsupportedReason을 포함한다. 확인하지 못한 표/페이지 정보는 null이며 구조를 추정하지 않는다. HWPX 엔진의 `tN.rN.cN.pN`/`bN` 주소(표·문단은 1-based, 행·열은 XML의 0-based 주소)를 그대로 사용한다. HWP는 hwplib으로 순회한 section/paragraph/table/row/cell 구조 주소를 사용한다. 모호한 문자 offset을 만드는 컨트롤은 editable=false로 전송하며, BMP 문자열과 줄바꿈에 대해 Python/Core의 범위 인덱스를 동일하게 유지한다.
 
 WritePlan은 sourceSha256/mapVersion/answerRevision/planHash와 허용 연산만 담는다. 모든 쓰기 값은 저장된 fact ID인 valueRef에서 해결하며 모델이 값이나 코드를 생성할 수 없다. expectedText는 빈 문자열까지 서비스에서 정확히 비교한다. Hangeul 엔진 자체는 빈 expected_text를 검사 생략으로 해석하므로 해당 검사를 위임하지 않는다. 같은 fact의 여러 입력란 사용은 허용하지만 겹친 범위, 중복 주소, 부모 셀과 자식 문단 동시 편집은 거절한다. 범위 인덱스는 Python Unicode code point, 0-based/end-exclusive이다.
 
@@ -22,25 +22,35 @@ WritePlan은 sourceSha256/mapVersion/answerRevision/planHash와 허용 연산만
 
 예시 삭제는 색상 필터를 사용하지 않는다. 모델이 의미·문맥과 정확한 문자열 구간을 지정하며, 미답변 예시 삭제에는 valueRef가 없다. 항목명과 예시가 섞이면 지정 구간 외 문자열은 보존한다. 단순하고 위치가 모호하지 않은 구간 변경은 원래 run을 유지하는 최소 확장으로 처리한다. 반복 텍스트 때문에 어느 run을 바꾸는지 모호하거나 보존 run을 합쳐야 하는 변경은 거절한다. 본문을 비워 bN 순번이 달라지는 경우에는 원본/결과를 다시 분석하여 유지된 문단 구조 위치에서 값을 확인한다. 독립 한글 렌더링은 별도 검증이 필요하다.
 
+HWP 작성 계획을 요청할 때는 저장된 선택 양식 scope에 포함된 targets만 모델에 전달하고, bindings는 현재 확정 답변이 있는 문항으로 한정한다. 검증·감사용 원본 지도는 바꾸지 않는다. 미답변 문항은 답변 배치 실패 대상으로 삼지 않으며, 선택 범위 안의 예시 정리는 별도로 판단한다. 모델이 범위 밖 위치를 반환하면 여전히 거절한다. 거절 로그에는 mode/code/고정 reason만 남기며 답변·원문·모델 응답은 기록하지 않는다.
+
 ## PDF 좌표·단계
 
 새 입력란의 box는 **회전된 CropBox 화면의 왼쪽 위** 기준 0..1이다. PDFBox는 CropBox 원점과 0/90/180/270도 회전을 반영하여 PDF 포인트로 변환한다. 픽셀을 PDF 포인트로 취급하지 않는다. 예시 삭제는 MCP `pdf_find_text`의 실제 일치 결과를 확인한 뒤 `pdf_replace_single(replacement="", reflow=false)`로 내용 스트림을 수정한다. 흰 사각형은 쓰지 않는다. 같은 문자열이 여러 번 나타나면 잘못된 영역 삭제를 피하기 위해 명시적으로 거절한다. MCP 원시 좌표를 PDFBox 신규 필드 좌표로 재사용하지 않는다.
 
-PDF_PAGE에만 box를 허용하고 PDF_FIELD는 기존 필드명으로 채운다. 하나라도 기존 필드가 있으면 신규 필드를 추가하지 않는다. 빈 입력 영역의 기존 텍스트, 답변 크기, 선택값, readOnly, XFA, 서명을 검사한다. 한국어 폰트는 저장소의 기존 NanumGothic을 사용하며, 임의 축소/문안 절단 없이 overflow를 반환한다. 전체 값과 AcroForm 필드 트리, appearance를 재열어 확인하고 PDFBox 렌더러를 실행한다. 렌더 실행은 사람의 화면 확인과 다르다.
+PDF_PAGE는 읽기 전용이다. 평면 PDF의 표 테두리와 인쇄 글자로 확인한 빈 셀·입력 띠를 PDF_INPUT으로 제공하고 모델은 위치 ID만 선택한다(box=null). 실제 box와 page-N 변환은 서버가 원본의 nativeLocator에서 결정해 Core로 보낸다. 기존 PDF_FIELD는 원래 필드명으로 채우고, 기존 필드가 있으면 새 필드를 추가하지 않는다. 닫힌 표 경계나 실제 필드를 확인하지 못한 곳에 임의 좌표를 만들지 않는다. 빈 입력 영역의 기존 텍스트, 답변 크기, 선택값, readOnly, XFA, 서명을 검사한다. 한국어 폰트는 기존 NanumGothic을 사용한다. 전체 값과 AcroForm 필드 트리, appearance를 재열어 확인하고 PDFBox 렌더러를 실행한다. 렌더 실행은 사람의 화면 확인과 다르다.
+
+## 입력칸별 질문과 수동 작성 항목
+
+공식 첨부 → OpenAI 질문 추출 → 원본 입력 위치 매핑 → Core 양식 스냅샷 → 질문 UI 순서다. 표 제목 하나로 여러 열을 묻지 않고 각 칸의 원문 열 이름을 질문에 유지한다. 반복 표는 첫 입력 행을 명시한다. HWPX의 원본 표 제목·행/열 이름·첫 입력 행을 지도에 포함하고 질문의 의미와 다른 열을 거절한다. 포괄적인 이전 질문은 FORM_REANALYSIS_REQUIRED로 중단하여 잘못된 첫 열 기입을 막는다.
+
+필수 문항의 위치를 찾지 못하면 양식 검증이 실패한다. 선택 문항 중 지원하지 않는 위치는 documentMap.unmappedFieldIds에 기록하고 공개 fields[].documentWritable=false로 전달한다. 해당 항목은 원문에서 직접 작성하도록 안내한다. 값이 제공됐는데 실제 binding이 없는 경우 UNMAPPED_INPUT으로 거절하며 답변을 조용히 생략하지 않는다. 재분석은 기존 discovery-jobs API를 사용자의 명시적 클릭으로 호출하고 GET으로 완료를 기다린다. 기존 작성 건·답변은 유지하며 새 양식에 임의로 재분배하지 않는다.
+
+카탈로그에 등록된 공고의 명시적 재분석은 해당 가용성 행의 실행권을 확보한다. 검증 완료 후 snapshot 저장과 활성 버전 갱신을 기존 Repository transaction으로 묶는다. 실행 중인 다른 작업의 lease를 빼앗지 않으며 과거 snapshot은 삭제하지 않는다. 따라서 재분석 결과는 새 작성에 사용할 수 있고 기존 작성 건은 이전 버전으로 계속 조회할 수 있다.
 
 ## 격리·중복 실행·저장
 
 - 파일 경로와 실행 명령은 서버 구성에서만 결정한다. 원본은 job별 임시 디렉터리의 고정 파일명으로 복사한다. 크기 32 MiB, ZIP 256 entries/확장 32 MiB, PDF 50페이지, fact 200개 제한을 유지한다.
-- 내부 생성 토큰과 Windows 브리지 토큰은 별도 비밀값이다. Windows 인증은 body 수신/작업 생성 전에 검사한다. 브리지는 기본 loopback 단일 worker이며 원격은 TLS 역방향 프록시와 사설망 제한이 필요하다.
-- MCP child 환경에 OpenAI/브리지 비밀값을 전달하지 않는다. upstream stderr는 내용 유출 위험 때문에 폐기하며 고정 오류 종류/엔진 이름만 기록한다.
-- Core는 Redis의 작성 건별 실행 잠금으로 중복 생성을 막는다. 결과 불명은 잠금을 만료 없이 유지한다. Windows는 프로세스 간/재시작 후에도 남는 executor.lock으로 COM 전체 작업을 직렬화한다. 잠금에는 사용자 내용 없이 jobId·브리지 PID·RUNNING/OUTCOME_UNKNOWN 상태를 기록한다. 같은 실행기의 진행 중 작업은 RUN_CONFLICT로 반환하여 단순 사용 중 상태가 영구 결과 불명 잠금으로 바뀌지 않게 한다. 종료 확인 전 잠금을 자동 삭제하거나 재시도하지 않는다.
+- Core와 AI는 동일한 내부 생성 토큰을 사용하고 AI는 body 수신 전에 인증한다. 별도 HWP 브리지 토큰·호스트 포트·Windows 런타임은 없다.
+- MCP child 환경에 OpenAI/내부 인증 비밀값을 전달하지 않는다. upstream stderr는 내용 유출 위험 때문에 폐기하며 고정 오류 종류/엔진 이름만 기록한다.
+- Core는 Redis의 작성 건별 실행 잠금으로 중복 생성을 막는다. 기존 결과 불명 잠금은 유지하며 자동 삭제하지 않는다. HWP 편집은 요청별 in-memory 원본 복사본에 적용하므로 COM 프로세스와 전역 executor 잠금이 필요 없다.
 - HWPX/PDF 중간 파일은 결과 검증을 통과하기 전 다운로드 저장소에 들어가지 않는다. 실패한 복사본을 이어 쓰지 않는다.
 - fingerprint는 원본 hash + 입력 revision + 지도/계획 정책과 선택 도구 commit을 포함한 pipelineVersion으로 계산한다. 실제 지도·planHash·검증 결과는 placements_json의 mcp에 보존한다. V38은 fingerprint 고유키를 추가하며 기존 파일은 이력 다운로드로 유지한다.
 - 외부 호출은 DB transaction 밖이다. 최종 Repository.save에서 소유권과 revision을 잠그고 재검사한다.
 
 ## kordoc
 
-주 분석에 문맥이 없거나 중복된 비어 있지 않은 항목이 있으면 읽기 보조가 필요하다고 판단한다. 그 외에는 SKIPPED_PRIMARY_SUFFICIENT를 기록한다. 별도 읽기 전용 복사본과 `parse_document`만 허용하며 OCR/수식 OCR 다운로드는 끈다. 주 편집기의 원문과 정확히 일치하는 문자열만 연결하며 kordoc 셀 주소를 편집 주소로 전용하지 않는다. 필요한 보조 호출 실패는 생성 실패이다. OS 수준의 완전한 악성 프로세스 sandbox를 제공하는 것은 아니며 운영 실행 계정 권한도 제한해야 한다.
+HWP는 Core의 hwplib 구조를 단일 기준으로 사용해 kordoc을 호출하지 않는다. HWPX/PDF 주 분석에 문맥이 없거나 중복된 비어 있지 않은 항목이 있으면 읽기 보조가 필요하다고 판단한다. 그 외에는 SKIPPED_PRIMARY_SUFFICIENT를 기록한다. 별도 읽기 전용 복사본과 `parse_document`만 허용하며 OCR/수식 OCR 다운로드는 끈다. 주 편집기의 원문과 정확히 일치하는 문자열만 연결하며 kordoc 셀 주소를 편집 주소로 전용하지 않는다. 필요한 보조 호출 실패는 생성 실패이다. OS 수준의 완전한 악성 프로세스 sandbox를 제공하는 것은 아니며 운영 실행 계정 권한도 제한해야 한다.
 
 ### 확인된 빈 run 최소 확장
 

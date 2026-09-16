@@ -11,6 +11,8 @@ export class ApplicationPreparationError extends Error {
 }
 
 function messageFor(code: string, status: number): string {
+  if (code === 'APPLICATION_DOCUMENT_FORM_REANALYSIS_REQUIRED') return '여러 입력칸이 한 질문으로 묶인 이전 양식입니다. 기존 답변을 보관한 채 입력칸별로 다시 분석해 새 작성을 시작해 주세요.'
+  if (code === 'APPLICATION_DOCUMENT_UNMAPPED_INPUT') return '입력한 답변 중 자동 기입할 수 없는 항목이 있습니다. 해당 항목은 원본에서 직접 작성해야 합니다.'
   if (status === 401) return '로그인이 만료되었습니다. 다시 로그인해 주세요.'
   if (code === 'RUN_OUTCOME_UNKNOWN') return '분석 결과를 확정할 수 없어 자동 재실행을 중단했습니다. 관리자 확인이 필요합니다.'
   if (code === 'QUEUE_EXPIRED') return '분석 대기 시간이 초과되었습니다. 공고를 다시 선택해 새 작업을 요청할 수 있습니다.'
@@ -38,7 +40,7 @@ function messageFor(code: string, status: number): string {
   if (code === 'APPLICATION_DOCUMENT_INPUT_REQUIRED') return '필수 답변을 모두 저장한 뒤 문서를 생성해 주세요. 모르는 내용은 미정으로 저장할 수 있습니다.'
   if (code === 'APPLICATION_DOCUMENT_SOURCE_CHANGED') return '공식 첨부가 변경되었거나 없어졌습니다. 양식을 다시 찾아 새 작성을 시작해 주세요.'
   if (code === 'APPLICATION_DOCUMENT_MAPPING_FAILED') return '공식 양식의 입력 위치를 확인하지 못해 작업을 중단했습니다. 양식 분석 결과를 확인해 주세요.'
-  if (code === 'APPLICATION_DOCUMENT_MCP_NOT_READY') return '문서 편집 실행 환경이 준비되지 않았습니다. HWP는 서버의 Windows·한글 연결이 필요합니다.'
+  if (code === 'APPLICATION_DOCUMENT_MCP_NOT_READY') return '문서 생성 서비스를 사용할 수 없습니다. 관리자에게 문의해 주세요.'
   if (code === 'APPLICATION_DOCUMENT_PLAN_TIMEOUT') return '문서 위치·작성 계획 분석 시간이 초과되었습니다. 저장된 답변을 유지한 채 다시 시도할 수 있습니다.'
   if (code === 'APPLICATION_DOCUMENT_PLAN_FAILED') return '문서 위치·작성 계획을 확인하지 못했습니다. 저장된 답변은 유지됩니다.'
   if (code === 'APPLICATION_DOCUMENT_MCP_FAILED') return '문서 편집 도구가 작업을 완료하지 못했습니다. 관리자에게 문의해 주세요.'

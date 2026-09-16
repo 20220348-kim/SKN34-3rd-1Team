@@ -24,17 +24,25 @@ class ApplicationDocumentMappingService(
         val pipeline = mcp.configuration().pipelineVersion
         val stored = snapshots.findByVersion(form.formVersionId)
         (stored?.documentMapSnapshot ?: form.documentMapSnapshot)?.takeIf { it.pipelineVersion == pipeline && it.sourceSha256 == sourceHash }?.let { return it }
-        val inspection = if (format.equals("pdf", true)) editor.inspect(bytes, "pdf") else null
+        val inspection = if (format.lowercase() in setOf("pdf", "hwp")) editor.inspect(bytes, format) else null
         val fields = form.sections.flatMap { section -> section.fields.map { field ->
             AiDocumentFieldReference("${section.key}:${field.key}", "${section.title} / ${field.label}", field.guidance, field.required, field.options)
         } }
         if (fields.size !in 1..200) throw ApplicationDocumentException("APPLICATION_DOCUMENT_LIMIT_EXCEEDED", "양식 문항 수가 분석 제한을 초과했습니다.")
         val result = mcp.map(AiDocumentMappingRequest(sourceBase64 = Base64.getEncoder().encodeToString(bytes), sourceSha256 = sourceHash,
             format = format.lowercase(), scope = (form.formTitle + "\n" + form.sections.joinToString("\n") { "${it.title} | ${it.locator} | ${it.description}" }).take(30000),
-            fields = fields, pdfTargets = inspection?.targets.orEmpty(), pageImages = inspection?.pageImages.orEmpty(), pdfFields = inspection?.pdfFields.orEmpty()))
+            fields = fields, pdfTargets = if (format.equals("pdf", true)) inspection?.targets.orEmpty() else emptyList(),
+            hwpTargets = if (format.equals("hwp", true)) inspection?.targets.orEmpty() else emptyList(),
+            pageImages = inspection?.pageImages.orEmpty(), pdfFields = inspection?.pdfFields.orEmpty()))
         val targetIds = (result.documentMap["targets"] as? List<*>)?.mapNotNull { (it as? Map<*, *>)?.get("targetId") as? String }?.toSet().orEmpty()
+        val unmapped = (result.documentMap["unmappedFieldIds"] as? List<*>)?.map { it as? String
+            ?: throw ApplicationDocumentException("APPLICATION_DOCUMENT_MAPPING_FAILED", "입력칸 분석 결과를 확인하지 못했습니다.") }.orEmpty()
+        val boundFields = result.bindings.map { it.factId }.toSet()
+        if (format.equals("hwp", true) && result.bindings.any { binding -> inspection?.targets?.none { it.id == binding.targetId && it.editable } != false })
+            throw ApplicationDocumentException("APPLICATION_DOCUMENT_MAPPING_FAILED", "HWP 원본에 없는 입력 위치입니다.")
         if (result.contractVersion != "application-document-mcp-v1" || result.pipelineVersion != pipeline || result.sourceSha256 != sourceHash ||
-            result.bindings.map { it.factId }.toSet() != fields.map { it.id }.toSet() ||
+            unmapped.size != unmapped.toSet().size || unmapped.any { it in boundFields || fields.any { f -> f.id == it && f.required } } ||
+            boundFields + unmapped.toSet() != fields.map { it.id }.toSet() ||
             result.bindings.any { it.targetId !in targetIds || it.targetId !in result.scopeTargetIds } || result.scopeTargetIds.any { it !in targetIds }) {
             throw ApplicationDocumentException("APPLICATION_DOCUMENT_MAPPING_FAILED", "질문 항목의 실제 입력 위치를 확인하지 못했습니다.")
         }

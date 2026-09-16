@@ -44,9 +44,9 @@ def main():
             raise RuntimeError("Nginx host port was not assigned")
         port = int(bindings[0]["HostPort"])
 
-        def call(method="GET", path="/api/test", secret=SECRET, body=None):
+        def call(method="GET", path="/api/test", secret=SECRET, body=None, client_ip="203.0.113.20"):
             connection = http.client.HTTPConnection("127.0.0.1", port, timeout=3)
-            headers = {"X-Govbiz-Proxy-Secret": secret, "X-Govbiz-Client-IP": "203.0.113.20",
+            headers = {"X-Govbiz-Proxy-Secret": secret, "X-Govbiz-Client-IP": client_ip,
                        "X-Forwarded-For": "1.2.3.4", "Forwarded": "for=1.2.3.4",
                        "Origin": "https://govbiz-test.vercel.app", "Cookie": "session=test",
                        "Content-Type": "application/json"}
@@ -82,6 +82,19 @@ def main():
             assert [v for k, v in response_headers if k.lower() == "cache-control"] == ["private, no-store"]
             assert len([v for k, v in response_headers if k.lower() == "set-cookie"]) == 2
         assert call("HEAD")[0] == 200
+        # The longer document route must inherit the same authentication and header boundary.
+        document_path = "/api/v1/application-preparations/1/documents"
+        assert call("POST", document_path, secret="")[0] == 403
+        assert call("POST", document_path, secret="forged")[0] == 403
+        assert call("POST", document_path, client_ip="")[0] == 400
+        status, response_headers, data = call("POST", document_path, body='{"expectedRevision":3}')
+        payload = json.loads(data)
+        received = {key.lower(): value for key, value in payload["headers"].items()}
+        assert status == 200 and payload["path"] == document_path and payload["method"] == "POST"
+        assert payload["body"] == '{"expectedRevision":3}'
+        assert received["x-forwarded-for"] == "203.0.113.20" and received["cookie"] == "session=test"
+        assert "x-govbiz-proxy-secret" not in received and "x-govbiz-client-ip" not in received
+        assert [v for k, v in response_headers if k.lower() == "cache-control"] == ["private, no-store"]
         # Core의 대화 snapshot 상한(2,000,000 bytes)을 프록시가 먼저 잘라내면 안 된다.
         large_body = json.dumps({"snapshot": "x" * 2_000_000})
         status, _, data = call("PUT", "/api/v1/chat-conversations/test", body=large_body)

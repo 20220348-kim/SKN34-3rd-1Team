@@ -32,6 +32,7 @@ class ApplicationDocumentService(
     private val details: SupportProgramDetailService,
     private val admission: SupportProgramRequestAdmissionService,
     private val availability: ai.govbiz.core.applicationpreparation.repository.ApplicationFormAvailabilityRepository,
+    private val json: tools.jackson.databind.ObjectMapper,
 ) {
     private fun sha256(bytes: ByteArray) = MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
     private fun fingerprint(source: String, revision: Long, pipeline: String) = sha256("$source:$revision:$pipeline".toByteArray(Charsets.UTF_8))
@@ -92,13 +93,17 @@ class ApplicationDocumentService(
                 throw ApplicationDocumentException("APPLICATION_DOCUMENT_SOURCE_CHANGED", "공식 첨부가 변경되었거나 없어졌습니다. 재분석 완료 후 새 작성을 시작해 주세요.")
             }
         val binding = documentMapping.ensure(manifest, original.bytes, original.format)
-        val inspection = if (original.format.equals("pdf", true)) editor.inspect(original.bytes, "pdf") else null
+        if (facts.any { fact -> binding.bindings.none { it.factId == fact.id } })
+            throw ApplicationDocumentException("APPLICATION_DOCUMENT_UNMAPPED_INPUT", "자동 기입 위치를 확인하지 못한 답변이 있습니다. 원문에서 직접 작성할 항목을 확인해 주세요.")
+        val inspection = if (original.format.lowercase() in setOf("pdf", "hwp")) editor.inspect(original.bytes, original.format) else null
         val result = mcp.generate(ai.govbiz.core.applicationpreparation.client.ai.dto.AiDocumentGenerationRequest(
             sourceBase64 = java.util.Base64.getEncoder().encodeToString(original.bytes),
             sourceSha256 = manifest.attachmentSha256, format = original.format.lowercase(),
             answerRevision = expectedRevision, facts = facts,
             scope = (manifest.formTitle + "\n" + manifest.sections.joinToString("\n") { "${it.key}: ${it.title} | ${it.locator} | ${it.description}" }).take(30000),
-            pdfTargets = inspection?.targets.orEmpty(), pageImages = inspection?.pageImages.orEmpty(),
+            pdfTargets = if (original.format.equals("pdf", true)) inspection?.targets.orEmpty() else emptyList(),
+            hwpTargets = if (original.format.equals("hwp", true)) inspection?.targets.orEmpty() else emptyList(),
+            pageImages = inspection?.pageImages.orEmpty(),
             bindings = binding.bindings, scopeTargetIds = binding.scopeTargetIds, pdfFields = inspection?.pdfFields.orEmpty(),
         ))
         val output = try { java.util.Base64.getDecoder().decode(result.outputBase64) } catch (_: IllegalArgumentException) {
@@ -110,14 +115,31 @@ class ApplicationDocumentService(
             !Regex("[a-f0-9]{64}").matches(result.planHash)) {
             throw ApplicationDocumentException("APPLICATION_DOCUMENT_VALIDATION_FAILED", "원본·입력 버전과 문서 결과가 일치하지 않습니다.")
         }
-        val bytes = if (original.format.equals("pdf", true)) {
+        val bytes = if (original.format.equals("hwp", true)) {
+            if (result.verification["stage"] != "HWPLIB_REQUIRED" || !output.contentEquals(original.bytes))
+                throw ApplicationDocumentException("APPLICATION_DOCUMENT_VALIDATION_FAILED", "HWP 원본과 편집 처리 순서가 일치하지 않습니다.")
+            val plan = try { json.convertValue(result.writePlan, ai.govbiz.core.applicationpreparation.domain.ApplicationDocumentWritePlan::class.java) }
+            catch (error: IllegalArgumentException) { throw ApplicationDocumentException("APPLICATION_DOCUMENT_VALIDATION_FAILED", "HWP 편집 계획을 확인하지 못했습니다.", error) }
+            fun canonical(value: Any?): Any? = when (value) {
+                is Map<*, *> -> value.entries.associate { it.key.toString() to canonical(it.value) }.toSortedMap()
+                is List<*> -> value.map(::canonical)
+                else -> value
+            }
+            if (plan.sourceSha256 != manifest.attachmentSha256 || plan.answerRevision != expectedRevision ||
+                plan.mapVersion != result.mapVersion || plan.mapVersion != binding.mapVersion || plan.planHash != result.planHash ||
+                result.placements.toSet() != plan.operations.filter { it.valueRef != null }.map { ai.govbiz.core.applicationpreparation.domain.ApplicationDocumentPlacement(it.valueRef!!, it.targetId) }.toSet() ||
+                sha256(json.writeValueAsBytes(canonical(result.writePlan.filterKeys { it != "planHash" }))) != result.planHash)
+                throw ApplicationDocumentException("APPLICATION_DOCUMENT_VALIDATION_FAILED", "HWP 편집 계획의 원본·버전·해시가 일치하지 않습니다.")
+            editor.applyHwpPlan(original.bytes, facts, plan, binding.bindings, binding.scopeTargetIds)
+        } else if (original.format.equals("pdf", true)) {
             if (result.verification["stage"] != "PDFBOX_REQUIRED") throw ApplicationDocumentException("APPLICATION_DOCUMENT_VALIDATION_FAILED", "PDF 처리 순서가 일치하지 않습니다.")
             editor.fill(output, "pdf", facts, result.placements)
         } else output
         val format = original.format.lowercase()
         val fileName = manifest.attachmentFileName.replace(Regex("(?i)\\.(hwp|hwpx|pdf).*$"), "").replace(Regex("[\\\\/:*?\"<>|]"), "_").take(430) + "_초안_v$expectedRevision.$format"
         val mediaType = when (format) { "pdf" -> "application/pdf"; "hwpx" -> "application/hwp+zip"; else -> "application/x-hwp" }
-        listOf(files.save(account.id, id, expectedRevision, fileName, mediaType, bytes, manifest.attachmentSha256, result.placements, fingerprint = fingerprint, evidence = mapOf("documentMap" to result.documentMap, "writePlan" to result.writePlan, "verification" to result.verification, "pipelineVersion" to result.pipelineVersion)))
+        val verification = if (format == "hwp") result.verification + mapOf("stage" to "HWPLIB_VERIFIED", "reopened" to true, "outputSha256" to sha256(bytes), "render" to "NOT_RUN") else result.verification
+        listOf(files.save(account.id, id, expectedRevision, fileName, mediaType, bytes, manifest.attachmentSha256, result.placements, fingerprint = fingerprint, evidence = mapOf("documentMap" to result.documentMap, "writePlan" to result.writePlan, "verification" to verification, "pipelineVersion" to result.pipelineVersion)))
         } catch (error: ApplicationDocumentException) {
             if (error.code == "APPLICATION_DOCUMENT_OUTCOME_UNKNOWN") {
                 outcomeUnknown = true

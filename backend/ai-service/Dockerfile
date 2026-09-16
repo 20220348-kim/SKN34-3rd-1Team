@@ -5,6 +5,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends git ca-certific
 RUN git clone https://github.com/chrisryugj/kordoc.git /opt/kordoc && cd /opt/kordoc && git checkout f715573df1712d415604ac949603a00e387cd3d7
 WORKDIR /opt/kordoc
 RUN npm ci --ignore-scripts && npm run build && npm prune --omit=dev --ignore-scripts
+# The pinned upstream lock marks pdfjs-dist as dev-only; pruning removes it.
+# Keep PDF parsing in a separately locked production dependency tree.
+COPY document-tools/kordoc-pdf ./pdf-runtime
+RUN npm ci --prefix pdf-runtime --omit=dev --ignore-scripts && \
+    ln -s ../pdf-runtime/node_modules/pdfjs-dist node_modules/pdfjs-dist && \
+    node --input-type=module -e "await import('pdfjs-dist/legacy/build/pdf.mjs')"
 
 FROM python:3.12-slim-bookworm AS builder
 

@@ -5,6 +5,8 @@ import ai.govbiz.core.applicationpreparation.domain.ApplicationDocumentFact
 import ai.govbiz.core.applicationpreparation.service.exception.ApplicationDocumentException
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.params.ParameterizedTest
+import org.junit.jupiter.params.provider.ValueSource
 import org.springframework.http.MediaType
 import org.springframework.http.converter.json.JacksonJsonHttpMessageConverter
 import org.springframework.test.web.client.MockRestServiceServer
@@ -41,14 +43,15 @@ class ApplicationDocumentMcpClientTest {
         server.verify()
     }
 
-    @Test
-    fun preservesTypedToolFailuresWithoutDocumentText() {
+    @ParameterizedTest
+    @ValueSource(strings = ["APPLICATION_DOCUMENT_OVERFLOW", "APPLICATION_DOCUMENT_FORM_REANALYSIS_REQUIRED", "APPLICATION_DOCUMENT_UNMAPPED_INPUT"])
+    fun preservesTypedToolFailuresWithoutDocumentText(code: String) {
         server.expect(requestTo("http://ai.test/internal/v1/application-preparations/document/generate"))
             .andRespond(withStatus(org.springframework.http.HttpStatus.SERVICE_UNAVAILABLE)
-                .contentType(MediaType.APPLICATION_JSON).body("""{"detail":{"code":"APPLICATION_DOCUMENT_OVERFLOW","documentText":"never expose"}}"""))
+                .contentType(MediaType.APPLICATION_JSON).body("""{"detail":{"code":"$code","documentText":"never expose"}}"""))
         val request = AiDocumentGenerationRequest(sourceBase64 = "", sourceSha256 = "", format = "pdf", answerRevision = 1, facts = emptyList(), scope = "test")
         val error = assertThrows(ApplicationDocumentException::class.java) { client.generate(request) }
-        assertEquals("APPLICATION_DOCUMENT_OVERFLOW", error.code)
+        assertEquals(code, error.code)
         assertFalse(error.message!!.contains("never expose"))
         server.verify()
     }

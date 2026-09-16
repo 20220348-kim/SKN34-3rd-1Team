@@ -2,6 +2,8 @@
 
 [문서 목록](README.md) · [아키텍처 README](architecture/README.md)
 
+신청 문서의 입력칸별 질문 흐름은 공식 첨부 → OpenAI 질문 추출 → native 입력 영역 매핑 → Core 양식 스냅샷 → 질문 UI로 이어진다. 선택 문항의 미지원 위치는 공개 `fields[].documentWritable=false`로 표시하고, 제공된 값을 조용히 생략하지 않는다. 포괄적인 이전 질문의 재분석은 기존 discovery-jobs API를 명시적인 클릭으로 호출하며 기존 작성본·답변을 유지한다. 세부 경계는 [신청 문서 MCP 구조](application-document-mcp-architecture.md)를 참고한다.
+
 현재 production 코드의 서비스 경계와 실행 흐름을 설명합니다. 계층·DI·디자인 패턴은
 [아키텍처 README](architecture/README.md), 기술·버전은 [기술 구성](technology.md),
 완료 기능과 남은 제약은 [구현 현황](implementation-status.md), 환경 설정은
@@ -858,4 +860,4 @@ Discovery 전용 timeout은 model 210초 < AI run 240초 < Core read 270초 < Wo
 
 ## 신청 문서 MCP 파이프라인
 
-생성 경로는 Core의 공식 첨부·소유권·revision 관리와 AI Service의 형식별 MCP 실행을 연결한다. HWP는 내부 Windows 브리지, HWPX는 Hangeul 파일 모드, PDF는 MCP 정리 후 PDFBox AcroForm 처리이다. 기존 직접 HWP/HWPX 편집 코드는 생성 경로에서 호출하지 않는다. 새 fingerprint로 과거 생성 결과와 구분하고 다운로드 이력을 보존한다. 구현 범위와 미지원 구조·검증 상태는 [MCP 구조](application-document-mcp-architecture.md), [설치](application-document-mcp-setup.md), [검증 기록](application-document-mcp-validation.md)를 확인한다.
+생성 경로는 Core의 공식 첨부·소유권·revision 관리와 AI Service의 형식별 MCP 실행을 연결한다. HWP는 Core hwplib의 구조 검사·범위 편집·재열기, HWPX는 Hangeul 파일 모드, PDF는 MCP 정리 후 PDFBox AcroForm 처리이다. AI는 HWP의 hwpTargets를 받아 지도와 계획만 반환하며 Core가 원본·plan hash·revision·bindings/scope를 독립 검증한다. HWP에 Windows·한컴 한글·브리지 설정이 필요하지 않다. 과거 직접 HWPX 편집 경로는 현재 생성에서 사용하지 않는다. 새 fingerprint로 과거 생성 결과와 구분하고 다운로드 이력을 보존한다. 구현 범위와 미지원 구조·검증 상태는 [MCP 구조](application-document-mcp-architecture.md), [설치](application-document-mcp-setup.md), [검증 기록](application-document-mcp-validation.md)를 확인한다.

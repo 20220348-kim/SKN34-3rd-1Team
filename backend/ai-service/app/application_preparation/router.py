@@ -53,9 +53,15 @@ async def generate_document_file(request: Request, service: Annotated[Applicatio
     except (ValidationError, ValueError):
         raise HTTPException(422, detail={"code": "APPLICATION_DOCUMENT_VALIDATION_FAILED"}) from None
     except DocumentError as error:
+        logger.warning("application_document_rejected mode=%s code=%s reason=%s",
+                       "map" if mapping else "generate", error.code, error.reason)
         raise HTTPException(503, detail={"code": error.code}) from None
     except TimeoutError:
-        raise HTTPException(504, detail={"code": "APPLICATION_DOCUMENT_OUTCOME_UNKNOWN"}) from None
+        # Mapping is read-only; an expired mapping request cannot leave an unknown file write.
+        code = "APPLICATION_DOCUMENT_PLAN_TIMEOUT" if mapping else "APPLICATION_DOCUMENT_OUTCOME_UNKNOWN"
+        logger.warning("application_document_rejected mode=%s code=%s reason=REQUEST_DEADLINE",
+                       "map" if mapping else "generate", code)
+        raise HTTPException(504, detail={"code": code}) from None
     except Exception as error:
         logger.warning("application_document_failed type=%s", type(error).__name__)
         raise HTTPException(503, detail={"code": "APPLICATION_DOCUMENT_VALIDATION_FAILED"}) from None

@@ -12,7 +12,7 @@ fun stubDocumentMapping(client: ApplicationDocumentMcpClient, singleTarget: Stri
     val fallback = AiDocumentMappingRequest(sourceBase64 = "", sourceSha256 = "", format = "hwpx", scope = "stub", fields = emptyList())
     `when`(client.map(any(AiDocumentMappingRequest::class.java) ?: fallback)).thenAnswer { invocation ->
         val request = invocation.getArgument<AiDocumentMappingRequest>(0)
-        val bindings = request.fields.mapIndexed { index, field -> ApplicationDocumentPlacement(field.id, singleTarget ?: "mock-target-$index") }
+        val bindings = request.fields.mapIndexed { index, field -> ApplicationDocumentPlacement(field.id, singleTarget ?: request.hwpTargets.filter { it.editable }.getOrNull(index)?.id ?: "mock-target-$index") }
         AiDocumentMappingPayload("application-document-mcp-v1", "b".repeat(64), request.sourceSha256, "native-map-v2", "contract-stub",
             bindings, bindings.map { it.targetId }, mapOf("sourceSha256" to request.sourceSha256,
                 "targets" to bindings.map { mapOf("targetId" to it.targetId, "editable" to true, "currentText" to "") }))

@@ -18,10 +18,11 @@ export async function applicationPreparationRequest<T>(
   signal?.addEventListener('abort', abort, { once: true })
   if (signal?.aborted) controller.abort()
   let timedOut = false
+  // A cold document request runs mapping and generation sequentially (up to 240s each).
   const timer = setTimeout(() => {
     timedOut = true
     abort()
-  }, path.endsWith('/documents') && method === 'POST' ? 120_000 : path.endsWith('/messages') || path.endsWith('/drafts') ? 45_000 : 15_000)
+  }, path.endsWith('/documents') && method === 'POST' ? 660_000 : path.endsWith('/messages') || path.endsWith('/drafts') ? 45_000 : 15_000)
   try {
     const response = await fetch(`${getCoreApiBaseUrl()}/api/v1/application-preparations${path}`, {
       method,

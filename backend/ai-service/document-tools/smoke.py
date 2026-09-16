@@ -42,19 +42,24 @@ async def run(args):
         elif args.format == "pdf":
             async with document_session("pdf", root) as session:
                 text = await session.call("pdf_get_text", {"pdf_path": str(source)})
+                geometry = await session.call("govbiz_pdf_text_regions", {"pdf_path": str(source)})
+                assert geometry["page_count"] == text["page_count"]
                 for page in range(text["page_count"]):
                     await session.call("pdf_get_text_layout", {"pdf_path": str(source), "page": page})
-            print({"initialize": "passed", "tools/list": "passed", "pageReads": text["page_count"], "edited": False})
-        else:
-            async with document_session("hwp", root) as session:
-                result = await session.call("govbiz_hwp_job", {"operation": "inspect", "source_path": str(source), "source_sha256": original_hash})
-            print({"initialize": "passed", "tools/list": "passed", "fieldCount": len(result["documentMap"]["targets"]), "edited": False})
+                    await session.call("pdf_detect_paragraphs", {"pdf_path": str(source), "page": page})
+            async with document_session("kordoc", root) as session:
+                parsed = await session.call("parse_document", {"file_path": str(source), "ocr": False,
+                    "formula_ocr": False, "remove_header_footer": False,
+                    "keep_empty_paragraphs": True, "keep_trailing_empty_cols": True})
+                if not parsed.get("text", "").strip():
+                    raise ValueError("Auxiliary PDF parser returned no text")
+            print({"initialize": "passed", "tools/list": "passed", "pageReads": text["page_count"], "auxiliaryRead": "passed", "edited": False})
         assert digest(source.read_bytes()) == original_hash
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--format", choices=["hwp", "hwpx", "pdf"], required=True)
+    parser.add_argument("--format", choices=["hwpx", "pdf"], required=True)
     parser.add_argument("--fixture", type=Path, required=True)
     parser.add_argument("--target", help="Manually reviewed HWPX native target (never a hardcoded production locator)")
     parser.add_argument("--output", type=Path)

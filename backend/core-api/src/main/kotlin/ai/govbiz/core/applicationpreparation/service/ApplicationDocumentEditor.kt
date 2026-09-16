@@ -50,11 +50,7 @@ class ApplicationDocumentEditor {
         when (format.lowercase()) {
             "hwp" -> {
                 val file = HWPReader.fromInputStream(bytes.inputStream())
-                val entries = hwpTargets(file)
-                val locations = entries.map { it.first to it.second.normalString }
-                ApplicationDocumentInspection(entries.mapIndexed { i, (id, paragraph) ->
-                    ApplicationDocumentTarget(id, paragraph.normalString.take(2000), locatedContext(locations, i), hwpExample(file, paragraph).take(2000))
-                } + hwpChoices(file).map { ApplicationDocumentTarget(it.id, it.caption, it.context.take(1000), kind = "CHECKBOX", groupId = it.group) })
+                ApplicationDocumentInspection(inspectHwp(file))
             }
             "hwpx" -> {
                 val archive = readZip(bytes)
@@ -276,6 +272,131 @@ class ApplicationDocumentEditor {
             require(clearExampleTargetIds.all { written[it]?.exampleText?.isBlank() == true })
         }
         output
+    }
+
+    /** Applies only a validated, question-bound plan to an in-memory copy; never uses COM or a host process. */
+    fun applyHwpPlan(bytes: ByteArray, facts: List<ApplicationDocumentFact>, plan: ApplicationDocumentWritePlan,
+                     bindings: List<ApplicationDocumentPlacement>, scopeTargetIds: List<String>): ByteArray = safely {
+        require(bytes.size in 1..MAX_BYTES && facts.size in 1..200 && plan.operations.size in 1..600)
+        require(plan.unresolvedTargets.isEmpty())
+        val sourceHash = java.security.MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
+        require(sourceHash == plan.sourceSha256)
+        val file = HWPReader.fromInputStream(bytes.inputStream())
+        val locations = hwpLocations(file)
+        val originalText = locations.associate { it.id to hwpText(it.paragraph) }
+        val binaryData = file.binData.embeddedBinaryDataList.associate { it.name to it.data.copyOf() }
+        val cellLayout = locations.map { location -> location.id to location.cell?.listHeader?.let {
+            listOf(it.rowIndex.toLong(), it.colIndex.toLong(), it.rowSpan.toLong(), it.colSpan.toLong(), it.width)
+        } }
+        val targets = inspectHwp(file).associateBy { it.id }
+        val paragraphs = hwpTargets(file).toMap()
+        val choices = hwpChoices(file)
+        val expectedChecks = choices.associate { it.id to it.value.value }.toMutableMap()
+        val expectedText = originalText.toMutableMap()
+        val values = facts.associateBy { it.id }
+        require(values.size == facts.size && facts.all { it.value.isNotEmpty() && it.value.length <= 2000 })
+        require(plan.scopeTargetIds.distinct().size == plan.scopeTargetIds.size && plan.scopeTargetIds.all { it in scopeTargetIds && it in targets })
+        val expectedBindings = bindings.filter { it.factId in values }.map { it.factId to it.targetId }
+        val actualBindings = plan.operations.filter { it.valueRef != null }.map { it.valueRef!! to it.targetId }
+        require(expectedBindings.isNotEmpty() && expectedBindings.distinct().size == expectedBindings.size)
+        require(actualBindings.distinct().size == actualBindings.size && actualBindings.toSet() == expectedBindings.toSet())
+        require(actualBindings.map { it.first }.toSet() == values.keys && bindings.all { it.box == null })
+        plan.operations.forEach { op ->
+            val target = requireNotNull(targets[op.targetId])
+            require(target.editable && op.targetId in plan.scopeTargetIds && op.expectedText == target.text)
+            require(op.box == null && op.stylePolicy == "preserve" && op.reason.isNotBlank())
+            require(op.start >= 0 && op.end >= op.start && op.end <= target.text.length)
+            if (op.operation == "delete_range") require(op.valueRef == null && op.end > op.start)
+            else require(op.valueRef in values)
+            if (target.kind == "CHECKBOX") {
+                require(op.operation == "set_check" && op.start == 0 && op.end == target.text.length)
+                require(values.getValue(op.valueRef!!).value.trim() == target.text.trim())
+            } else {
+                require(op.operation in setOf("input", "replace_range", "delete_range"))
+                if (op.operation == "input") require(target.text.isBlank() && op.start == op.end)
+            }
+        }
+        val selected = plan.operations.filter { targets.getValue(it.targetId).kind == "CHECKBOX" }
+        selected.groupBy { op -> choices.single { it.id == op.targetId }.group }.forEach { (group, operations) ->
+            require(operations.size == 1)
+            val members = choices.filter { it.group == group }
+            require(members.all { it.id in plan.scopeTargetIds })
+            members.forEach { choice ->
+                val value = if (choice.id == operations.single().targetId) "1" else "0"
+                choice.value.value = value
+                expectedChecks[choice.id] = value
+            }
+        }
+        val changed = mutableSetOf<Paragraph>()
+        plan.operations.filterNot { it in selected }.groupBy { it.targetId }.forEach { (id, operations) ->
+            val paragraph = requireNotNull(paragraphs[id])
+            val ordered = operations.sortedBy { it.start }
+            require(ordered.zipWithNext().all { (a, b) -> a.start != b.start && a.end <= b.start })
+            var text = originalText.getValue(id)
+            operations.sortedByDescending { it.start }.forEach { op ->
+                val value = if (op.operation == "delete_range") "" else values.getValue(op.valueRef!!).value.replace("\r\n", "\n")
+                require(value.none { Character.isSurrogate(it) || (it.code < 32 && it != '\n') })
+                replaceHwpRange(file, paragraph, op.start, op.end, value)
+                text = text.substring(0, op.start) + value + text.substring(op.end)
+            }
+            require(hwpText(paragraph) == text)
+            expectedText[id] = text
+            changed += paragraph
+        }
+        reflowHwp(file, locations, changed)
+        val output = ByteArrayOutputStream().also { HWPWriter.toStream(file, it) }.toByteArray()
+        require(output.size in 1..MAX_BYTES)
+        val reopened = HWPReader.fromInputStream(output.inputStream())
+        // Verify every visited paragraph and choice, including those outside the selected form.
+        require(hwpLocations(reopened).associate { it.id to hwpText(it.paragraph) } == expectedText)
+        require(hwpChoices(reopened).associate { it.id to it.value.value } == expectedChecks)
+        require(reopened.bodyText.sectionList.size == file.bodyText.sectionList.size)
+        require(reopened.docInfo.paraShapeList.size == file.docInfo.paraShapeList.size)
+        require(hwpLocations(reopened).map { location -> location.id to location.cell?.listHeader?.let {
+            listOf(it.rowIndex.toLong(), it.colIndex.toLong(), it.rowSpan.toLong(), it.colSpan.toLong(), it.width)
+        } } == cellLayout)
+        val reopenedBinary = reopened.binData.embeddedBinaryDataList.associate { it.name to it.data }
+        require(reopenedBinary.keys == binaryData.keys && binaryData.all { (name, data) -> data.contentEquals(reopenedBinary[name]) })
+        output
+    }
+
+    private fun hwpText(paragraph: Paragraph): String = paragraph.text?.charList?.joinToString("") { char ->
+        val code = char.code and 0xffff
+        when { code == 10 -> "\n"; code >= 32 -> code.toChar().toString(); else -> "" }
+    }.orEmpty()
+
+    private fun inspectHwp(file: HWPFile): List<ApplicationDocumentTarget> {
+        val entries = hwpTargets(file)
+        val contexts = entries.map { it.first to hwpText(it.second) }
+        return entries.mapIndexed { i, (id, paragraph) ->
+            val text = hwpText(paragraph)
+            val chars = paragraph.text?.charList.orEmpty()
+            val supported = text.length <= 6000 && text.none { Character.isSurrogate(it) } &&
+                paragraph.rangeTag?.rangeTagItemList.isNullOrEmpty() &&
+                chars.withIndex().all { (index, char) -> char.charSize == 1 &&
+                    ((char.code and 0xffff) >= 32 || char.code == 10 || (char.code == 13 && index == chars.lastIndex)) }
+            ApplicationDocumentTarget(id, text.take(6000), locatedContext(contexts, i), hwpExample(file, paragraph).take(2000),
+                editable = supported, unsupportedReason = if (supported) null else "UNSUPPORTED_TEXT_CONTROLS_OR_OFFSETS")
+        } + hwpChoices(file).map { ApplicationDocumentTarget(it.id, it.caption, it.context.take(1000), kind = "CHECKBOX", groupId = it.group) }
+    }
+
+    private fun replaceHwpRange(file: HWPFile, paragraph: Paragraph, start: Int, end: Int, value: String) {
+        if (paragraph.text == null) paragraph.createText()
+        if (paragraph.charShape == null) paragraph.createCharShape()
+        val pairs = paragraph.charShape.positonShapeIdPairList
+        val styles = paragraph.text.charList.indices.map { offset -> pairs.lastOrNull { it.position <= offset }?.shapeId ?: 0L }.toMutableList()
+        val priorStyle = pairs.lastOrNull { it.position <= start }?.shapeId ?: 0L
+        val answerStyle = if (value.isEmpty()) priorStyle else file.docInfo.charShapeList.size.toLong().also {
+            file.docInfo.charShapeList.add(file.docInfo.charShapeList[priorStyle.toInt()].clone().also { shape -> shape.charColor.value = 0 })
+        }
+        repeat(end - start) { paragraph.text.charList.removeAt(start); styles.removeAt(start) }
+        if (value.isNotEmpty()) {
+            paragraph.text.insertString(start, value)
+            styles.addAll(start, List(value.length) { answerStyle })
+        }
+        while (styles.size < paragraph.text.charList.size) styles.add(priorStyle)
+        pairs.clear()
+        styles.forEachIndexed { offset, style -> if (offset == 0 || style != styles[offset - 1]) paragraph.charShape.addParaCharShape(offset.toLong(), style) }
     }
 
     private data class HwpLocation(val id: String, val paragraph: Paragraph, val cell: Cell?, val table: ControlTable?, val tableId: String)
