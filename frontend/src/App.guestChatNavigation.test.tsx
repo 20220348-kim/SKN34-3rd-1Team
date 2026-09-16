@@ -170,7 +170,7 @@ describe('비로그인 대화의 화면 이동 수명', () => {
     expectEmptyConversation(store)
   })
 
-  it('로그인 사용자가 검색 중에 다른 메뉴로 가면 사이드바 아래 고정 패널이 검색 중인 대화를 알리고 결과가 오면 도착 건수로 바뀐다', async () => {
+  it('로그인 사용자가 검색 중에 다른 메뉴로 가도 계정 위에 상태 패널을 표시하지 않고 검색과 결과 복귀를 유지한다', async () => {
     let complete!: (response: Response) => void
     const pending = new Promise<Response>((resolve) => { complete = resolve })
     const fetchMock = vi.fn().mockResolvedValueOnce(json(readyConversationProposal(context))).mockReturnValueOnce(pending)
@@ -183,27 +183,28 @@ describe('비로그인 대화의 화면 이동 수명', () => {
     await act(async () => fireEvent.click(screen.getByRole('button', { name: '이 조건으로 검색' })))
 
     const sidebar = () => screen.getByRole('complementary', { name: '작업 사이드바' })
-    const panel = () => within(sidebar()).getByRole('status', { name: '검색 상태' })
+    expect(within(sidebar()).queryByRole('status', { name: '검색 상태' })).toBeNull()
+    const signal = fetchMock.mock.calls.at(-1)![1].signal as AbortSignal
     await act(async () => fireEvent.click(within(sidebar()).getByRole('link', { name: /파트너 관리/ })))
-    expect(panel().textContent).toContain('검색 중')
-    expect(panel().textContent).toContain(originalMessage)
-    expect(panel().querySelector('[data-activity="pending"]')).toBeTruthy()
+    expect(within(sidebar()).queryByRole('status', { name: '검색 상태' })).toBeNull()
+    expect(signal.aborted).toBe(false)
+    expect(store.getState().chat.searchStatus).toBe('pending')
 
     await act(async () => {
       complete(json(completeSearchResult({ query: context.query, programs: [program] })))
       await pending
     })
-    expect(panel().textContent).toContain('결과 1건 도착')
-    expect(panel().querySelector('[data-activity="done"]')).toBeTruthy()
+    expect(within(sidebar()).queryByRole('status', { name: '검색 상태' })).toBeNull()
+    expect(store.getState().chat.unseenOutcome).toBe('search-succeeded')
     expect(screen.getByRole('status', { name: '검색 알림' })).toBeTruthy()
 
     fireEvent.click(within(screen.getByRole('status', { name: '검색 알림' })).getByRole('button', { name: '닫기' }))
     expect(screen.queryByRole('status', { name: '검색 알림' })).toBeNull()
-    expect(panel().textContent).toContain('결과 1건 도착')
-
-    // 패널의 "보기"는 결과가 있는 현재 대화를 열고, 보고 나면 패널이 사라집니다.
-    fireEvent.click(within(panel()).getByRole('link', { name: '보기' }))
+    // 도착 알림을 닫아도 기존 사이드바 링크로 돌아와 결과를 확인할 수 있습니다.
+    fireEvent.click(within(sidebar()).getByRole('link', { name: 'GovBiz' }))
     expect(screen.getByRole('heading', { name: program.title })).toBeTruthy()
+    expect(store.getState().chat.unseenOutcome).toBeNull()
+    expect(fetchMock).toHaveBeenCalledTimes(2)
     expect(within(sidebar()).queryByRole('status', { name: '검색 상태' })).toBeNull()
   })
 

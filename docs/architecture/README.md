@@ -182,7 +182,7 @@ Immer로 처리하는 갱신 방식이며 View나 HTTP 코드가 Store 상태를
 `main.tsx`의 Redux `Provider`가 Store를 화면 트리에 연결하고 Selector가 필요한 상태를 읽습니다.
 요청 ID를 비교해 이전 요청의 늦은 결과를 무시합니다. 직렬화할 수 없는 `AbortController`와 타이머는 Store 상태가 아니라
 Store를 만들 때 thunk extraArgument로 넣는 `ChatRequestRegistry`가 보관합니다. 화면 컴포넌트가 아니라 Store와 수명이 같으므로
-다른 메뉴로 이동해도 요청이 끊기지 않고, 결과는 Redux로 돌아와 사이드바 진행 패널·헤더 칩·도착 알림(`presentation/shared/chat-activity`)이
+다른 메뉴로 이동해도 요청이 끊기지 않고, 결과는 Redux로 돌아와 대화 기록의 상태 점·헤더 칩·도착 알림(`presentation/shared/chat-activity`)이
 Selector로 읽어 보여 줍니다. 요청을 끊는 경우는 로그아웃(App 수준 `useChatRequestLifecycle`)·취소 버튼·시간 초과, 그리고
 확인 대화상자에서 계속을 누른 새 대화·다른 대화 열기뿐입니다.
 

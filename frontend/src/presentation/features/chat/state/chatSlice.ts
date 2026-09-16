@@ -365,11 +365,6 @@ export const selectChatActivity = createSelector(
     return null
   },
 )
-/** 사이드바 진행 패널에 보여 줄 현재 대화 제목입니다. 대화 기록의 제목과 같은 첫 질문 본문입니다. */
-export const selectChatConversationTitle = createSelector(
-  [selectChatMessages],
-  (messages): string | null => messages.find((message) => message.role === 'user')?.text ?? null,
-)
 export const selectConversationCount = createSelector(
   [selectChatMessages],
   (messages) => messages.filter((message) => message.role === 'user').length,
