@@ -5,7 +5,13 @@ function classes(...groups: string[]) {
 // 색상이나 CSS 속성이 아니라 앱 최상단 헤더에서 맡는 UI 역할을 이름으로 사용합니다.
 export const appHeaderStyles = {
   /** 검색 화면 밖에서 진행 중인 검색·새 결과를 알리는 작은 칩입니다. */
-  activityChip: 'inline-flex items-center gap-1.5 rounded-full border border-brand-accent bg-brand-accent/40 px-3 py-1 text-xs font-semibold text-brand-primary no-underline hover:bg-brand-accent',
+  activityChip: 'inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border border-brand-accent bg-brand-accent/40 px-3 py-1 text-xs font-semibold text-brand-primary no-underline hover:bg-brand-accent',
+  // 공개 헤더에서는 가운데 정렬된 이동 경로 묶음의 바로 왼쪽에 겹쳐 놓아, 칩이 생기고 사라져도 경로가 밀리지 않습니다.
+  // 경로가 다음 줄로 내려가는 좁은 화면에서는 줄 맨 앞에 보통 항목으로 둡니다.
+  landingActivityChip: classes(
+    'inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border border-brand-accent bg-brand-accent/40 px-3 py-1 text-xs font-semibold text-brand-primary no-underline hover:bg-brand-accent',
+    'absolute right-full top-1/2 mr-4 -translate-y-1/2 max-[900px]:static max-[900px]:mr-0 max-[900px]:translate-y-0',
+  ),
   // 헤더 알약을 감싸는 고정 껍데기입니다. 문서가 스크롤되는 공개 화면에서 알약 위 여백으로 본문이 비치던 것을 배경으로 가립니다.
   // 스크롤이 없는 채팅 화면에서는 흰 배경 위의 흰 띠라 보이지 않습니다.
   shell: 'sticky top-0 z-[5] shrink-0 bg-white pt-5 min-[640px]:pt-6',
@@ -20,8 +26,9 @@ export const appHeaderStyles = {
   landingBrandMark: 'grid size-9 shrink-0 place-items-center rounded-full bg-brand-accent text-[1.1rem] font-black text-brand-primary max-[400px]:size-8',
   landingBrandTitle: 'block text-[1.25rem] font-extrabold tracking-[-0.055em] max-[400px]:text-[1.05rem]',
   landingNav: 'contents',
+  // 경로 묶음은 내용 너비만큼만 차지하고 가운데에 놓여, 왼쪽에 겹쳐 두는 칩이 로고와 겹치지 않고 첫 경로 바로 옆에 붙습니다.
   landingNavLinks: classes(
-    'flex min-w-0 flex-wrap items-center justify-center gap-x-5 gap-y-1',
+    'relative flex w-fit max-w-full flex-wrap items-center justify-center justify-self-center gap-x-5 gap-y-1',
     'max-[900px]:col-span-2 max-[900px]:row-start-2 max-[900px]:gap-x-4',
   ),
   landingNavLink: classes(

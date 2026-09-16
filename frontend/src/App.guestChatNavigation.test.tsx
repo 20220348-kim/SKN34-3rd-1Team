@@ -56,10 +56,11 @@ afterEach(() => {
 })
 
 describe('비로그인 대화의 화면 이동 수명', () => {
-  it.each(['메뉴 링크', '브라우저 뒤로가기'] as const)('파트너 모집에서 %s로 돌아오면 대화·결과·조건·초안을 비우고 새 맥락으로 시작한다', async (returnMethod) => {
+  it.each(['메뉴 링크', '브라우저 뒤로가기'] as const)('파트너 모집에서 %s로 돌아오면 대화·결과·조건·초안을 그대로 이어 보고 같은 맥락으로 다음 질문을 보낸다', async (returnMethod) => {
     const fetchMock = vi.fn().mockResolvedValue(json(readyConversationProposal(seoulConversationContext)))
     vi.stubGlobal('fetch', fetchMock)
     const store = seededConversationStore()
+    const previous = store.getState().chat
     renderApp(store)
     expect(screen.getByText(originalMessage, { selector: 'div' })).toBeTruthy()
     expect(screen.getByRole('heading', { name: program.title })).toBeTruthy()
@@ -67,8 +68,10 @@ describe('비로그인 대화의 화면 이동 수명', () => {
     await act(async () => fireEvent.click(within(screen.getByRole('navigation', { name: '화면 이동' }))
       .getByRole('link', { name: '파트너 모집' })))
 
+    // 비로그인 대화는 탭 세션 동안 남습니다. 결과를 이미 봤으므로 헤더 칩·알림은 없습니다.
     expect(screen.getByRole('heading', { name: '함께 신청할 기업 찾기' })).toBeTruthy()
-    expectEmptyConversation(store)
+    expect(store.getState().chat).toEqual(previous)
+    expect(screen.queryByRole('status', { name: /진행 중|도착/ })).toBeNull()
     if (returnMethod === '메뉴 링크') {
       fireEvent.click(within(screen.getByRole('navigation', { name: '화면 이동' }))
         .getByRole('link', { name: '지원사업 찾기' }))
@@ -76,14 +79,18 @@ describe('비로그인 대화의 화면 이동 수명', () => {
       fireEvent.click(screen.getByRole('button', { name: '브라우저 뒤로가기' }))
     }
 
-    expectEmptyChatScreen()
-    const input = screen.getByRole('textbox', { name: '지원사업 검색어' })
+    expect(screen.getByText(originalMessage, { selector: 'div' })).toBeTruthy()
+    expect(screen.getByRole('heading', { name: program.title })).toBeTruthy()
+    const input = screen.getByRole('textbox', { name: '지원사업 검색어' }) as HTMLTextAreaElement
+    expect(input.value).toBe(unsentDraft)
     fireEvent.change(input, { target: { value: '수출 지원사업 찾아줘' } })
     await act(async () => fireEvent.submit(input.closest('form')!))
     expect(fetchMock).toHaveBeenCalledOnce()
-    expect(JSON.parse(String(fetchMock.mock.calls[0]![1].body))).toEqual({
-      message: '수출 지원사업 찾아줘', context: emptyConversationContext, pendingClarification: null,
-    })
+    // 다음 질문은 이어 온 확정 조건과 최근 검색 요약을 함께 보냅니다.
+    const body = JSON.parse(String(fetchMock.mock.calls[0]![1].body))
+    expect(body.message).toBe('수출 지원사업 찾아줘')
+    expect(body.context.query).toBe(context.query)
+    expect(body.lastSearch).toMatchObject({ resultCount: 1 })
   })
 
   it('로그인한 사용자는 파트너 모집에서 로고로 돌아오면 기존 대화·결과·조건·초안을 유지한다', async () => {
@@ -141,7 +148,7 @@ describe('비로그인 대화의 화면 이동 수명', () => {
     // 요청은 살아 있고 대화도 남아 있습니다. 검색은 헤더가 진행 중임을 알리고, 몇 초면 끝나는 조건 해석은 도착할 때만 알립니다.
     expect(signal.aborted).toBe(false)
     expect(store.getState().chat.messages.some((message) => message.text === originalMessage)).toBe(true)
-    if (phase === 'search') expect(screen.getByRole('status', { name: '지원사업 검색 진행 중' })).toBeTruthy()
+    if (phase === 'search') expect(screen.getByRole('status', { name: '검색 진행 중' })).toBeTruthy()
     else expect(screen.queryByRole('status', { name: /진행 중/ })).toBeNull()
     expect(screen.queryByRole('status', { name: '검색 알림' })).toBeNull()
 
@@ -164,10 +171,16 @@ describe('비로그인 대화의 화면 이동 수명', () => {
     else expect(screen.getByRole('button', { name: '이 조건으로 검색' })).toBeTruthy()
     expect(fetchMock).toHaveBeenCalledTimes(phase === 'search' ? 2 : 1)
 
-    // 결과를 본 뒤 다시 나가면 비로그인 대화는 예전처럼 비웁니다.
+    // 결과를 본 뒤 다시 나가도 비로그인 대화는 탭 세션 동안 남아, 돌아오면 그대로 이어 봅니다.
+    const seen = store.getState().chat
     await act(async () => fireEvent.click(within(screen.getByRole('navigation', { name: '화면 이동' }))
       .getByRole('link', { name: '파트너 모집' })))
-    expectEmptyConversation(store)
+    expect(store.getState().chat).toEqual(seen)
+    expect(screen.queryByRole('status', { name: /진행 중|도착/ })).toBeNull()
+    await act(async () => fireEvent.click(within(screen.getByRole('navigation', { name: '화면 이동' }))
+      .getByRole('link', { name: '지원사업 찾기' })))
+    if (phase === 'search') expect(screen.getByRole('heading', { name: program.title })).toBeTruthy()
+    else expect(screen.getByRole('button', { name: '이 조건으로 검색' })).toBeTruthy()
   })
 
   it('로그인 사용자가 검색 중에 다른 메뉴로 가도 계정 위에 상태 패널을 표시하지 않고 검색과 결과 복귀를 유지한다', async () => {
@@ -271,7 +284,7 @@ describe('비로그인 대화의 화면 이동 수명', () => {
     expect((screen.getByRole('textbox', { name: '지원사업 검색어' }) as HTMLTextAreaElement).value).toBe(unsentDraft)
   })
 
-  it('공고 상세에서는 대화를 유지하고 요금제로 나간 뒤 상세를 거쳐 돌아오면 초기화한다', async () => {
+  it('공고 상세와 요금제를 거쳐 돌아와도 비로그인 대화·결과·초안을 유지한다', async () => {
     const store = seededConversationStore()
     const previous = store.getState().chat
     renderApp(store)
@@ -280,11 +293,12 @@ describe('비로그인 대화의 화면 이동 수명', () => {
     expect(store.getState().chat).toEqual(previous)
 
     fireEvent.click(within(screen.getByRole('navigation', { name: '화면 이동' })).getByRole('link', { name: '요금제' }))
-    expectEmptyConversation(store)
+    expect(store.getState().chat).toEqual(previous)
     await act(async () => fireEvent.click(screen.getByRole('button', { name: '브라우저 뒤로가기' })))
     fireEvent.click(screen.getByRole('link', { name: '← 검색 결과로 돌아가기' }))
-    expectEmptyChatScreen()
-    expectEmptyConversation(store)
+    expect(screen.getByRole('heading', { name: program.title })).toBeTruthy()
+    expect((screen.getByRole('textbox', { name: '지원사업 검색어' }) as HTMLTextAreaElement).value).toBe(unsentDraft)
+    expect(store.getState().chat).toEqual(previous)
   })
 })
 
@@ -323,18 +337,6 @@ function renderApp(store: AppStore, path = '/', strict = false) {
 function BrowserHistoryControls() {
   const navigate = useNavigate()
   return <button type="button" onClick={() => void navigate(-1)}>브라우저 뒤로가기</button>
-}
-
-function expectEmptyConversation(store: AppStore) {
-  expect(store.getState().chat).toMatchObject({
-    accountEmail: null, activeRequestId: null, draft: '', confirmedSearch: null,
-    conversationQuery: null, pendingClarification: null, interpretation: { status: 'idle' },
-    searchOptions: { acceptingOnly: true }, searchStatus: 'idle', searchError: null,
-  })
-  expect(store.getState().chat.searchOptions.companyConditions).toBeUndefined()
-  expect(store.getState().chat.messages).toHaveLength(1)
-  expect(store.getState().chat.messages[0]).toMatchObject({ role: 'assistant' })
-  expect(store.getState().chat.messages[0]!.programs).toBeUndefined()
 }
 
 function expectEmptyChatScreen() {
