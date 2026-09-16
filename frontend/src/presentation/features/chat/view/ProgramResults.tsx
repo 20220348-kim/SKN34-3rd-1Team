@@ -5,25 +5,31 @@ import type { SupportProgram, SupportProgramEligibilityAxis } from '../../../../
 import { loginPathFor, signupPathFor } from '../../../shared/auth/returnPath'
 import { appPaths, isAppPath, supportProgramDetailPath } from '../../../shared/routes/appPaths'
 import { getSupportProgramEligibilityKind } from '../supportProgramEligibility'
+import { searchResultInterestKey, searchResultInterestMessages, type SearchResultInterests } from '../viewmodel/useSearchResultInterests'
 import { chatPageStyles } from './ChatPage.styles'
 
 // 초안 입력 중에도 Redux가 보존하는 검색 결과 배열은 카드 전체를 다시 렌더하지 않습니다.
-export const ProgramResults = memo(function ProgramResults({ programs, totalCount = programs.length, resultToken = null }: {
+export const ProgramResults = memo(function ProgramResults({ programs, totalCount = programs.length, resultToken = null, interests = null }: {
   programs: SupportProgram[]
   totalCount?: number
   resultToken?: string | null
+  interests?: SearchResultInterests | null
 }) {
   const lockedCount = resultToken ? Math.max(0, totalCount - programs.length) : 0
   const returnTo = `${appPaths.chat}?searchResult=${encodeURIComponent(resultToken ?? '')}`
   return (
     <section aria-label="지원사업 검색 결과" data-search-results>
-      <h2 className={chatPageStyles.resultSectionTitle}>검색 결과 · {lockedCount ? `${totalCount}건 중 ${programs.length}건 공개` : `${programs.length}건`}</h2>
-      <p className={chatPageStyles.conditionsHint}>
-        검색 결과의 순서를 유지합니다. 관련도와 신청 자격은 다르며, 각 공고의 조건 확인·확인 필요 표시를 확인하세요.
-      </p>
+      {interests?.phase === 'failed' ? (
+        <div className={chatPageStyles.interestError} role="alert">
+          {searchResultInterestMessages.loadFailed}{' '}
+          <button type="button" className="cursor-pointer underline underline-offset-2" onClick={interests.retry}>
+            관심 상태 다시 불러오기
+          </button>
+        </div>
+      ) : null}
       <div className={chatPageStyles.programList}>
         {programs.map((program) => (
-          <ProgramCard key={`${program.sourceCode}:${program.id}`} program={program} />
+          <ProgramCard key={searchResultInterestKey({ sourceCode: program.sourceCode, sourceProgramId: program.id })} program={program} interests={interests} />
         ))}
       </div>
       {lockedCount > 0 ? (
@@ -67,25 +73,46 @@ export const ProgramResults = memo(function ProgramResults({ programs, totalCoun
   )
 })
 
-function ProgramCard({ program }: { program: SupportProgram }) {
+function ProgramCard({ program, interests }: { program: SupportProgram; interests: SearchResultInterests | null }) {
   const { pathname } = useLocation()
   const inApp = isAppPath(pathname)
   const searchReturnTo = inApp ? appPaths.chat : '/'
   const review = program.eligibilityReview
   const eligibilityKind = getSupportProgramEligibilityKind(program)
+  const identity = { sourceCode: program.sourceCode, sourceProgramId: program.id }
+  const interestKey = searchResultInterestKey(identity)
+  const isSaved = interests?.savedKeys.has(interestKey) ?? false
+  const isSaving = interests?.pendingKeys.has(interestKey) ?? false
+  const saveLabel = isSaved ? '관심 공고 저장됨' : '관심 공고 저장'
   return (
     <article className={chatPageStyles.programCard}>
       <div className={chatPageStyles.programCardHeader}>
-        <span className={eligibilityKind === 'matched' ? chatPageStyles.programTag : chatPageStyles.reviewRequiredTag}>
-          {eligibilityKind === 'matched' ? '조건 확인 · API 본문 기준'
-            : eligibilityKind === 'unevaluated' ? '자격 미평가'
-              : review ? '확인 필요' : '자격 판정 없음 · 확인 필요'}
-        </span>
+        <div className={chatPageStyles.programBadges}>
+          {interests ? (
+            <button type="button" className={chatPageStyles.interestButton}
+              aria-label={saveLabel} title={isSaved ? '관심 공고 해제' : '관심 공고 저장'}
+              aria-pressed={isSaved} aria-busy={interests.phase === 'loading' || isSaving}
+              disabled={interests.phase !== 'ready' || isSaving}
+              onClick={() => void interests.toggle(identity)}>
+              <svg width="15" height="15" viewBox="0 0 24 24" fill={isSaved ? 'currentColor' : 'none'}
+                stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
+                <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
+              </svg>
+              관심
+            </button>
+          ) : null}
+          <span className={eligibilityKind === 'matched' ? chatPageStyles.programTag : chatPageStyles.reviewRequiredTag}>
+            {eligibilityKind === 'matched' ? '조건 확인 · API 본문 기준'
+              : eligibilityKind === 'unevaluated' ? '자격 미평가'
+                : review ? '확인 필요' : '자격 판정 없음 · 확인 필요'}
+          </span>
+        </div>
         <span className={chatPageStyles.programDeadline}>
           {{ OPEN: '접수 중', UPCOMING: '접수 예정', CLOSED: '접수 마감', UNKNOWN: '상태 확인 필요' }[program.status]} ·{' '}
           {formatApplicationDeadline(program)}
         </span>
       </div>
+      {interests?.errors[interestKey] ? <p role="alert" className={chatPageStyles.interestError}>{interests.errors[interestKey]}</p> : null}
       <h2 className={chatPageStyles.programTitle}>
         {program.title}
       </h2>

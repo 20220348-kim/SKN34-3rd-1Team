@@ -32,6 +32,8 @@ const restored = { query: seoulConversationContext.query, context: seoulConversa
   programs: originals, totalCount: originals.length, resultToken: null, expiresAt: null }
 
 beforeEach(() => {
+  // 관심 조회는 별도 검증하며, 여기서는 검색·검색 결과 복원 요청 횟수만 확인합니다.
+  vi.spyOn(appContainer.resolve('browseSavedSupportProgramsUseCase'), 'execute').mockResolvedValue([])
   vi.stubGlobal('fetch', vi.fn().mockResolvedValue(Response.json(restored)))
   vi.spyOn(appContainer.resolve('signUpUseCase'), 'execute').mockResolvedValue({
     outcome: 'session', session: { account, expiresAt: '2026-12-01T00:00:00+09:00' },
@@ -121,7 +123,7 @@ describe('회원 검색에 도착한 비회원 미리보기의 전체 공개', (
     const fetchMock = vi.fn().mockResolvedValue(Response.json(limited))
     vi.stubGlobal('fetch', fetchMock)
     await startSearch(null)
-    expect(await screen.findByRole('heading', { name: '검색 결과 · 5건 중 2건 공개' })).toBeTruthy()
+    expect(await screen.findByRole('heading', { name: '추가 지원사업 3건이 있어요' })).toBeTruthy()
     expect(screen.getAllByRole('link', { name: '상세 조건 보기' })).toHaveLength(2)
     expect(fetchMock).toHaveBeenCalledOnce()
   })
@@ -130,7 +132,8 @@ describe('회원 검색에 도착한 비회원 미리보기의 전체 공개', (
     const fetchMock = vi.fn().mockResolvedValue(Response.json(restored))
     vi.stubGlobal('fetch', fetchMock)
     await startSearch(account)
-    await screen.findByRole('heading', { name: '검색 결과 · 5건' })
+    await screen.findByRole('region', { name: '지원사업 검색 결과' })
+    expect(screen.getAllByRole('link', { name: '상세 조건 보기' })).toHaveLength(5)
     expect(fetchMock).toHaveBeenCalledOnce()
   })
 

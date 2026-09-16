@@ -28,6 +28,8 @@ vi.mock('./presentation/features/chat/hooks/useSupportProgramSearchReadiness', (
 ))
 
 beforeEach(() => {
+  // 로그인 검색 결과의 관심 상태 조회가 검색·상세의 순차 fetch 대역을 소비하지 않게 경계를 분리합니다.
+  vi.spyOn(appContainer.resolve('browseSavedSupportProgramsUseCase'), 'execute').mockResolvedValue([])
   // 기존 검색·상세 회귀는 해석만 대역으로 두고 실제 확인 버튼을 눌러 검색합니다.
   vi.spyOn(appContainer.resolve('interpretSupportProgramConversationUseCase'), 'execute')
     .mockImplementation(async ({ message, context }) => readyConversationProposal({ ...context, query: message.trim() }))

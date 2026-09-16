@@ -177,7 +177,13 @@ Redux `receivedProposals` slice와 `useReceivedProposals`(계정당 한 번 조�
 없는 `recruitmentId`는 다른 모집글로 대체하지 않고 "찾을 수 없습니다"로 보여 줍니다.
 공개 파트너 모집 화면은 `presentation/features/public-partner-recruitment`에 따로 두어 매칭·제안 폼 없이 읽기만 제공하고,
 두 파트너 feature가 함께 쓰는 조회 훅과 표시 helper는 `presentation/shared/partner-recruitment`에 둡니다.
-관심 공고함은 `/api/v1/me/saved-programs`를 쓰며 공고 상세의 관심 공고 저장 버튼(비로그인은 로그인 링크)과 모집글 상세의 `관심 공고에 추가` 버튼이 담습니다. 두 버튼은 `presentation/shared/support-program/useSupportProgramSaveViewModel`을 함께 씁니다. 진행 관리는 기존 신청 준비 목록 API를 재사용하며, 각 건의 독립된 진행 revision으로 단계 변경을 저장합니다. 로그인 작업 사이드바는 흰색 배경과 둥근 메뉴 항목을 사용하며,
+관심 공고함은 `/api/v1/me/saved-programs`를 쓰며 공고 상세의 관심 공고 저장 버튼(비로그인은 로그인 링크)과 모집글 상세의 `관심 공고에 추가` 버튼이 담습니다.
+두 버튼은 `presentation/shared/support-program/useSupportProgramSaveViewModel`을 함께 씁니다.
+로그인한 사용자는 AI 검색 결과 카드의 자격 배지 앞 `관심` 버튼에서도 담기·해제를 할 수 있습니다.
+`useSearchResultInterests`가 결과 표시 시 관심 목록을 한 번 읽고 기존 조회·저장·해제 UseCase를 사용합니다.
+한 대화에서 반복되는 같은 공고는 제공처 코드·원본 ID 기준으로 상태를 공유하며, 조회·변경 중 중복 요청을 막고 실패 시 재시도 안내를 표시합니다.
+로그아웃·계정 변경 시 이전 요청을 취소하고 이전 계정의 상태를 노출하지 않습니다.
+진행 관리는 기존 신청 준비 목록 API를 재사용하며, 각 건의 독립된 진행 revision으로 단계 변경을 저장합니다. 로그인 작업 사이드바는 흰색 배경과 둥근 메뉴 항목을 사용하며,
 선택 메뉴는 연한 초록색 배경·초록색 글자, 준비 중 메뉴는 연한 회색 배경·알약 모양 배지로 구분합니다.
 `지원사업 새검색`은 돋보기 아이콘으로 표시하며 기존 대화·조건 초기화 동작을 유지합니다.
 메뉴 순서는 사용 빈도와 업무 흐름(찾기 → 모아두기 → 준비·검토 → 협업 → 결제)을 따라 지원사업 새검색 → 관심 공고함 → 기업 맞춤 리포트 → 신청 문서 작성 →
