@@ -1,17 +1,17 @@
 import { useEffect, useRef, useState } from 'react'
 import { useLocation } from 'react-router'
 
-import { appContainer } from '../../../../app/appContainer'
-import { useAppSelector } from '../../../../app/hooks'
-import type { SupportProgramIdentity } from '../../../../domain/repositories/SupportProgramRepository'
+import { appContainer } from '../../../app/appContainer'
+import { useAppSelector } from '../../../app/hooks'
+import type { SupportProgramIdentity } from '../../../domain/repositories/SupportProgramRepository'
 import type {
   CheckSavedSupportProgramUseCase,
   RemoveSavedSupportProgramUseCase,
   SaveSupportProgramUseCase,
-} from '../../../../domain/usecases/SavedSupportProgramUseCases'
-import { loginPathFor } from '../../../shared/auth/returnPath'
-import { selectIsAuthenticated } from '../../../shared/auth/state/authSlice'
-import { appPaths } from '../../../shared/routes/appPaths'
+} from '../../../domain/usecases/SavedSupportProgramUseCases'
+import { loginPathFor } from '../auth/returnPath'
+import { selectIsAuthenticated } from '../auth/state/authSlice'
+import { appPaths } from '../routes/appPaths'
 
 type SaveUseCases = {
   check: Pick<CheckSavedSupportProgramUseCase, 'execute'>
@@ -35,7 +35,7 @@ export const supportProgramSaveMessages = {
 } as const
 
 /**
- * 공고 상세의 관심 공고 저장 버튼 ViewModel입니다. 로그인한 회원만 담긴 여부를 확인하고 담기·빼기를 오가며,
+ * 공고 상세·모집글 상세의 관심 공고 저장 버튼 ViewModel입니다. 로그인한 회원만 담긴 여부를 확인하고 담기·빼기를 오가며,
  * 비로그인이면 요청 없이 로그인 뒤 이 공고로 돌아오는 경로만 만듭니다.
  */
 export function useSupportProgramSaveViewModel(identity: SupportProgramIdentity, useCases?: Partial<SaveUseCases>) {

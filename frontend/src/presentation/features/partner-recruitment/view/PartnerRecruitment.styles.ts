@@ -61,6 +61,7 @@ export const partnerRecruitmentStyles = {
   linkRow: 'flex flex-wrap items-center gap-3',
   pillLink:
     'rounded-[0.55rem] bg-[#e7f6ed] px-[0.7rem] py-[0.55rem] text-[0.74rem] font-extrabold text-[#087f46] no-underline hover:bg-[#d7efdf]',
+  saveNotice: 'text-[0.78rem] font-semibold text-[#087f46]',
   bodyParagraph: 'm-0 text-[0.88rem] leading-[1.7] text-app-ink',
   disclaimer: 'm-0 text-[0.72rem] leading-[1.55] text-sample-muted',
   matchRow:
@@ -100,9 +101,10 @@ export const partnerRecruitmentStyles = {
     'flex items-center justify-between gap-4 rounded-[0.85rem] border border-brand-primary bg-white px-4 py-[0.9rem]',
   selectedProgramTitle: 'text-[0.95rem] font-bold text-app-ink',
   selectedProgramMeta: 'text-[0.72rem] text-sample-muted',
-  // 8건(한 건 약 5.7rem + 간격)까지 보이고 그 이상은 목록 안에서 스크롤합니다.
-  programResultList: 'm-0 flex max-h-[46rem] list-none flex-col gap-2 overflow-y-auto p-0 pr-1',
-  programResult: 'flex items-center justify-between gap-3 rounded-[0.85rem] border border-sample-border bg-white px-4 py-[0.7rem]',
+  // 중복 검토·신청 문서의 관심 공고함 열기 버튼과 같은 모양입니다.
+  pickerButton:
+    'flex w-full cursor-pointer items-center justify-between rounded-xl border border-slate-300 bg-white px-4 py-3 text-left text-sm font-semibold hover:border-brand-primary hover:bg-brand-accent focus-visible:outline-2 focus-visible:outline-brand-primary aria-[invalid=true]:border-red-500',
+  fieldHintLink: 'font-semibold text-brand-primary underline underline-offset-2',
   fieldRow: 'grid grid-cols-1 gap-[1.1rem] @min-[28rem]/column:grid-cols-2',
   field: 'flex flex-col gap-2 text-[0.9rem] font-bold text-app-ink',
   fieldLabelRow: 'flex items-center gap-1',

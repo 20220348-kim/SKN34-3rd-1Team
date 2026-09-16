@@ -18,6 +18,7 @@ import {
   recruitmentDeadlineLabel,
 } from '../../../shared/partner-recruitment/partnerRecruitmentLabels'
 import { appPaths } from '../../../shared/routes/appPaths'
+import { useSupportProgramSaveViewModel } from '../../../shared/support-program/useSupportProgramSaveViewModel'
 import { usePartnerRecruitmentDetailViewModel } from '../viewmodel/usePartnerRecruitmentDetailViewModel'
 import { partnerRecruitmentStyles } from './PartnerRecruitment.styles'
 
@@ -261,9 +262,10 @@ export function PartnerRecruitmentDetailPage() {
                 >
                   공식 원문 보기
                 </a>
-                <button className={partnerRecruitmentStyles.pillLink} type="button" disabled>
-                  관심 공고에 추가 · 준비 중
-                </button>
+                <RecruitmentProgramSaveButton
+                  sourceCode={recruitment.program.sourceCode}
+                  sourceProgramId={recruitment.program.sourceProgramId}
+                />
               </div>
             </section>
 
@@ -386,6 +388,33 @@ export function PartnerRecruitmentDetailPage() {
           </button>
         </div>
       </WorkspaceModal>
+    </>
+  )
+}
+
+/**
+ * 모집글에 묶인 공고를 관심 공고함에 담거나 빼는 버튼입니다. 공고 상세의 책갈피와 같은 ViewModel을 쓰며,
+ * 담기·빼기 결과는 버튼 옆 한 줄 안내로 잠시 보여 줍니다. 모집글 상세는 로그인 화면이라 로그인 링크는 두지 않습니다.
+ */
+function RecruitmentProgramSaveButton({ sourceCode, sourceProgramId }: { sourceCode: string; sourceProgramId: string }) {
+  const save = useSupportProgramSaveViewModel({ sourceCode, sourceProgramId })
+  const label = save.isSaved ? '관심 공고에서 빼기' : '관심 공고에 추가'
+  return (
+    <>
+      <button
+        className={partnerRecruitmentStyles.pillLink}
+        type="button"
+        aria-pressed={save.isSaved === true}
+        disabled={!save.isAuthenticated || save.isBusy}
+        onClick={() => void save.toggle()}
+      >
+        {label}
+      </button>
+      {save.notice ? (
+        <span className={partnerRecruitmentStyles.saveNotice} role="status" key={save.notice.id}>
+          {save.notice.text}
+        </span>
+      ) : null}
     </>
   )
 }

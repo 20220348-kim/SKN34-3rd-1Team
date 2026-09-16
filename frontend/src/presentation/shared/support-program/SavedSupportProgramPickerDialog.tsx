@@ -11,7 +11,8 @@ type Props = {
   description: string
   listLabel: string
   isSupported?: (program: SupportProgram) => boolean
-  unsupportedLabel?: string
+  /** 고를 수 없는 공고의 버튼 글자입니다. 이유가 공고마다 다르면 함수로 넘깁니다. */
+  unsupportedLabel?: string | ((program: SupportProgram) => string)
   onToggle: (program: SupportProgram) => void
   onRetry: () => void
   onClose: () => void
@@ -46,7 +47,9 @@ export function SavedSupportProgramPickerDialog({
           const key = programKey(program)
           const selected = selectedProgramKeys.includes(key)
           const supported = isSupported(program)
-          const action = !supported ? unsupportedLabel : selected ? '선택 해제' : '선택'
+          const action = !supported
+            ? (typeof unsupportedLabel === 'function' ? unsupportedLabel(program) : unsupportedLabel)
+            : selected ? '선택 해제' : '선택'
           return <li className={`rounded-xl border p-4 transition-colors ${selected ? 'border-emerald-500 bg-emerald-50 ring-1 ring-emerald-200' : 'border-slate-200 bg-white'}`} key={key}><div className="flex flex-wrap items-center justify-between gap-3"><div className="min-w-0 flex-1"><strong>{program.title}</strong><p className={muted}>{program.organization} · {({ OPEN: '접수 중', CLOSED: '접수 종료', UPCOMING: '접수 예정', UNKNOWN: '접수 상태 미확인' })[program.status]}</p><p className={muted}>{program.applicationPeriod}</p></div><button type="button" className={selected ? primary : button} aria-label={`${program.title} 관심 공고 ${action}`} aria-pressed={selected} disabled={!supported || (!selected && selectedProgramKeys.length >= selectionLimit)} onClick={() => onToggle(program)}>{action}</button></div></li>
         })}</ul>}
       </div>

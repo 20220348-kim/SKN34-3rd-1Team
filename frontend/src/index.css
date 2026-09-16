@@ -67,7 +67,8 @@
 @layer base {
   :root {
     color: var(--color-app-ink);
-    background: var(--color-app-canvas);
+    /* 공개·작업 화면 모두 흰 바탕이라 문서도 흰색으로 둡니다. 회색 캔버스 색은 말풍선·강조 칸에만 씁니다. */
+    background: #fff;
     font-family: Inter, Pretendard, 'Noto Sans KR', system-ui, sans-serif;
     line-height: normal;
     font-synthesis: none;

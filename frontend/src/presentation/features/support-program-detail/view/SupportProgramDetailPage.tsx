@@ -8,7 +8,7 @@ import { workspacePageStyles } from '../../../shared/workspace/WorkspacePage.sty
 import type { SupportProgram, SupportProgramStatus } from '../../../../domain/entities/SupportProgram'
 import type { SupportProgramIdentity } from '../../../../domain/repositories/SupportProgramRepository'
 import { useSupportProgramDetailViewModel } from '../viewmodel/useSupportProgramDetailViewModel'
-import { useSupportProgramSaveViewModel } from '../viewmodel/useSupportProgramSaveViewModel'
+import { useSupportProgramSaveViewModel } from '../../../shared/support-program/useSupportProgramSaveViewModel'
 import { supportProgramDetailStyles } from './SupportProgramDetailPage.styles'
 import { getSupportProgramSearchReturnTo, supportProgramBackLabel, type SupportProgramSearchReturnTo } from './supportProgramNavigation'
 
