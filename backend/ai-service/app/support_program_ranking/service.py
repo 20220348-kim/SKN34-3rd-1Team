@@ -180,15 +180,30 @@ class SupportProgramRankingService:
                 candidate_order[ranking.program_id],
             ),
         )
-        eligible_rankings = [
-            ranking
-            for ranking in sorted_rankings
-            if ranking.semantic_relevance >= MIN_SEMANTIC_RELEVANCE_SCORE
-            and ranking.target_eligibility is not SupportProgramEligibility.INCOMPATIBLE
-            and ranking.region_eligibility is not SupportProgramEligibility.INCOMPATIBLE
-        ]
+        eligible_rankings = []
+        excluded_low_relevance = excluded_target = excluded_region = 0
+        for ranking in sorted_rankings:
+            # 선행 제외 사유에 한 번만 집계한다. UNKNOWN은 기존처럼 결과에 남긴다.
+            if ranking.semantic_relevance < MIN_SEMANTIC_RELEVANCE_SCORE:
+                excluded_low_relevance += 1
+            elif ranking.target_eligibility is SupportProgramEligibility.INCOMPATIBLE:
+                excluded_target += 1
+            elif ranking.region_eligibility is SupportProgramEligibility.INCOMPATIBLE:
+                excluded_region += 1
+            else:
+                eligible_rankings.append(ranking)
+        selected_rankings = eligible_rankings[: request.result_limit]
+        logger.info(
+            "support_program_ranking_selection candidate_count=%d eligible_count=%d selected_count=%d "
+            "excluded_low_relevance=%d excluded_target=%d excluded_region=%d "
+            "selected_target_unknown=%d selected_region_unknown=%d",
+            len(sorted_rankings), len(eligible_rankings), len(selected_rankings),
+            excluded_low_relevance, excluded_target, excluded_region,
+            sum(item.target_eligibility is SupportProgramEligibility.UNKNOWN for item in selected_rankings),
+            sum(item.region_eligibility is SupportProgramEligibility.UNKNOWN for item in selected_rankings),
+        )
         return SupportProgramRankingResponse(
             original_query=request.original_query,
             scoring_version=request.scoring_version,
-            rankings=eligible_rankings[: request.result_limit],
+            rankings=selected_rankings,
         )

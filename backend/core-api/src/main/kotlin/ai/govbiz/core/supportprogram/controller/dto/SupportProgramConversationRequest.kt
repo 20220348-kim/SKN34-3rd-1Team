@@ -1,5 +1,6 @@
 package ai.govbiz.core.supportprogram.controller.dto
 
+import ai.govbiz.core.supportprogram.controller.validation.CompanyFoundedYear
 import ai.govbiz.core.supportprogram.controller.validation.CompanyEstablishedOn
 import ai.govbiz.core.supportprogram.domain.SupportProgramCompanyConditions
 import ai.govbiz.core.supportprogram.domain.SupportProgramConversationContext
@@ -72,8 +73,15 @@ data class SupportProgramConversationCompanyConditionsRequest(
     @field:Size(max = 100)
     @field:Pattern(regexp = "(?Us)^(?!\\s*$)(?!.*\\p{C}).*$")
     val supportPurpose: String?,
+    @field:CompanyFoundedYear
+    val foundedYear: Int? = null,
 ) {
-    fun toDomain() = SupportProgramCompanyConditions(region, industry, establishedOn?.let(LocalDate::parse), supportPurpose)
+    @get:AssertTrue
+    @get:JsonIgnore
+    val foundationPrecisionValid: Boolean
+        get() = establishedOn == null || foundedYear == null
+
+    fun toDomain() = SupportProgramCompanyConditions(region, industry, establishedOn?.let(LocalDate::parse), supportPurpose, foundedYear)
 }
 
 data class SupportProgramPendingClarificationRequest(

@@ -6,7 +6,7 @@ SUPPORT_PROGRAM_CONVERSATION_INSTRUCTIONS = """
 
 입력의 역할을 구분하세요.
 - message: 지금 사용자가 한 말입니다.
-- context: 사용자가 확인하여 이미 적용한 검색 조건입니다.
+- context: 사용자가 등록한 기업 정보에서 불러온 기본 조건 또는 대화에서 확인하여 적용한 조건입니다. 소재지·업종·설립연도가 이미 있으면 다시 묻지 말고 보존하세요.
 - pendingProposal: 화면에 제안되었지만 아직 확인하지 않은 조건입니다.
 - pendingClarification: 직전 확인 질문 question과 아직 미확정인 draftContext입니다.
   pendingProposal과 동시에 주어지지 않습니다.
@@ -24,7 +24,7 @@ pendingProposal에 이미 대구가 있으면 이를 기준으로 보존하고 �
 설립일 SET에는 아래의 현재 메시지 완전 날짜 규칙을 항상 적용합니다.
 
 부재 필드 보존: 바꾸지 않는 필드는 updates에 넣지 마세요. KEEP이나 전체 상태를 출력하지 마세요.
-명시적 삭제·초기화 요청만 CLEAR로 처리합니다. 전체 초기화는 여섯 필드를 CLEAR하고 검색 의도를 질문합니다.
+명시적 삭제·초기화 요청만 CLEAR로 처리합니다. 전체 초기화는 일곱 필드를 CLEAR하고 검색 의도를 질문합니다.
 ACCEPTING_ONLY SET은 문자열 "true" 또는 "false"만, CLEAR는 기본 true로 복원합니다.
 각 update에는 현재 message에서 정확히 복사한 연속 부분 문자열 evidence가 반드시 필요합니다.
 evidence·질문은 UTF-16 160 이내, 공백만 또는 모든 Unicode C 문자(탭/CR/LF 포함)는 금지합니다.
@@ -66,8 +66,12 @@ query가 "사업화 지원"일 때 "지원금 위주"라면 QUERY는 "사업화 
 ESTABLISHED_ON SET evidence는 앞뒤 설명 없이 날짜 자체만 정확히 인용합니다.
 연·월·일 사이 공백을 허용하며 YYYY-MM-DD로 정규화한 value가 실제 날짜와 같아야 합니다.
 1900-01-01부터 referenceDate까지의 날짜만 허용합니다. "설립 2년", "작년 창업", 연/월만 있는
-표현으로 정확한 날짜를 계산·창작하지 말고 한국어로 정확한 설립일을 질문합니다.
+표현으로 정확한 날짜를 계산·창작하지 마세요. 상대 업력만 제시하면 설립연도 또는 정확한 설립일을 질문합니다.
 이전 질문에 날짜가 있어도 현재 message의 "네"만으로 설립일을 SET하지 마세요.
+설립연도만 아는 경우 foundedYear를 사용합니다. "2021년 설립"은 FOUNDED_YEAR SET value="2021", evidence="2021년"으로 처리하며 월·일을 추가로 요구하지 않습니다.
+FOUNDED_YEAR의 value는 1900부터 referenceDate의 연도까지 네 자리 문자열이고 evidence는 해당 네 자리 연도 또는 "년"을 붙인 값만 허용합니다.
+ESTABLISHED_ON과 FOUNDED_YEAR는 같은 설립 정보의 서로 다른 정밀도입니다. 둘을 동시에 SET하지 않습니다. 한쪽을 SET하거나 CLEAR하면 서버가 다른 쪽도 지웁니다.
+이미 foundedYear가 있으면 새로운 검색이나 지역 변경만으로 정확한 설립일을 요구하지 마세요. 설립 정보를 바꾸거나 해제하라는 명시적 요청이 없으면 보존합니다.
 
 검색 조건을 변경하는 요청에서 변경 후 query가 비어 있지 않고 모호한 변경이 없으면 READY,
 clarificationQuestion과 answer는 null입니다. 아직 지정하지 않은 모든 기업 조건을 필수로 묻지 마세요.

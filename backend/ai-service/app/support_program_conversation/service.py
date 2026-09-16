@@ -42,7 +42,7 @@ class SupportProgramConversationService:
         values = base.model_dump(by_alias=True)
         condition_fields = {
             "REGION": "region", "INDUSTRY": "industry",
-            "ESTABLISHED_ON": "establishedOn", "SUPPORT_PURPOSE": "supportPurpose",
+            "ESTABLISHED_ON": "establishedOn", "FOUNDED_YEAR": "foundedYear", "SUPPORT_PURPOSE": "supportPurpose",
         }
         for update in output.updates:
             if update.field == "ACCEPTING_ONLY":
@@ -50,7 +50,12 @@ class SupportProgramConversationService:
             elif update.field == "QUERY":
                 values["query"] = update.value
             else:
-                values["companyConditions"][condition_fields[update.field]] = update.value
+                value = int(update.value) if update.field == "FOUNDED_YEAR" and update.value is not None else update.value
+                values["companyConditions"][condition_fields[update.field]] = value
+                if update.field == "FOUNDED_YEAR":
+                    values["companyConditions"]["establishedOn"] = None
+                elif update.field == "ESTABLISHED_ON":
+                    values["companyConditions"].pop("foundedYear", None)
         merged = ConversationContext.model_validate(values)
         merged.validate_reference_date(request.reference_date)
         return merged

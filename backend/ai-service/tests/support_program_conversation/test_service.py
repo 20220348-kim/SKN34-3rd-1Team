@@ -265,3 +265,40 @@ async def test_forged_answered_output_is_revalidated(request_data, answer, updat
     )
     with pytest.raises(SupportProgramConversationError):
         await SupportProgramConversationService(agent).interpret(SupportProgramConversationRequest.model_validate(request_data))
+
+
+@pytest.mark.anyio
+async def test_registered_year_survives_region_change_without_a_fabricated_date(request_data, output_data):
+    request_data["context"]["companyConditions"].update(establishedOn=None, foundedYear=2021)
+    request = SupportProgramConversationRequest.model_validate(request_data)
+    output = SupportProgramConversationOutput.model_validate(output_data)
+    agent = AsyncMock()
+    agent.interpret.return_value = output
+    service = SupportProgramConversationService(agent)
+    await service.interpret(request)
+    conditions = service._merge_context(request, output).company_conditions
+    assert conditions.founded_year == 2021
+    assert conditions.established_on is None
+    assert conditions.region == "부산"
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("field,value,evidence", [
+    ("FOUNDED_YEAR", "2021", "2021년"),
+    ("ESTABLISHED_ON", "2021-06-01", "2021-06-01"),
+    ("FOUNDED_YEAR", None, "설립 조건 해제"),
+])
+async def test_foundation_precision_can_be_replaced_and_cleared(request_data, field, value, evidence):
+    request_data["context"]["companyConditions"].update(establishedOn=None, foundedYear=2020)
+    request_data["message"] = evidence
+    output = SupportProgramConversationOutput(status="READY", updates=[{
+        "field": field, "operation": "CLEAR" if value is None else "SET", "value": value, "evidence": evidence,
+    }], clarificationQuestion=None)
+    agent = AsyncMock()
+    agent.interpret.return_value = output
+    service = SupportProgramConversationService(agent)
+    request = SupportProgramConversationRequest.model_validate(request_data)
+    await service.interpret(request)
+    result = service._merge_context(request, output).company_conditions
+    assert result.founded_year == (int(value) if field == "FOUNDED_YEAR" and value else None)
+    assert result.established_on == (value if field == "ESTABLISHED_ON" else None)

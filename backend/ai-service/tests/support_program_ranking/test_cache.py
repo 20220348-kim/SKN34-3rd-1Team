@@ -308,7 +308,14 @@ async def test_concurrent_identical_requests_share_one_agent_call_and_copy_resul
     assert len(second_result.rankings) == 2
     assert len((await service.rank(ranking_request())).rankings) == 2
     assert service._pending == {}
-    messages = [record.getMessage() for record in caplog.records if record.name.endswith("ranking.service")]
+    service_messages = [record.getMessage() for record in caplog.records if record.name.endswith("ranking.service")]
+    messages = [message for message in service_messages if message.startswith("support_program_ranking ")]
+    selection_messages = [message for message in service_messages if message.startswith("support_program_ranking_selection ")]
+    assert selection_messages == [
+        "support_program_ranking_selection candidate_count=2 eligible_count=2 selected_count=2 "
+        "excluded_low_relevance=0 excluded_target=0 excluded_region=0 "
+        "selected_target_unknown=2 selected_region_unknown=2"
+    ]
     assert {re.search(r"cache_state=(\w+)", message)[1] for message in messages} == {"miss", "shared", "hit"}
     assert all(re.fullmatch(
         r"support_program_ranking cache_state=(hit|miss|shared) elapsed_ms=\d+\.\d candidate_count=2",

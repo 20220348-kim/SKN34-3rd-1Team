@@ -775,6 +775,12 @@ async def test_openai_request_uses_non_stored_strict_structured_output(candidate
     assert keyed_schema["required"] == list(keyed_schema["properties"]) == expected_ids
     assert keyed_schema["additionalProperties"] is False
     assessment_schema = schema["$defs"]["SupportProgramSelectionFor2Options"]
+    relevance_schema = assessment_schema["properties"]["semanticRelevance"]
+    assert relevance_schema["type"] == "integer"
+    assert relevance_schema["minimum"] == 0 and relevance_schema["maximum"] == 40
+    assert "지원 형태를 한정하지 않은 요청" in relevance_schema["description"]
+    assert "설립연도나 자격 충족 여부는 대상·지역 판정에서" in relevance_schema["description"]
+    assert "특정 비용·서비스를 요구하면 그것을 실제 제공해야" in relevance_schema["description"]
     region_description = assessment_schema["properties"]["regionAssessment"]["description"]
     assert "회사 지역 내부의 하위 지역일 때만" in region_description
     assert "별도 허용 경로 없이 회사 지역 밖으로 명백히 제한하면 INCOMPATIBLE" in region_description
@@ -790,7 +796,9 @@ async def test_openai_request_uses_non_stored_strict_structured_output(candidate
     assert "사업장 종류가 확인되지 않은 회사 지역을 본점·공장 각각의 주소로 일반화하지" in region_description
     assert region_description.startswith("먼저 지역 제한 주체를 회사·특정 사업장·개인으로 구분")
     assert "서울 회사/대구지역 여성은 개인 지역 미확인이므로 UNKNOWN" in region_description
-    assert "description" not in assessment_schema["properties"]["targetAssessment"]
+    target_description = assessment_schema["properties"]["targetAssessment"]["description"]
+    assert "우대이지 필수 직원 수가 아니므로" in target_description
+    assert "모든 허용 경로가 명백히 불충족일 때만 INCOMPATIBLE" in target_description
     assert "totalScore" not in assessment_schema["properties"]
     assert "totalScore" not in assessment_schema["required"]
     assert "programId" not in assessment_schema["properties"]
@@ -872,8 +880,11 @@ async def test_sdk_serializes_twenty_distinct_candidate_local_selection_schemas(
         assert candidate["targetDescription"] == request.candidates[count].target_description
         assessment_schema = schema["$defs"][f"SupportProgramSelectionFor{count}Options"]
         target_schema = assessment_schema["properties"]["targetAssessment"]
-        reference = target_schema["anyOf"][0]["$ref"] if count else target_schema["$ref"]
-        compatible = schema["$defs"][reference.split("/")[-1]]
+        unknown_branch = target_schema["anyOf"][0] if count else target_schema
+        # SDK는 description이 붙은 단일 타입의 ref를 전송 스키마 안에 펼친다.
+        compatible = schema["$defs"][unknown_branch["$ref"].split("/")[-1]] if "$ref" in unknown_branch else unknown_branch
+        assert compatible["required"] == ["eligibility", "evidence", "explanation"]
+        assert compatible["additionalProperties"] is False
         evidence_schema = compatible["properties"]["evidence"]
         assert evidence_schema["items"]["maximum"] == max(0, count - 1)
         assert evidence_schema["maxItems"] == (1 if count else 0)
@@ -1061,3 +1072,41 @@ async def test_concurrent_rankings_keep_validation_diagnostics_per_request():
     assert all(isinstance(result.__cause__, ModelBehaviorError) for result in results)
     assert agent._agent.output_type is None
     assert len(model.calls) == 2
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("founded_year", [2020, 2021])
+async def test_target_guidance_and_registered_conditions_reach_model_without_overriding_unknown(founded_year) -> None:
+    # 전송·응답 계약 검증이다. ScriptedModel의 판정을 실제 모델 품질로 간주하지 않는다.
+    payload = ranking_request().model_dump(by_alias=True)
+    payload["companyConditions"] = {
+        "region": "서울특별시", "industry": "정보통신업", "foundedYear": founded_year,
+        "referenceDate": "2026-09-16",
+    }
+    payload["candidates"][0]["targetDescription"] = "중소기업 대상. 상시근로자 20인 이상 기업 우선 지원."
+    selection = llm_output()
+    selection["rankings"]["BIZINFO:program-1"]["targetAssessment"].update(
+        eligibility="UNKNOWN", evidence=[1], explanation="중소기업 해당 여부는 추가 확인 필요.",
+    )
+    selection["rankings"]["BIZINFO:program-1"]["regionAssessment"].update(
+        eligibility="UNKNOWN", evidence=[], explanation="본문에 소재지 제한이 명시되어 있지 않습니다.",
+    )
+    model = ScriptedModel([[assistant_message(json.dumps(selection, ensure_ascii=False))]])
+    agent = SupportProgramRecommendationAgent(model=model, model_timeout_seconds=3, run_timeout_seconds=4)
+
+    result = await agent.rank(SupportProgramRankingRequest.model_validate(payload))
+
+    call = model.first_call
+    sent = json.loads(call.input[0]["content"])
+    assert sent["companyConditions"]["foundedYear"] == founded_year
+    assert sent["companyConditions"]["industry"] == "정보통신업"
+    assert "지원 대상의 필수 요건·대안:" in call.system_instructions
+    schema = call.output_schema.json_schema()
+    candidate_ref = rankings_schema(schema)["properties"]["BIZINFO:program-1"]["$ref"]
+    description = schema["$defs"][candidate_ref.split("/")[-1]]["properties"]["targetAssessment"]["description"]
+    assert "우대이지 필수 직원 수가 아니므로" in description
+    assert "모든 허용 경로가 명백히 불충족일 때만 INCOMPATIBLE" in description
+    assert "regionAssessment에서 별도로" in description
+    assert result.rankings[0].target_assessment.eligibility.value == "UNKNOWN"
+    assert result.rankings[0].target_assessment.explanation == "중소기업 해당 여부는 추가 확인 필요."
+    assert len(model.calls) == 1

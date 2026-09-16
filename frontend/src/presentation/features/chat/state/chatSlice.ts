@@ -3,6 +3,7 @@ import { createSelector, createSlice, nanoid, type PayloadAction } from '@reduxj
 import type { RootState } from '../../../../app/store'
 import type { ChatConversationSnapshot, ChatMessage, ChatSearchOptions } from '../../../../domain/entities/ChatConversation'
 import type { RestoredSupportProgramSearchResult, SupportProgramSearchResult } from '../../../../domain/entities/SupportProgramSearchResult'
+import type { Company } from '../../../../domain/entities/Company'
 import type { SupportProgram } from '../../../../domain/entities/SupportProgram'
 import type { SupportProgramSearch } from '../../../../domain/repositories/SupportProgramRepository'
 import type { SupportProgramConversationContext, SupportProgramInterpretation, SupportProgramInterpretRequest, SupportProgramLastSearch, SupportProgramPendingClarification } from '../../../../domain/entities/SupportProgramConversation'
@@ -29,6 +30,7 @@ type ChatInterpretation = {
 }
 
 type ChatState = {
+  companyDefaultsInitialized: boolean
   accountEmail: string | null
   isRestoredHistory: boolean
   activeRequestId: string | null
@@ -56,10 +58,26 @@ const chatSlice = createSlice({
   name: 'chat',
   initialState,
   reducers: {
+    companyDefaultsLoaded(state, action: PayloadAction<{ requestId: string; company: Company | null }>) {
+      if (state.interpretation.status !== 'pending' || state.interpretation.requestId !== action.payload.requestId) return
+      const company = action.payload.company
+      const current = state.searchOptions.companyConditions
+      if (company) {
+        state.searchOptions.companyConditions = {
+          region: company.region, industry: company.industry,
+          ...(current?.establishedOn ? {} : { foundedYear: company.foundedYear }),
+          ...current,
+        }
+      }
+      state.companyDefaultsInitialized = true
+      if (state.interpretation.request) {
+        state.interpretation.request.context = searchOptionsToConversationContext(state.conversationQuery, state.searchOptions)
+      }
+    },
     conversationHistoryOpened(state, action: PayloadAction<{ accountEmail: string; snapshot: ChatConversationSnapshot }>) {
       if (!state.accountEmail || state.accountEmail !== action.payload.accountEmail) return
       const { schemaVersion: _version, ...snapshot } = action.payload.snapshot
-      return { ...createInitialState(), ...snapshot, accountEmail: state.accountEmail, isRestoredHistory: true }
+      return { ...createInitialState(), ...snapshot, accountEmail: state.accountEmail, isRestoredHistory: true, companyDefaultsInitialized: snapshot.companyDefaultsInitialized ?? true }
     },
     conversationReset: {
       reducer(state, action: PayloadAction<{ welcomeMessage: SupportProgramChatMessage }>) {
@@ -74,6 +92,7 @@ const chatSlice = createSlice({
         questionId: string; answerId: string }>) {
         const { result, welcomeMessage, questionId, answerId } = action.payload
         const next = createInitialState(welcomeMessage)
+        next.companyDefaultsInitialized = true
         next.accountEmail = state.accountEmail
         next.conversationQuery = result.context.query
         next.searchOptions = conversationContextToSearchOptions(result.context)
@@ -302,6 +321,7 @@ const chatSlice = createSlice({
 })
 
 export const {
+  companyDefaultsLoaded,
   conversationHistoryOpened,
   conversationReset,
   searchResultRestored,
@@ -371,7 +391,7 @@ export function createChatConversationSnapshot(state: ChatState): ChatConversati
     text: '완료되지 않은 검색입니다. 확인한 조건으로 다시 검색해 주세요.',
   } : null
   return {
-    schemaVersion: 1, messages: interrupted ? [...state.messages, interrupted] : state.messages, searchOptions: state.searchOptions,
+    schemaVersion: 1, companyDefaultsInitialized: state.companyDefaultsInitialized, messages: interrupted ? [...state.messages, interrupted] : state.messages, searchOptions: state.searchOptions,
     conversationQuery: state.conversationQuery, confirmedSearch: state.confirmedSearch, lastSearch: state.lastSearch,
     pendingProposal: state.pendingProposal, pendingClarification: state.pendingClarification,
     searchStatus: state.searchStatus === 'pending' ? 'failed' : state.searchStatus,
@@ -384,6 +404,7 @@ export function createChatConversationSnapshot(state: ChatState): ChatConversati
 
 function createInitialState(welcomeMessage = createWelcomeMessage()): ChatState {
   return {
+    companyDefaultsInitialized: false,
     accountEmail: null,
     isRestoredHistory: false,
     activeRequestId: null,
@@ -426,7 +447,7 @@ function copySearchOptions(options: ChatSearchOptions): ChatSearchOptions {
 }
 
 export function conversationContextToSearchOptions(context: SupportProgramConversationContext): ChatSearchOptions {
-  const companyConditions = Object.fromEntries(Object.entries(context.companyConditions).filter(([, value]) => value !== null))
+  const companyConditions = Object.fromEntries(Object.entries(context.companyConditions).filter(([, value]) => value != null))
   return { acceptingOnly: context.acceptingOnly,
     ...(Object.keys(companyConditions).length ? { companyConditions } : {}) }
 }
@@ -441,6 +462,7 @@ function searchOptionsToConversationContext(query: string | null, options: ChatS
     query,
     acceptingOnly: options.acceptingOnly,
     companyConditions: { region: conditions?.region ?? null, industry: conditions?.industry ?? null,
+      ...(conditions?.foundedYear != null ? { foundedYear: conditions.foundedYear } : {}),
       establishedOn: conditions?.establishedOn ?? null, supportPurpose: conditions?.supportPurpose ?? null },
   }
 }

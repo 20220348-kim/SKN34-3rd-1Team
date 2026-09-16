@@ -62,6 +62,37 @@ class SupportProgramConversationServiceTest {
     }
 
     @Test
+    fun preservesRegisteredYearAcrossRegionChangeAndAllowsExplicitYearOrDateReplacement() {
+        val initial = context.copy(companyConditions = context.companyConditions.copy(establishedOn = null, foundedYear = 2021))
+        stub(response(listOf(update())))
+        val retained = service.interpret("부산으로 변경", initial, null)
+        assertEquals(2021, retained.proposedContext.companyConditions.foundedYear)
+        assertEquals(2021, sent!!.context.companyConditions.foundedYear)
+        assertNull(retained.proposedContext.companyConditions.establishedOn)
+
+        stub(response(listOf(update(field = "FOUNDED_YEAR", value = "2022", evidence = "2022년"))))
+        val changed = service.interpret("2022년 설립", initial, null)
+        assertEquals(2022, changed.proposedContext.companyConditions.foundedYear)
+        assertNull(changed.proposedContext.companyConditions.establishedOn)
+
+        stub(response(listOf(update(field = "ESTABLISHED_ON", value = "2021-06-01", evidence = "2021-06-01"))))
+        val precise = service.interpret("설립일은 2021-06-01", initial, null)
+        assertNull(precise.proposedContext.companyConditions.foundedYear)
+        assertEquals(LocalDate.parse("2021-06-01"), precise.proposedContext.companyConditions.establishedOn)
+
+        stub(response(listOf(update(field = "FOUNDED_YEAR", value = null, evidence = "설립 조건 해제", operation = "CLEAR"))))
+        val cleared = service.interpret("설립 조건 해제", initial, null)
+        assertNull(cleared.proposedContext.companyConditions.foundedYear)
+        assertNull(cleared.proposedContext.companyConditions.establishedOn)
+    }
+
+    @Test
+    fun rejectsFutureAndFabricatedFoundationYears() {
+        rejects(response(listOf(update(field = "FOUNDED_YEAR", value = "2027", evidence = "2027년"))), "2027년 설립")
+        rejects(response(listOf(update(field = "FOUNDED_YEAR", value = "2021", evidence = "설립 5년"))), "설립 5년")
+    }
+
+    @Test
     fun updatesPendingProposalWithoutRevertingItsTradeIntentOrApplyingLastSearchConditions() {
         val proposal = context.copy(query = "무역 지원", companyConditions = context.companyConditions.copy(supportPurpose = "수출"))
         val lastSearch = SupportProgramConversationLastSearch(context, 0)
@@ -195,11 +226,24 @@ class SupportProgramConversationServiceTest {
     }
 
     @Test
-    fun clearResetsAllStringsToNullAndAcceptingOnlyToTrueInCanonicalChangedFieldOrder() {
+    fun clearResetsCompanyConditionsAndAcceptingOnlyInCanonicalChangedFieldOrder() {
         stub(response(SupportProgramConversationField.entries.reversed().map { update(it.name, null, "초기화", "CLEAR") }, "CLARIFICATION_REQUIRED", "어떤 지원을 원하시나요?"))
         val result = service.interpret("초기화", context, null)
         assertEquals(SupportProgramConversationContext(null, true, SupportProgramCompanyConditions()), result.proposedContext)
-        assertEquals(SupportProgramConversationField.entries, result.changedFields)
+        assertEquals(listOf(
+            SupportProgramConversationField.QUERY, SupportProgramConversationField.REGION,
+            SupportProgramConversationField.INDUSTRY, SupportProgramConversationField.ESTABLISHED_ON,
+            SupportProgramConversationField.SUPPORT_PURPOSE, SupportProgramConversationField.ACCEPTING_ONLY,
+        ), result.changedFields)
+
+        val yearContext = context.copy(companyConditions = context.companyConditions.copy(establishedOn = null, foundedYear = 2021))
+        val yearResult = service.interpret("초기화", yearContext, null)
+        assertEquals(SupportProgramConversationContext(null, true, SupportProgramCompanyConditions()), yearResult.proposedContext)
+        assertEquals(listOf(
+            SupportProgramConversationField.QUERY, SupportProgramConversationField.REGION,
+            SupportProgramConversationField.INDUSTRY, SupportProgramConversationField.FOUNDED_YEAR,
+            SupportProgramConversationField.SUPPORT_PURPOSE, SupportProgramConversationField.ACCEPTING_ONLY,
+        ), yearResult.changedFields)
     }
 
     @Test

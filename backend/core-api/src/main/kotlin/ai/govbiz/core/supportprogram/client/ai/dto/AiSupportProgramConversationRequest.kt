@@ -21,6 +21,8 @@ data class AiSupportProgramConversationCompanyConditionsRequest(
     val industry: String?,
     val establishedOn: String?,
     val supportPurpose: String?,
+    @get:com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
+    val foundedYear: Int? = null,
 )
 
 data class AiSupportProgramPendingClarificationRequest(

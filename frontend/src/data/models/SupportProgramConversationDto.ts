@@ -22,6 +22,7 @@ export const conversationContextDtoSchema = z.object({
     region: conditionText(50),
     industry: conditionText(100),
     establishedOn: establishedOnSchema,
+    foundedYear: z.number().int().min(1900).max(Number(new Intl.DateTimeFormat('en', { timeZone: 'Asia/Seoul', year: 'numeric' }).format(new Date()))).nullish(),
     supportPurpose: conditionText(100),
   }),
 })
@@ -33,7 +34,7 @@ export const supportProgramInterpretationDtoSchema = z.object({
     .refine((value) => value.trim().length > 0 && !/\p{C}/u.test(value)).nullable(),
   answer: z.string().max(1000).refine((value) => value.trim().length > 0
     && !/[^\P{C}\n\r\t]/u.test(value)).nullable().default(null),
-  changedFields: z.array(z.enum(conversationChangedFields)).max(6),
+  changedFields: z.array(z.enum(conversationChangedFields)).max(7),
 }).superRefine((value, context) => {
   if (value.status === 'READY' && (!value.proposedContext.query || value.clarificationQuestion !== null)) {
     context.addIssue({ code: 'custom', message: 'READY에는 검색 의도가 필요하며 확인 질문은 없어야 합니다.' })

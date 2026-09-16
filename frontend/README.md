@@ -333,7 +333,7 @@ Repository → UseCase → Hook → Redux 결과 메시지 → `ProgramResults`�
 `{ message, context: { query, acceptingOnly, companyConditions }, pendingClarification, pendingProposal, lastSearch }`를 보냅니다.
 pendingProposal은 직전 미확정 제안이며 pendingClarification과 동시에 보내지 않습니다. lastSearch는 최근 성공 검색의
 조건·결과 수이며 새 검색을 시작하면 비웁니다. 실패나 취소를 0건 결과로 취급하지 않습니다.
-확정 `context`와 조건의 모든 필드는 필수이고 미입력은 `null`입니다. 검색 의도 `query`는 초기 `null`이며,
+확정 `context`와 기존 네 조건 필드는 필수이고 미입력은 `null`입니다. 추가된 `foundedYear`는 이전 기록과 호환되는 선택 필드입니다. 검색 의도 `query`는 초기 `null`이며,
 전체 대화나 공고 본문을 이어 붙이지 않습니다. `CLARIFICATION_REQUIRED`는 마지막 질문 하나와 미확정 초안만
 유지해 다음 답변과 전송합니다. 상대 업력을 정확한 설립일로 계산하지 않으며 초안을 적용하거나 검색하지 않습니다.
 `READY`는 검색 의도를 제목으로, 접수 범위를 배지와 짧은 안내로 항상 표시합니다. 실제 변경할 기업 조건·
@@ -370,10 +370,13 @@ readiness로 차단합니다. 준비 장애·추가 질문·해석 실패·공�
 해석과 확인 검색은 요청 제한에서 각각 한 건으로 계산됩니다. [전체 C02 계약](../docs/conversation-condition-update.md)을 참고하세요.
 
 확인한 제안의 실제 검색은 기존 `POST /api/v1/support-programs/search`에
-`{ query, acceptingOnly, companyConditions?: { region?, industry?, establishedOn?, supportPurpose? } }`를 보냅니다.
+`{ query, acceptingOnly, companyConditions?: { region?, industry?, establishedOn?, foundedYear?, supportPurpose? } }`를 보냅니다.
 조건은 검색어 500자에 이어 붙이지 않고 별도 JSON 필드로 전달합니다. 검색어와 충돌하면 사용자가 적용한
 기업 조건을 우선하며, 미입력은 자격 충족을 뜻하지 않습니다. AI 판단은 공고 원문 확인이 필요합니다.
-기업 조건은 로그인 없이 Redux 메모리에만 유지하고 새 대화·새로고침 시 초기화합니다.
+기업을 등록한 로그인 계정은 새 대화의 첫 메시지 전송 시 기존 회사 조회 API로 소재지·업종·설립연도를 불러와 기본 조건으로 사용합니다.
+조회에 실패하면 해석을 중단하고 재시도를 안내하며, 회사 정보 없이 몰래 검색하지 않습니다. 대화에서 수정·해제한 값은 이후 요청에서 다시 덮어쓰지 않습니다. 초기 조회 실패 상태도 기록에 보존해 기록 복원 후 재시도할 수 있습니다.
+비회원은 대화에서 확인한 조건만 사용합니다. 기록을 열면 당시 조건을 유지하고, 새 대화에서는 최신 등록 정보를 다시 불러옵니다.
+설립연도는 선택 필드 foundedYear로 보존하고, 정확한 establishedOn과 동시에 보내지 않습니다. 조건 상세·검색 당시 표시·대화 기록에도 연도가 유지됩니다.
 검색에 적용한 조건은 AI 추천에 사용되므로 개인정보·비밀정보는 입력하지 않습니다.
 Core가 제공하는 기존 GET 검색 계약도 유지되지만 이 화면은 POST를 사용합니다.
 

@@ -102,11 +102,36 @@ def _assessment_selection_type(option_count: int) -> type[SupportProgramAssessme
         region = region | matched_region | incompatible
     return create_model(
         f"SupportProgramSelectionFor{option_count}Options", __base__=SupportProgramAssessment,
+        semantic_relevance=(int, Field(
+            alias="semanticRelevance", ge=0, le=40,
+            description=(
+                "검색이 요구한 지원 활동과 본문이 실제 제공하는 지원의 관련성만 0~40으로 평가한다. "
+                "'AI 창업지원'처럼 지원 형태를 한정하지 않은 요청에는 AI 기업에도 적용 가능한 일반 창업보육·사업화·"
+                "창업 교육·입주 공간·지식재산 활용 지원도 직접 관련 있는 일부 지원(20~29)이다. "
+                "본문에 AI 단어가 없거나 설립연도·직원 수·인증 자격이 미확인이라는 이유로 20 미만으로 낮추지 않는다. "
+                "설립연도나 자격 충족 여부는 대상·지역 판정에서 처리한다. "
+                "특정 비용·서비스를 요구하면 그것을 실제 제공해야 하며, 다른 산업 전용 활동이나 키워드만 일치하면 20 미만이다. "
+                "30~40은 핵심 요청을 직접 충족하며, 결과 수를 채우려고 점수를 올리지 않는다."
+            ),
+        )),
         recommendation_reasons=(
             list[Annotated[str, Field(min_length=1, max_length=120)]],
             Field(alias="recommendationReasons", min_length=1, max_length=3),
         ),
-        target_assessment=(target, Field(alias="targetAssessment")),
+        target_assessment=(target, Field(
+            alias="targetAssessment",
+            description=(
+                "본문에 명시된 업종·업력·기업 유형의 필수 요건만 확인한다. 소재지는 regionAssessment에서 별도로 판단한다. "
+                "'20인 이상 기업 우선 지원'은 우대이지 필수 직원 수가 아니므로 직원 수 미확인만으로 UNKNOWN 또는 INCOMPATIBLE로 만들지 않는다. "
+                "대안 중 한 신청 경로의 필수 요건을 충족하면 MATCH이며 다른 경로의 요건을 추가로 요구하지 않는다. "
+                "충족 경로 없이 미확인 경로가 남으면 UNKNOWN, 모든 허용 경로가 명백히 불충족일 때만 INCOMPATIBLE이다. "
+                "기본 7년 이내 요건을 충족하면 신산업 10년 연장 예외는 확인할 필요가 없다. "
+                "확인된 공고 기준일에서 foundedYear의 연도 범위 전체가 업력 요건 안이면 정확한 월·일을 추가로 요구하지 않는다. "
+                "기준일 자체가 불명확하면 기준일 미확인을 설명하고 정확한 설립일만 요구하지 않는다. "
+                "'정보통신업' 같은 대분류만으로 AI 세부 업종의 충족·불충족을 단정하지 않는다. "
+                "UNKNOWN의 explanation에는 남은 필수 요건을 적고 확인된 업종·설립연도와 우대 항목을 미입력 요건으로 쓰지 않는다."
+            ),
+        )),
         region_assessment=(region, Field(
             alias="regionAssessment",
             description=(

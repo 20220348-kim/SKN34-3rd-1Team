@@ -92,6 +92,9 @@ POST /internal/v1/assistant/agent
 [지원사업 검색·추천 HTTP 계약](../../docs/support-program-search-contract.md)에 있습니다.
 
 점수화 요청에는 선택적으로 `companyConditions`를 포함할 수 있습니다.
+선택 foundedYear는 등록 기업의 설립연도(1900~referenceDate의 연도)를 보존하며 establishedOn과 동시에 지정할 수 없습니다.
+연도 전체가 공고의 명확한 업력 요건을 충족하면 판단에 활용하고, 경계에 걸릴 때만 정확한 설립일이 필요합니다.
+판정 설명은 확인된 사용자 조건과 남은 필수 요건을 구분하며, 본문에 없는 조건이나 우대 사항을 필수로 추가하지 않습니다.
 `region`(현재 소재지, 최대 50자), `industry`(업종, 최대 100자), `establishedOn`(설립일),
 `supportPurpose`(지원 목적, 최대 100자)는 생략·null을 허용합니다. 텍스트는 제어문자를 원본에서 먼저
 거부하고 앞뒤 공백 제거 후 빈 값은 null입니다. 설립일은 빈 문자열·ASCII 공백뿐인 값만 null이며,
@@ -117,7 +120,10 @@ Health 응답은 프로세스의 HTTP 응답 여부만 확인합니다. OpenAI �
 입력은 `schemaVersion`, `message`, `context`, 선택적 `pendingClarification`/`pendingProposal`/`lastSearch`,
 Core 서울 날짜 `referenceDate`입니다. pendingClarification과 pendingProposal은 동시에 보낼 수 없습니다.
 lastSearch는 최근 성공 검색의 context와 0 이상의 엄격한 정수 resultCount이며 결과 설명에만 참고합니다.
-context의 query·acceptingOnly·companyConditions 및 네 조건 필드는 모두 필수이고 미입력은 null입니다.
+context의 query·acceptingOnly·companyConditions 및 기존 네 조건 필드는 모두 필수이고 미입력은 null입니다.
+foundedYear는 이전 클라이언트와 호환되는 선택 정수입니다. 등록 기업에서 읽은 연도는 보존하고 월·일을 만들어내지 않습니다.
+명시된 연도는 FOUNDED_YEAR SET으로 변경하며, ESTABLISHED_ON과 FOUNDED_YEAR 중 하나를 설정·해제하면 다른 정밀도 값은 제거합니다.
+updates의 최대 개수는 7개이고 연도 SET도 현재 메시지의 정확한 연도 인용과 범위를 검증합니다.
 응답은 `schemaVersion`, `status`, `updates`, `clarificationQuestion`, `answer`이며 전체 상태를 재작성하지 않습니다.
 ANSWERED는 비어 있지 않은 answer와 빈 updates, null 질문을 반환합니다. 다른 상태에서는 answer가 null입니다.
 정확한 공개/내부 예시는 [C02 계약](../../docs/conversation-condition-update.md)을 참고하세요.
@@ -489,6 +495,11 @@ MATCH와 UNKNOWN을 합쳐 검색 관련도 총점 내림차순으로 정렬하�
 heldout 오추천은 줄지 않았고 평균 API 응답시간은 약 1.82초 늘었습니다.
 [측정 조건·결과·재현 방법](../../evaluation/support-program-search/runs/support-program-catalog-20260906-v1/stage4-v2/README.md)에 한계를 함께 기록했습니다.
 
+포괄적인 분야별 창업지원 검색(예: AI 창업지원)은 AI 전용 공고로만 제한하지 않습니다. 다른 산업에만 한정되지 않고
+창업기업의 사업화·보육·창업 교육·입주 공간·지식재산 활용을 실제 지원하는 공고도 관련성 평가에 포함합니다.
+특정 활동·비용을 명시한 요청의 직접 지원 요건은 유지하며, 설립연도·인증 등 자격 조건은 관련성 점수와 분리합니다.
+이 지침이 실제 모델의 판단 일관성을 보장하는 것은 아니며, 결과는 별도 실검색으로 확인해야 합니다.
+
 ## 수직 호출 흐름
 
 ```text
@@ -602,7 +613,11 @@ OpenAI 거부·기타 SDK 오류·structured output 오류
 `app` INFO 로그에는 의미 검색의 준비·임베딩·Qdrant 시간, 랭킹의 준비·모델·검증 시간과 캐시 상태·후보 수·
 총시간을 남깁니다. 상세 근거 색인·검색 단계 시간과 캐시 사용량, 대화 해석·근거 답변의 모델 처리 시간,
 SDK가 제공한 입력·출력·캐시 입력·추론 토큰 수도 기록합니다. 사용량을 받지 못한 실패의 토큰 수를 추정하지 않으며,
-질문·회사 정보·원문·응답 본문·캐시 키는 기록하지 않습니다. lifespan이 기존 app/root handler를 재사용하거나 stderr
+질문·회사 정보·원문·응답 본문·캐시 키는 기록하지 않습니다.
+순위화의 `support_program_ranking_selection` 로그는 후보 수, 통과 수, 반환 수, 제외 사유별 건수와 반환 결과의
+대상·지역 UNKNOWN 건수를 기록합니다. 제외 사유는 관련성 미달 → 대상 불일치 → 지역 불일치 순으로 한 번만
+집계하므로 후보 수는 통과 수와 제외 세 건수의 합입니다. 모델 평가를 새로 수행한 경우만 기록하며 캐시 적중에는
+기존 캐시 상태 로그를 사용합니다. 이 건수는 AI 판정 결과이며 사람이 검토한 정답이나 품질 지표가 아닙니다. lifespan이 기존 app/root handler를 재사용하거나 stderr
 handler 하나를 추가하므로 기본 Uvicorn에서도 출력되며, OpenAI·HTTP 라이브러리 로그 수준은 바꾸지 않습니다.
 조건 해석도 시간 초과는 내부 504, 그 외 실패는 503으로 구분합니다. 의미 검색은 확인된 시간초과만
 `INDEX_TIMEOUT` 504로 반환하며 미준비·연결 오류 등은 기존 503을 유지합니다. 실패·취소 로그에는

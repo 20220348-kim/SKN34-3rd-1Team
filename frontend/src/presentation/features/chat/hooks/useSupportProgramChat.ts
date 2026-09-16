@@ -6,14 +6,16 @@ import type { AppDispatch, AppThunkExtra, RootState } from '../../../../app/stor
 import type { RestoreSupportProgramSearchUseCase } from '../../../../domain/usecases/RestoreSupportProgramSearchUseCase'
 import { SupportProgramSearchRestoreError } from '../../../../domain/errors/SupportProgramSearchRestoreError'
 import type { SearchSupportProgramsUseCase } from '../../../../domain/usecases/SearchSupportProgramsUseCase'
+import type { GetMyCompanyUseCase } from '../../../../domain/usecases/CompanyUseCases'
 import type { InterpretSupportProgramConversationUseCase } from '../../../../domain/usecases/InterpretSupportProgramConversationUseCase'
-import type { SupportProgramInterpretRequest } from '../../../../domain/entities/SupportProgramConversation'
+import type { SupportProgramConversationContext, SupportProgramInterpretRequest } from '../../../../domain/entities/SupportProgramConversation'
 import type { SupportProgramSearch } from '../../../../domain/repositories/SupportProgramRepository'
 import { SupportProgramRequestError } from '../../../../domain/errors/SupportProgramRequestError'
 import { SupportProgramInterpretationError } from '../../../../domain/errors/SupportProgramInterpretationError'
 import { SupportProgramSearchTimeoutError } from '../../../../domain/errors/SupportProgramSearchTimeoutError'
 import { supportProgramRequestFailureMessage } from '../../../shared/support-program/supportProgramRequestFailureMessage'
 import {
+  companyDefaultsLoaded,
   conversationReset,
   draftChanged,
   interpretationStarted,
@@ -62,6 +64,7 @@ export function useSupportProgramChat(
   searchSupportProgramsUseCase: SupportProgramSearchUseCase = appContainer.resolve('searchSupportProgramsUseCase'),
   interpretConversationUseCase: Pick<InterpretSupportProgramConversationUseCase, 'execute'> = appContainer.resolve('interpretSupportProgramConversationUseCase'),
   restoreSearchUseCase: Pick<RestoreSupportProgramSearchUseCase, 'execute'> = appContainer.resolve('restoreSupportProgramSearchUseCase'),
+  getMyCompanyUseCase: Pick<GetMyCompanyUseCase, 'execute'> = appContainer.resolve('getMyCompanyUseCase'),
 ) {
   const dispatchToStore = useAppDispatch()
   const conversationCount = useAppSelector(selectConversationCount)
@@ -77,9 +80,10 @@ export function useSupportProgramChat(
   const interpretation = useAppSelector((state) => state.chat.interpretation)
   const pendingClarification = useAppSelector((state) => state.chat.pendingClarification)
   const conversationQuery = useAppSelector((state) => state.chat.conversationQuery)
-  const confirmedContext = {
+  const confirmedContext: SupportProgramConversationContext = {
     query: conversationQuery, acceptingOnly: searchOptions.acceptingOnly,
     companyConditions: { region: searchOptions.companyConditions?.region ?? null,
+      ...(searchOptions.companyConditions?.foundedYear != null ? { foundedYear: searchOptions.companyConditions.foundedYear } : {}),
       industry: searchOptions.companyConditions?.industry ?? null,
       establishedOn: searchOptions.companyConditions?.establishedOn ?? null,
       supportPurpose: searchOptions.companyConditions?.supportPurpose ?? null },
@@ -244,12 +248,25 @@ export function useSupportProgramChat(
         controller.abort()
       }, supportProgramInterpretationTimeoutMilliseconds)
       requests.interpretation = { controller, requestId, timeoutId }
+      let loadingCompany = false
       try {
-        const result = await interpretConversationUseCase.execute(request, controller.signal)
+        if (!state.companyDefaultsInitialized) {
+          const account = getState().auth.account
+          loadingCompany = Boolean(account?.company)
+          const company = loadingCompany ? await getMyCompanyUseCase.execute(controller.signal) : null
+          if (controller.signal.aborted || getState().chat.interpretation.requestId !== requestId) return
+          if (loadingCompany && !company) throw new Error('Registered company is unavailable')
+          dispatch(companyDefaultsLoaded({ requestId, company }))
+          loadingCompany = false
+        }
+        const effectiveRequest = getState().chat.interpretation.request
+        if (!effectiveRequest || controller.signal.aborted) return
+        const result = await interpretConversationUseCase.execute(effectiveRequest, controller.signal)
         if (!controller.signal.aborted) dispatch(interpretationSucceeded({ requestId, result }))
       } catch (error) {
         if (!controller.signal.aborted) dispatch(interpretationFailed({ requestId, message:
-          error instanceof SupportProgramRequestError ? supportProgramRequestFailureMessage(error)
+          loadingCompany ? '등록된 기업 정보를 불러오지 못했습니다. 다시 해석해 주세요.'
+            : error instanceof SupportProgramRequestError ? supportProgramRequestFailureMessage(error)
             : error instanceof SupportProgramInterpretationError
               ? error.reason === 'timeout'
                 ? '조건 해석 응답이 지연되어 시간이 초과되었습니다. 잠시 후 다시 해석해 주세요.'

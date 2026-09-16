@@ -4,7 +4,7 @@ import { supportProgramDtoSchema } from './SupportProgramDto'
 
 const id = z.string().regex(/^[A-Za-z0-9_-]{1,64}$/)
 const conditions = z.object({ region: z.string().max(50).optional(), industry: z.string().max(100).optional(),
-  establishedOn: z.iso.date().optional(), supportPurpose: z.string().max(100).optional() })
+  establishedOn: z.iso.date().optional(), foundedYear: z.number().int().min(1900).max(9999).optional(), supportPurpose: z.string().max(100).optional() })
 const options = z.object({ acceptingOnly: z.boolean(), companyConditions: conditions.optional() })
 const clarification = z.object({ question: z.string().max(160), draftContext: conversationContextDtoSchema })
 const lastSearch = z.object({ context: conversationContextDtoSchema, resultCount: z.number().int().min(0).max(5) })
@@ -14,6 +14,7 @@ const request = z.object({ message: z.string().max(500), context: conversationCo
 
 export const chatConversationSnapshotSchema = z.object({
   schemaVersion: z.literal(1),
+  companyDefaultsInitialized: z.boolean().optional(),
   messages: z.array(z.object({
     id: z.string().min(1).max(128), role: z.enum(['assistant', 'user']), text: z.string().max(10_000),
     failure: z.enum(['search', 'interpretation']).optional(), programs: z.array(supportProgramDtoSchema).max(5).optional(),
